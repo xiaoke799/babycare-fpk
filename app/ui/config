@@ -1,0 +1,14 @@
+{
+  ".url": {
+    "babycare-fpk.main": {
+      "title": "育儿宝",
+      "icon": "images/icon_{0}.png",
+      "type": "iframe",
+      "protocol": "",
+      "gatewayPrefix": "/app/babycare-fpk",
+      "gatewaySocket": "app.sock",
+      "url": "/app/babycare-fpk",
+      "allUsers": false
+    }
+  }
+}

@@ -1,0 +1,24 @@
+[
+  {
+    "stepTitle": "卸载向导 / Uninstall Wizard",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "卸载育儿宝时，您可以选择：\n\n1) 保留数据 — 数据库和配置文件将保留在数据目录中，重新安装后可继续使用\n2) 删除数据 — 所有数据（包括宝宝记录、成长数据）将被永久删除\n\n请确保您已备份重要数据。\n\n---\n\nWhen uninstalling BabyCare, you can choose:\n\n1) Keep Data — Database and config files will remain in the data directory for future reinstallation\n2) Delete Data — All data (including baby records and growth data) will be permanently deleted\n\nPlease ensure you have backed up important data."
+      },
+      {
+        "type": "radio",
+        "field": "data_action",
+        "label": "数据处理方式 / Data Handling",
+        "initValue": "keep",
+        "options": [
+          {"value": "keep", "label": "保留数据 (Keep Data) — 重新安装后可恢复"},
+          {"value": "delete", "label": "删除数据 (Delete Data) — 永久删除所有记录"}
+        ],
+        "rules": [
+          {"required": true, "message": "请选择数据处理方式"}
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,59 @@
+#!/bin/bash
+# 升级前自动备份（升级回调）。失败不阻塞升级。
+
+APP_DEST="${TRIM_APPDEST:-/vol1/@appcenter/babycare-fpk}"
+DATA_DIR="${TRIM_PKGVAR:-/var/apps/babycare-fpk/var}"
+BACKUP_DIR="$DATA_DIR/backups"
+PYTHON_CMD=""
+
+for cmd in python3 python python3.12 python3.11 python3.10; do
+    if command -v "$cmd" >/dev/null 2>&1; then
+        PYTHON_CMD="$cmd"
+        break
+    fi
+done
+
+echo "Upgrade of 育儿宝 to ${TRIM_APPVER} started."
+
+# 升级前做一次预升级备份，规避升级失败丢数据风险
+if [ -n "$PYTHON_CMD" ] && [ -f "$APP_DEST/backend/server.py" ]; then
+    echo "[pre-upgrade] 正在创建升级前备份..."
+    VENDOR_DIR="$APP_DEST/backend/vendor"
+    if [ -d "$VENDOR_DIR" ]; then
+        export PYTHONPATH="$VENDOR_DIR${PYTHONPATH:+:$PYTHONPATH}"
+    fi
+    "$PYTHON_CMD" -c "
+import os, sys, json, datetime, glob
+sys.path.insert(0, '$APP_DEST/backend')
+os.environ.setdefault('BABYCARE_DATA_DIR', '$DATA_DIR')
+data_dir = '$DATA_DIR'
+backup_dir = os.path.join(data_dir, 'backups', 'db')
+os.makedirs(backup_dir, exist_ok=True)
+ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+# 热备份：sqlite VACUUM INTO
+db_path = os.path.join(data_dir, 'babycare.db')
+if os.path.isfile(db_path):
+    import sqlite3
+    pre_path = os.path.join(backup_dir, f'pre-upgrade-{ts}.db')
+    try:
+        c = sqlite3.connect(db_path)
+        c.execute('VACUUM INTO ?', (pre_path,))
+        c.close()
+        size = os.path.getsize(pre_path)
+        print(f'[pre-upgrade] 备份完成: {pre_path} ({size/1024/1024:.1f} MB)')
+        # 仅保留最近 5 个升级前备份
+        old = sorted(glob.glob(os.path.join(backup_dir, 'pre-upgrade-*.db')))
+        for p in old[:-5]:
+            try: os.remove(p)
+            except OSError: pass
+    except Exception as e:
+        print(f'[pre-upgrade] 热备份失败: {e}')
+else:
+    print('[pre-upgrade] 数据库文件不存在，跳过备份')
+" 2>&1 || echo "[pre-upgrade] 备份脚本异常，继续升级"
+else
+    echo "[pre-upgrade] 无 Python 环境，跳过升级前备份"
+fi
+
+echo "Upgrade of 育儿宝 to ${TRIM_APPVER} completed."
+echo "Please restart the application from the App Center."

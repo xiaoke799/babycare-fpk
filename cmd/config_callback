@@ -1,0 +1,32 @@
+#!/bin/bash
+# 配置变更回调：应用新配置并重启服务
+# fnOS 规范：配置变更应在回调中生效
+
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+CMD_DIR="$DIR/cmd"
+
+echo "===== 育儿宝配置变更回调 ====="
+echo "应用版本: ${TRIM_APPVER:-unknown}"
+echo "应用目录: $DIR"
+echo ""
+
+# 应用配置变更（如果有需要在此处处理的配置）
+# 例如：更新环境变量、调整权限等
+
+# 确保数据目录权限正确
+DATA_DIR="${TRIM_PKGVAR:-/var/apps/babycare-fpk/var}"
+if [ -d "$DATA_DIR" ]; then
+    chmod 755 "$DATA_DIR" 2>/dev/null
+    echo "数据目录权限已确认: $DATA_DIR"
+fi
+
+# 重启服务使配置生效
+echo "正在重启服务..."
+if [ -f "$CMD_DIR/main" ]; then
+    "$CMD_DIR/main" restart
+    echo "服务已重启"
+else
+    echo "警告: 未找到 cmd/main，跳过重启"
+fi
+
+exit 0

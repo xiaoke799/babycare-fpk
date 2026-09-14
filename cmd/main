@@ -1,0 +1,426 @@
+#!/bin/bash
+
+APP_NAME="babycare-fpk"
+# fnOS 平台环境变量说明：
+#   TRIM_APPDEST - app 实际解压目录（/vol1/@appcenter/babycare-fpk，含 backend/）
+#   TRIM_PKGHOME - app 家目录（/vol1/@apphome/babycare-fpk，可能是空目录）
+#   TRIM_PKGVAR  - 可变数据目录
+#   TRIM_PKGETC  - 配置目录
+APP_DEST="${TRIM_APPDEST:-$TRIM_PKGHOME}"
+DATA_DIR="${TRIM_PKGVAR:-/var/apps/babycare-fpk/var}"
+CONFIG_DIR="${TRIM_PKGETC:-/var/apps/babycare-fpk/etc}"
+PID_FILE="$DATA_DIR/babycare-fpk.pid"
+# fnOS 网关约定：app.sock 必须放在 TRIM_APPDEST（appcenter 解压目录）下
+# 对照 health-records: /vol1/@appcenter/fnos-app-health-records/app.sock
+SOCKET_PATH="${TRIM_APPDEST:-/vol1/@appcenter/babycare-fpk}/app.sock"
+GATEWAY_PREFIX="/app/babycare-fpk"
+STOP_FLAG_FILE="$DATA_DIR/.stop_requested"
+MAX_RESTARTS=5
+
+# 如果 TRIM_APPDEST 未设置或目录不存在，尝试自动发现
+if [ -z "$APP_DEST" ] || [ ! -d "$APP_DEST" ] || [ ! -f "$APP_DEST/backend/server.py" ]; then
+    echo "APP_DEST 无效: $APP_DEST，尝试自动发现..."
+    for candidate in \
+        /vol1/@appcenter/babycare-fpk \
+        /vol2/@appcenter/babycare-fpk \
+        /vol1/@apphome/babycare-fpk \
+        /vol2/@apphome/babycare-fpk \
+        /var/apps/babycare-fpk/target
+    do
+        if [ -f "$candidate/backend/server.py" ]; then
+            APP_DEST="$candidate"
+            echo "自动发现路径: $APP_DEST"
+            break
+        fi
+    done
+fi
+
+# SOCKET_PATH 已在顶部按网关约定统一设置（${TRIM_APPDEST}/app.sock）
+# 无需在此处重复赋值
+
+# ==================== 清理函数 ====================
+
+cleanup() {
+    # 清理 Socket 文件（防止重启时残留）
+    [ -e "$SOCKET_PATH" ] && rm -f "$SOCKET_PATH"
+}
+
+# 校验 PID 是否属于本应用后端进程
+# 兼容两种启动方式：gunicorn 和 python3 start_server.py（Werkzeug 回退）
+# 防止 PID 复用导致误判/误杀无关进程
+# 使用 /proc 文件系统而非 ps 命令（兼容 BusyBox 精简环境）
+is_our_pid() {
+    local pid="$1"
+    [ -n "$pid" ] || return 1
+    # 进程必须存在
+    kill -0 "$pid" 2>/dev/null || return 1
+    # 检查 /proc/$pid/cmdline 是否包含本应用特征
+    local cmdline
+    if [ -r "/proc/$pid/cmdline" ]; then
+        # cmdline 使用 null 分隔符，转换为空格分隔的字符串
+        cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)
+    else
+        # 回退到 ps 命令（如果可用）
+        cmdline=$(ps -p "$pid" -o args= 2>/dev/null) || return 1
+    fi
+    case "$cmdline" in
+        *"server:app"*|*"start_server.py"*|*"server.py"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# 兼容旧名（内部仍调用 is_our_pid）
+is_gunicorn_pid() {
+    is_our_pid "$@"
+}
+
+# 清理所有残留的本应用后端进程（gunicorn 或 start_server.py）
+# 解决多进程堆积争抢 socket 的问题
+# 使用 /proc 文件系统遍历进程（兼容 BusyBox 精简环境）
+kill_all_residuals() {
+    local pids=""
+    # 遍历 /proc 目录查找匹配进程
+    for proc_dir in /proc/[0-9]*; do
+        [ -d "$proc_dir" ] || continue
+        pid=$(basename "$proc_dir")
+        # 跳过自身
+        [ "$pid" = "$$" ] && continue
+        # 检查 cmdline
+        if [ -r "/proc/$pid/cmdline" ]; then
+            cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)
+            case "$cmdline" in
+                *"server:app"*|*"start_server.py"*|*"server.py"*)
+                    pids="$pids $pid"
+                    ;;
+            esac
+        fi
+    done
+
+    # 如果 /proc 方式未找到，回退到 ps 命令
+    if [ -z "$pids" ]; then
+        pids=$(ps -eo pid,args 2>/dev/null \
+            | grep -E "(server:app|start_server\.py|server\.py)" \
+            | grep -v grep \
+            | grep -v "^ *$$\b" \
+            | awk '{print $1}')
+    fi
+
+    if [ -n "$pids" ]; then
+        echo "Cleaning residual processes: $pids"
+        for pid in $pids; do
+            kill "$pid" 2>/dev/null
+        done
+        # 等待进程退出（最多 5 秒）
+        local count=0
+        for pid in $pids; do
+            while kill -0 "$pid" 2>/dev/null && [ "$count" -lt 5 ]; do
+                sleep 1
+                count=$((count + 1))
+            done
+            kill -9 "$pid" 2>/dev/null
+        done
+    fi
+}
+
+# 标记停止请求（watchdog 每次循环检查，收到标志后不再重启）
+request_stop() {
+    mkdir -p "$DATA_DIR" 2>/dev/null
+    touch "$STOP_FLAG_FILE" 2>/dev/null
+}
+
+cleanup_and_exit() {
+    # 收到终止信号：先标记停止并结束 gunicorn，避免留下孤儿进程或被 watchdog 复活
+    request_stop
+    if [ -f "$PID_FILE" ]; then
+        local pid
+        pid=$(cat "$PID_FILE" 2>/dev/null)
+        [ -n "$pid" ] && kill "$pid" 2>/dev/null
+    fi
+    cleanup
+    exit 0
+}
+
+# 注册退出时清理
+trap cleanup_and_exit SIGTERM SIGINT
+
+# ==================== 核心功能 ====================
+
+start() {
+    echo "Starting $APP_NAME ..."
+    echo "DEBUG: TRIM_APPDEST=$TRIM_APPDEST"
+    echo "DEBUG: TRIM_PKGVAR=$TRIM_PKGVAR"
+    echo "DEBUG: TRIM_PKGETC=$TRIM_PKGETC"
+    echo "DEBUG: APP_DEST=$APP_DEST"
+    echo "DEBUG: DATA_DIR=$DATA_DIR"
+    echo "DEBUG: SOCKET_PATH=$SOCKET_PATH"
+
+    # 清除上次升级/停止遗留的标志（本次为全新启动）
+    rm -f "$STOP_FLAG_FILE"
+
+    # 先清理所有残留进程（解决多进程堆积争抢 socket 的问题）
+    kill_all_residuals
+
+    # 检查是否已在运行（校验进程身份，防止 PID 复用误判）
+    if [ -f "$PID_FILE" ]; then
+        OLD_PID=$(cat "$PID_FILE")
+        if is_our_pid "$OLD_PID"; then
+            echo "$APP_NAME is already running (PID: $OLD_PID)"
+            exit 0
+        fi
+        rm -f "$PID_FILE"
+    fi
+
+    # 创建必要目录
+    mkdir -p "$DATA_DIR" "$CONFIG_DIR"
+
+    # 定位后端目录（多路径回退 + 自动搜索）
+    BACKEND_DIR=""
+    for candidate in \
+        "$APP_DEST/backend" \
+        "$APP_DEST/app/backend" \
+        "$APP_DEST/app" \
+        "$APP_DEST"
+    do
+        if [ -f "$candidate/server.py" ]; then
+            BACKEND_DIR="$candidate"
+            break
+        fi
+    done
+
+    # 如果仍未找到，尝试在 APP_DEST 下搜索 server.py
+    if [ -z "$BACKEND_DIR" ] && [ -d "$APP_DEST" ]; then
+        found=$(find "$APP_DEST" -name "server.py" -type f 2>/dev/null | head -1)
+        if [ -n "$found" ]; then
+            BACKEND_DIR=$(dirname "$found")
+        fi
+    fi
+    
+    # 如果仍然找不到，尝试在 /vol1 下全局搜索
+    if [ -z "$BACKEND_DIR" ]; then
+        found=$(find /vol1 -name "server.py" -path "*babycare*" -type f 2>/dev/null | head -1)
+        if [ -n "$found" ]; then
+            BACKEND_DIR=$(dirname "$found")
+            # 同步更新 APP_DEST
+            APP_DEST=$(dirname "$BACKEND_DIR")
+            # socket 路径已在顶部按网关约定统一设置，无需在此修改
+            echo "全局搜索发现后端: $BACKEND_DIR"
+        fi
+    fi
+
+    if [ -z "$BACKEND_DIR" ]; then
+        echo "Error: backend directory not found." > "$TRIM_TEMP_LOGFILE"
+        echo "Searched: $APP_DEST/backend, $APP_DEST/app/backend" >> "$TRIM_TEMP_LOGFILE"
+        echo "APP_DEST=$APP_DEST" >> "$TRIM_TEMP_LOGFILE"
+        echo "Error: backend directory not found"
+        exit 1
+    fi
+
+    echo "Backend directory: $BACKEND_DIR"
+
+    # 查找可用的 Python 解释器
+    PYTHON_CMD=""
+    for cmd in python3 python python3.12 python3.11 python3.10; do
+        if command -v "$cmd" >/dev/null 2>&1; then
+            PYTHON_CMD="$cmd"
+            break
+        fi
+    done
+
+    if [ -z "$PYTHON_CMD" ]; then
+        echo "Error: Python not found. Please install Python 3.10+." > "$TRIM_TEMP_LOGFILE"
+        echo "Error: Python not found"
+        exit 1
+    fi
+
+    echo "Python: $PYTHON_CMD"
+
+    # 关键：将 vendor 目录加入 PYTHONPATH（Flask 等依赖内嵌在此）
+    VENDOR_DIR="$BACKEND_DIR/vendor"
+    if [ -d "$VENDOR_DIR" ]; then
+        export PYTHONPATH="$VENDOR_DIR${PYTHONPATH:+:$PYTHONPATH}"
+        echo "Added vendor to PYTHONPATH: $VENDOR_DIR"
+    fi
+
+    # 检查 Flask 是否可用
+    if ! $PYTHON_CMD -c "import flask" 2>/dev/null; then
+        echo "Error: Flask is not installed." > "$TRIM_TEMP_LOGFILE"
+        echo "Vendor dir: $VENDOR_DIR" >> "$TRIM_TEMP_LOGFILE"
+        echo "PYTHONPATH: $PYTHONPATH" >> "$TRIM_TEMP_LOGFILE"
+        echo "Run: $PYTHON_CMD -m pip install flask==3.0.0" >> "$TRIM_TEMP_LOGFILE"
+        echo "Error: Flask is not installed (checked PYTHONPATH=$PYTHONPATH)"
+        exit 1
+    fi
+
+    # 查找 gunicorn（可能在 PATH 中，也可能在 Python 的 bin 目录）
+    GUNICORN_CMD=""
+    if command -v gunicorn >/dev/null 2>&1; then
+        GUNICORN_CMD="gunicorn"
+    else
+        # 尝试在 Python 的 bin 目录中查找
+        PYTHON_BIN_DIR=$(dirname "$(command -v "$PYTHON_CMD")")
+        if [ -f "$PYTHON_BIN_DIR/gunicorn" ]; then
+            GUNICORN_CMD="$PYTHON_BIN_DIR/gunicorn"
+        else
+            # 尝试用 python -m gunicorn
+            if $PYTHON_CMD -m gunicorn --version >/dev/null 2>&1; then
+                GUNICORN_CMD="$PYTHON_CMD -m gunicorn"
+            fi
+        fi
+    fi
+
+    # gunicorn 不是必须的：如果没有则使用 Werkzeug 内置服务器（start_server.py）
+    if [ -z "$GUNICORN_CMD" ]; then
+        echo "Warning: gunicorn not found, falling back to Werkzeug built-in server"
+        if [ -f "$BACKEND_DIR/start_server.py" ]; then
+            # 使用 start_server.py 启动（Werkzeug + Unix Socket）
+            echo "Starting with Werkzeug server: $BACKEND_DIR/start_server.py"
+            echo "Socket path: $SOCKET_PATH"
+            # 注意：不能用 exec ... &，exec 会替换当前进程，& 无法正确获取 PID
+            # 传递 socket 路径给 start_server.py
+            # fnOS 平台规范：start 必须后台启动后立即返回，不能阻塞
+            BABYCARE_SOCKET_PATH="$SOCKET_PATH" nohup $PYTHON_CMD "$BACKEND_DIR/start_server.py" >>"$DATA_DIR/babycare.log" 2>&1 &
+            WERKZEUG_PID=$!
+            echo $WERKZEUG_PID > "$PID_FILE"
+            echo "$APP_NAME started with Werkzeug (PID: $WERKZEUG_PID)"
+            # 等待 socket 文件创建（最多 5 秒）
+            SOCKET_WAIT=0
+            while [ ! -S "$SOCKET_PATH" ] && [ "$SOCKET_WAIT" -lt 5 ]; do
+                sleep 1
+                SOCKET_WAIT=$((SOCKET_WAIT + 1))
+            done
+            if [ ! -S "$SOCKET_PATH" ]; then
+                echo "Error: $APP_NAME socket not created after 5s" > "$TRIM_TEMP_LOGFILE"
+                echo "Check log: $DATA_DIR/babycare.log" >> "$TRIM_TEMP_LOGFILE"
+                kill "$WERKZEUG_PID" 2>/dev/null
+                rm -f "$PID_FILE"
+                exit 1
+            fi
+            echo "$APP_NAME is running (socket: $SOCKET_PATH)"
+            # 立即返回，让平台判定启动完成
+            exit 0
+        else
+            echo "Error: Neither gunicorn nor start_server.py found." > "$TRIM_TEMP_LOGFILE"
+            echo "Run: $PYTHON_CMD -m pip install gunicorn==21.2.0" >> "$TRIM_TEMP_LOGFILE"
+            echo "Error: gunicorn is not installed and start_server.py is missing"
+            exit 1
+        fi
+    fi
+
+    echo "Gunicorn: $GUNICORN_CMD"
+
+    # 设置环境变量
+    export BABYCARE_DATA_DIR="$DATA_DIR"
+    export BABYCARE_CONFIG_DIR="$CONFIG_DIR"
+    export BABYCARE_DB_PATH="$DATA_DIR/babycare.db"
+    export GATEWAY_PREFIX="$GATEWAY_PREFIX"
+    # 确保 gunicorn 也能找到 vendor 中的依赖
+    if [ -n "$VENDOR_DIR" ] && [ -d "$VENDOR_DIR" ]; then
+        export PYTHONPATH="$VENDOR_DIR${PYTHONPATH:+:$PYTHONPATH}"
+    fi
+
+    # 启动服务（后台 daemon 模式，fnOS 平台规范：start 必须立即返回）
+    # 使用 gunicorn 的 --daemon 模式，不进入 watchdog 阻塞循环
+    $GUNICORN_CMD \
+        --bind "unix:$SOCKET_PATH" \
+        --workers 2 \
+        --timeout 120 \
+        --access-logfile "$DATA_DIR/access.log" \
+        --error-logfile "$DATA_DIR/error.log" \
+        --pid "$PID_FILE" \
+        --daemon \
+        --umask 007 \
+        --env "PYTHONPATH=$PYTHONPATH" \
+        --chdir "$BACKEND_DIR" \
+        server:app
+
+    # 确认 gunicorn 已启动
+    if [ -f "$PID_FILE" ]; then
+        echo "$APP_NAME started with gunicorn (PID: $(cat "$PID_FILE"))"
+    else
+        echo "$APP_NAME gunicorn started (daemon mode)"
+    fi
+    # 立即返回，让平台判定启动完成
+    exit 0
+}
+
+stop() {
+    echo "Stopping $APP_NAME ..."
+
+    # 设置停止标志
+    request_stop
+
+    # 先尝试停止 PID 文件中的主进程
+    if [ -f "$PID_FILE" ]; then
+        PID=$(cat "$PID_FILE")
+        if is_our_pid "$PID"; then
+            # 发送 SIGTERM 让进程优雅关闭
+            kill "$PID"
+
+            # 等待进程退出（最多 10 秒）
+            COUNT=0
+            while kill -0 "$PID" 2>/dev/null && [ "$COUNT" -lt 10 ]; do
+                sleep 1
+                COUNT=$((COUNT + 1))
+            done
+
+            # 强制结束
+            if kill -0 "$PID" 2>/dev/null; then
+                kill -9 "$PID"
+            fi
+            echo "$APP_NAME main process stopped (PID: $PID)"
+        else
+            echo "$APP_NAME PID file stale, cleaning up"
+        fi
+        rm -f "$PID_FILE"
+    fi
+
+    # 清理所有残留进程（双保险：确保没有遗漏的 start_server.py 或 gunicorn）
+    kill_all_residuals
+
+    # 清理 Socket 文件
+    cleanup
+    echo "$APP_NAME stopped"
+}
+
+status_check() {
+    # fnOS 规范：运行返回 0，未运行返回 3
+    if [ -f "$PID_FILE" ]; then
+        PID=$(cat "$PID_FILE")
+        if is_our_pid "$PID"; then
+            # 进程存活，再检查 socket 是否创建
+            if [ -S "$SOCKET_PATH" ]; then
+                return 0  # 运行中，socket 已创建
+            fi
+            return 0  # 进程活着，socket 可能还在创建
+        fi
+    fi
+    # 清理残留 PID 文件
+    rm -f "$PID_FILE"
+    return 3  # 未运行（fnOS 规范要求返回 3）
+}
+
+# ==================== 入口 ====================
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        stop
+        start
+        ;;
+    status)
+        if status_check; then
+            exit 0
+        fi
+        exit 3
+        ;;
+    *)
+        echo "Unknown command: $1" > "$TRIM_TEMP_LOGFILE"
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac

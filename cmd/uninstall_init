@@ -1,0 +1,20 @@
+#!/bin/bash
+
+echo "Preparing to uninstall 育儿宝 ..."
+
+# 设置停止标志，防止 watchdog 自动重启服务
+mkdir -p "${TRIM_PKGVAR}" 2>/dev/null
+touch "${TRIM_PKGVAR}/.stop_requested" 2>/dev/null
+
+# Stop the app
+if [ -f "${TRIM_PKGVAR}/babycare-fpk.pid" ]; then
+    PID=$(cat "${TRIM_PKGVAR}/babycare-fpk.pid")
+    if kill -0 "$PID" 2>/dev/null; then
+        kill "$PID" 2>/dev/null
+        sleep 1
+        kill -9 "$PID" 2>/dev/null
+    fi
+    rm -f "${TRIM_PKGVAR}/babycare-fpk.pid"
+fi
+
+echo "Application stopped."

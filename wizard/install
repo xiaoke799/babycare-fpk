@@ -1,0 +1,20 @@
+[
+  {
+    "stepTitle": "用户协议 / User Agreement",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "欢迎使用育儿宝（BabyCare）。本应用是一款飞牛fnOS原生综合育儿软件，用于记录宝宝成长数据、追踪日常照护、提供育儿知识。\n\n核心功能：宝宝档案管理、成长记录（WHO生长曲线）、照护追踪（喂奶/睡眠/换尿布）、健康档案、发育评估、育儿日记、知识库、AI问答、计时器。\n\n数据与隐私：所有数据均存储在您设备的本地SQLite数据库中，不会自动上传至任何服务器。如启用在线AI大模型服务，相关数据可能发送至您选择的AI厂商。\n\n免责声明：本应用按'现状'提供，不保证无错误或中断。育儿知识仅供参考，不构成医疗建议。生长曲线和发育评估基于WHO标准，仅供参考，不构成医疗诊断。\n\n触控以继续使用即表示您同意本协议。\n\n---\n\nWelcome to BabyCare. This is a comprehensive native parenting application for Feiniu fnOS, designed to record baby growth data, track daily care routines, and provide parenting knowledge.\n\nCore Features: Baby Profile Management, Growth Recording (WHO Growth Curves), Care Tracking (Feeding/Sleep/Diaper), Health Records, Development Assessment, Parenting Journal, Knowledge Base, AI Q&A, Timers.\n\nData and Privacy: All data is stored in a local SQLite database on your device and is not automatically uploaded to any server. If you enable online AI LLM services, relevant data may be sent to the AI provider of your choice.\n\nDisclaimer: The App is provided 'as is' without warranty of any kind. Parenting knowledge is for reference only and does not constitute medical advice. Growth curves and developmental assessments are based on WHO standards and do not constitute medical diagnosis.\n\nBy continuing to use the App, you agree to this agreement."
+      }
+    ]
+  },
+  {
+    "stepTitle": "欢迎使用 / Welcome",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "育儿宝将帮助您记录宝宝成长的每一个瞬间。\nBabyCare helps you record every moment of your baby's growth."
+      }
+    ]
+  }
+]

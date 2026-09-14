@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# 获取用户选择的数据处理方式
+# fnOS向导会以环境变量形式传入表单数据
+DATA_ACTION="${data_action:-keep}"
+
+echo "育儿宝 has been uninstalled."
+
+if [ "$DATA_ACTION" = "delete" ]; then
+    echo "正在删除所有数据..."
+    # 删除数据库文件
+    rm -f "${TRIM_PKGVAR}/babycare-fpk.db" 2>/dev/null
+    rm -f "${TRIM_PKGVAR}/who_data.db" 2>/dev/null
+    # 删除上传的照片
+    rm -rf "${TRIM_PKGVAR}/photos" 2>/dev/null
+    # 删除配置文件
+    rm -f "${TRIM_PKGVAR}/config.json" 2>/dev/null
+    # 删除密钥文件
+    rm -f "${TRIM_PKGVAR}/secret.key" 2>/dev/null
+    echo "所有数据已永久删除。"
+else
+    echo "数据已保留在: ${TRIM_PKGVAR}"
+    echo "重新安装后数据可继续使用。"
+fi
+
+# 清理运行时文件
+rm -f "${TRIM_PKGVAR}/babycare-fpk.pid" 2>/dev/null
+rm -f "${TRIM_PKGVAR}/.stop_requested" 2>/dev/null

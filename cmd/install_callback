@@ -1,0 +1,88 @@
+#!/bin/bash
+
+# fnOS 安装回调脚本
+# 注意：错误信息应写入 TRIM_TEMP_LOGFILE 供用户查看
+
+echo "Installation of 育儿宝 ${TRIM_APPVER} completed."
+
+# ==================== 辅助函数（必须在调用前定义） ====================
+
+_install_fallback() {
+    PIP_CMD=""
+    for pcmd in pip3 pip; do
+        if command -v "$pcmd" >/dev/null 2>&1; then
+            PIP_CMD="$pcmd"
+            break
+        fi
+    done
+
+    if [ -n "$PIP_CMD" ]; then
+        echo "Using $PIP_CMD to install dependencies..."
+        $PIP_CMD install --quiet flask==3.0.0 gunicorn==21.2.0 pillow==10.4.0 2>/dev/null
+        if [ $? -eq 0 ]; then
+            echo "Python dependencies installed successfully."
+        else
+            echo "Warning: Failed to install some dependencies." > "$TRIM_TEMP_LOGFILE"
+            echo "Run: $PIP_CMD install flask==3.0.0 gunicorn==21.2.0 pillow==10.4.0" >> "$TRIM_TEMP_LOGFILE"
+        fi
+    else
+        echo "Warning: pip not found. Please install dependencies manually." > "$TRIM_TEMP_LOGFILE"
+    fi
+}
+
+set_permissions() {
+    # 设置数据目录权限
+    if [ -d "${TRIM_PKGVAR}" ]; then
+        chown -R "${TRIM_USERNAME}:${TRIM_GROUPNAME}" "${TRIM_PKGVAR}" 2>/dev/null
+    fi
+    if [ -d "${TRIM_PKGETC}" ]; then
+        chown -R "${TRIM_USERNAME}:${TRIM_GROUPNAME}" "${TRIM_PKGETC}" 2>/dev/null
+    fi
+    echo "Permissions set."
+}
+
+# ==================== 主逻辑 ====================
+
+# 查找可用的 Python 解释器
+PYTHON_CMD=""
+for cmd in python3 python python3.12 python3.11 python3.10; do
+    if command -v "$cmd" >/dev/null 2>&1; then
+        PYTHON_CMD="$cmd"
+        break
+    fi
+done
+
+if [ -z "$PYTHON_CMD" ]; then
+    echo "Error: Python not found. Please install Python 3.10+." > "$TRIM_TEMP_LOGFILE"
+    echo "Error: Python not found"
+    exit 1
+fi
+
+echo "Python: $PYTHON_CMD"
+
+# 检查 vendor 目录是否存在（依赖内嵌模式）
+APP_DEST="${TRIM_APPDEST:-$TRIM_PKGHOME}"
+BACKEND_DIR="$APP_DEST/backend"
+VENDOR_DIR="$BACKEND_DIR/vendor"
+
+if [ -d "$VENDOR_DIR" ]; then
+    echo "Using vendored dependencies in $VENDOR_DIR"
+    
+    # 验证 Flask 是否可导入
+    if $PYTHON_CMD -c "import sys; sys.path.insert(0, '$VENDOR_DIR'); import flask" 2>/dev/null; then
+        echo "Flask dependency verified."
+    else
+        echo "Warning: Flask import test failed. Attempting pip install..."
+        # 回退：尝试 pip install
+        _install_fallback
+    fi
+else
+    echo "No vendor directory found. Attempting pip install..."
+    _install_fallback
+fi
+
+# 设置权限
+set_permissions
+
+echo "Installation complete."
+exit 0

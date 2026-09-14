@@ -1,0 +1,3174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'">
+    <title>育儿宝 - 飞牛 fnOS 育儿助手</title>
+    <!-- 关键内联兜底样式：即使外部 main.css 因路径/前缀/打包问题未能加载，也强制隐藏非激活页面与弹窗，避免出现"纯文本堆叠、无法点击" -->
+    <style>
+      html,body{margin:0;background:#FFF7F2;color:#3A2B2B;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.6}
+      #app{display:flex;flex-direction:column;min-height:100vh}
+      .page:not(.active){display:none!important}
+      .modal-overlay:not(.show){display:none!important}
+      .app-nav{position:fixed;bottom:0;left:0;right:0;z-index:1000;background:#fff;border-top:1px solid #F0E4DC}
+      /* 登录拦截：未认证时隐藏主内容，只显示认证遮罩 */
+      #authOverlay{position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:linear-gradient(135deg,#FFAD7A,#FF86A1);display:none;align-items:center;justify-content:center}
+      #authOverlay.show{display:flex!important}
+      #authOverlay .modal{background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.15)}
+      /* 未认证时隐藏 #app 内容 */
+      body.auth-pending #app{visibility:hidden}
+      body.auth-pending .app-nav{display:none!important}
+      .nav-groups{display:flex;height:56px;border-top:1px solid #F0E4DC}
+      .nav-tab{flex:1;border:none;background:transparent;color:#B5A8A0;font-size:11px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+      .nav-tab.active{color:#D15A7A;font-weight:600}
+      .app-header{display:flex;align-items:center;justify-content:space-between;height:56px;padding:0 16px;background:linear-gradient(135deg,#FFAD7A,#FF86A1);color:#fff}
+    .record-page-header{display:flex;align-items:center;justify-content:space-between;padding:16px 16px 8px}
+    .record-header-actions{display:flex;gap:8px}
+    .record-stats-bar{display:flex;gap:8px;padding:0 16px 12px;flex-wrap:wrap}
+    .stat-chip{background:#FFF3E0;border-radius:12px;padding:6px 12px;font-size:12px;color:#8D6E63}
+    .stat-chip strong{color:#D84315;margin-left:4px}
+    .skin-condition-bar{display:flex;align-items:center;gap:6px;padding:8px 16px;flex-wrap:wrap}
+    .skin-label{font-size:12px;color:#8D6E63;margin-right:4px}
+    .skin-btn{padding:4px 10px;border:1px solid #E0E0E0;border-radius:12px;background:#FAFAFA;font-size:11px;cursor:pointer;transition:all 0.2s}
+    .skin-btn:hover{border-color:#FF86A1;background:#FFF0F5}
+    .skin-btn.active{background:#FF86A1;color:#fff;border-color:#FF86A1}
+    </style>
+    <link rel="stylesheet" href="/app/babycare-fpk/css/main.css">
+    <script>
+        // 网关前缀：优先从 URL 路径自动提取 /app/<应用名>，兜底为 /app/babycare-fpk
+        (function() {
+            var path = window.location.pathname || '';
+            var match = path.match(/^(\/app\/[^/]+)/);
+            window.GATEWAY_PREFIX = match ? match[1] : '/app/babycare-fpk';
+        })();
+    </script>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="icon-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/></symbol><symbol id="icon-mascot" viewBox="0 0 24 24"><circle cx="12" cy="10" r="6"/><circle cx="9.5" cy="9" r="1" fill="white"/><circle cx="14.5" cy="9" r="1" fill="white"/><path d="M9 13c1 1 2 1.5 3 1.5s2-.5 3-1.5" stroke="white" stroke-width="1.2" fill="none" stroke-linecap="round"/><path d="M6 6l2-2M18 6l2-2" stroke-width="1.5" stroke-linecap="round"/></symbol><symbol id="icon-arrow-left" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol><symbol id="icon-list" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></symbol><symbol id="icon-chart" viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="M7 15l4-5 3 3 4-6"/></symbol><symbol id="icon-book-open" viewBox="0 0 24 24"><path d="M12 5c-2-1-5-1-7 0v14c2-1 5-1 7 0M12 5c2-1 5-1 7 0v14c-2-1-5-1-7 0"/></symbol><symbol id="icon-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></symbol><symbol id="icon-heart" viewBox="0 0 24 24"><path d="M12 21C5 15 3 11 3 8a4.5 4.5 0 0 1 9-1 4.5 4.5 0 0 1 9 1c0 3-2 7-9 13z"/></symbol><symbol id="icon-baby" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M6 21v-3a6 6 0 0 1 12 0v3"/></symbol><symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></symbol><symbol id="icon-clipboard" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/></symbol><symbol id="icon-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4 6.5 6.5 0 0 0 20 14.5z"/></symbol><symbol id="icon-thermometer" viewBox="0 0 24 24"><path d="M14 14V5a2 2 0 1 0-4 0v9a4 4 0 1 0 4 0z"/></symbol><symbol id="icon-pill" viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="6" rx="3"/><path d="M12 9v6"/></symbol><symbol id="icon-activity" viewBox="0 0 24 24"><path d="M3 12h4l2 6 4-14 2 8h6"/></symbol><symbol id="icon-syringe" viewBox="0 0 24 24"><path d="M14 6l4 4M16 4l4 4-2 2-4-4z"/><path d="M5 19l6-6"/><path d="M9 13l1.5-1.5M11 15l1.5-1.5"/></symbol><symbol id="icon-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></symbol><symbol id="icon-tag" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9-9 9z"/><circle cx="12" cy="12" r="2"/></symbol><symbol id="icon-bell" viewBox="0 0 24 24"><path d="M6 16V10a6 6 0 0 1 12 0v6l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></symbol><symbol id="icon-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h5v16H6a2 2 0 0 0-2 2zM20 5a2 2 0 0 0-2-2h-5v16h5a2 2 0 0 1 2 2z"/></symbol><symbol id="icon-image" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M5 17l4-4 3 3 3-4 4 5"/></symbol><symbol id="icon-bowl" viewBox="0 0 24 24"><path d="M4 11h16a8 8 0 0 1-16 0z"/><path d="M9 7c0-1 1-2 1-2M12 7c0-1 1-2 1-2M15 7c0-1 1-2 1-2"/></symbol><symbol id="icon-rocket" viewBox="0 0 24 24"><path d="M12 3c3 2 5 6 5 10l-5 4-5-4c0-4 2-8 5-10z"/><circle cx="12" cy="10" r="1.5"/><path d="M9 17l-2 3M15 17l2 3"/></symbol><symbol id="icon-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></symbol><symbol id="icon-tooth" viewBox="0 0 24 24"><path d="M8 3c-2 0-3 2-3 5 0 4 1 6 2 9h2c1-3 1-5 3-5s2 2 3 5h2c1-3 2-5 2-9 0-3-1-5-3-5-2 0-3 2-5 2s-3-2-5-2z"/></symbol><symbol id="icon-heart2" viewBox="0 0 24 24"><path d="M12 21C5 15 3 11 3 8a4.5 4.5 0 0 1 9-1 4.5 4.5 0 0 1 9 1c0 3-2 7-9 13z"/></symbol><symbol id="icon-hospital" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="1"/><path d="M12 8v6M9 11h6"/></symbol><symbol id="icon-stethoscope" viewBox="0 0 24 24"><path d="M6 3v5a4 4 0 0 0 8 0V3"/><path d="M10 16a4 4 0 0 0 8 0v-2"/><circle cx="18" cy="11" r="2"/></symbol><symbol id="icon-trophy" viewBox="0 0 24 24"><path d="M8 4h8v4a4 4 0 0 1-8 0z"/><path d="M8 5H5v2a3 3 0 0 0 3 3M16 5h3v2a3 3 0 0 1-3 3"/><path d="M12 12v4M9 20h6"/></symbol><symbol id="icon-star" viewBox="0 0 24 24"><path d="M12 3l2.5 5.5L20 9.5l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-1z"/></symbol><symbol id="icon-scale" viewBox="0 0 24 24"><path d="M12 4v16M5 20h14M8 8h8"/><circle cx="12" cy="8" r="3"/></symbol><symbol id="icon-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol><symbol id="icon-wave" viewBox="0 0 24 24"><path d="M3 12h4l2 5 3-10 2 7 2-4h3"/></symbol><symbol id="icon-compare" viewBox="0 0 24 24"><path d="M5 20V8M12 20V4M19 20v-6"/></symbol><symbol id="icon-doc" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></symbol><symbol id="icon-bar" viewBox="0 0 24 24"><path d="M4 20V4M4 20h16"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/></symbol><symbol id="icon-chef" viewBox="0 0 24 24"><path d="M7 14h10a5 5 0 0 1-5 5 5 5 0 0 1-5-5z"/><path d="M9 14V8a2 2 0 0 1 2-2M12 14V6M15 14V8a2 2 0 0 0-2-2"/></symbol><symbol id="icon-game" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="8" rx="2"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/></symbol><symbol id="icon-wrench" viewBox="0 0 24 24"><path d="M14 7a4 4 0 0 0-5 5l-5 5 3 3 5-5a4 4 0 0 0 5-5l-3 3-2-2z"/></symbol><symbol id="icon-robot" viewBox="0 0 24 24"><rect x="6" y="9" width="12" height="9" rx="2"/><circle cx="9.5" cy="13" r="1"/><circle cx="14.5" cy="13" r="1"/><path d="M12 4v3M9 6h6"/></symbol><symbol id="icon-bottle" viewBox="0 0 24 24"><path d="M9 2h6v3H9z"/><rect x="7" y="5" width="10" height="14" rx="2"/><path d="M10 9h4M10 13h4"/></symbol><symbol id="icon-diaper" viewBox="0 0 24 24"><path d="M5 7h14c1 0 2 1 1 3l-3 7c-1 2-3 3-5 3s-4-1-5-3l-3-7c-1-2 0-3 1-3z"/><path d="M5 7l7 6 7-6"/></symbol><symbol id="icon-pumping" viewBox="0 0 24 24"><path d="M8 2h8v4H8z"/><path d="M12 6v4"/><ellipse cx="12" cy="14" rx="5" ry="6"/><path d="M10 14h4M12 12v4"/></symbol></svg>
+</head>
+<body>
+    <div id="app">
+        <!-- 顶部导航 -->
+        <header class="app-header">
+            <div class="header-left">
+                <button class="back-btn" id="backBtn" title="返回上一页">
+                    <svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-arrow-left"/></svg>
+                </button>
+                <span class="app-logo"><svg class="ic-svg " viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-baby"/></svg></span>
+                <h1 class="app-title" id="appTitle">育儿宝</h1>
+            </div>
+            <div class="header-right">
+                <div class="baby-selector" id="babySelector">
+                    <span id="currentBabyName">请选择宝宝</span>
+                    <span class="dropdown-arrow">▼</span>
+                </div>
+                <button class="icon-btn" id="addBabyBtn" title="添加宝宝">＋</button>
+            </div>
+        </header>
+
+        <!-- 计时器条 -->
+        <div class="timer-bar" id="timerBar">
+            <span class="timer-bar-icon" id="timerBarIcon">⏱</span>
+            <div class="timer-bar-info">
+                <span class="timer-bar-name" id="timerBarName">计时中</span>
+                <span class="timer-bar-duration" id="timerBarDuration">00:00</span>
+            </div>
+            <button class="timer-bar-stop" id="timerBarStop" onclick="stopActiveTimer()">停止</button>
+        </div>
+
+        <!-- 主内容区 -->
+        <main class="app-content">
+            <!-- 仪表盘页面 -->
+            <section class="page active" id="page-dashboard">
+                <div class="home-header">
+                    <div class="home-greeting">
+                        <div class="home-greeting-label" id="homeGreetingLabel">早安，</div>
+                        <h2 class="home-greeting-title"><span id="homeBabyName">宝宝</span>的今日</h2>
+                    </div>
+                    <div class="home-baby-card" id="homeBabyCard">
+                        <div class="home-baby-avatar"><span id="homeBabyInitial">宝</span></div>
+                        <div class="home-baby-info">
+                            <div class="home-baby-name" id="homeProfileName">--</div>
+                            <div class="home-baby-meta" id="homeBabyMeta">-- · -- · --</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 快捷记录 -->
+                <div class="home-quick-actions">
+                    <button class="home-quick-btn" data-action="feeding" type="button">
+                        <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bottle"/></svg></span>
+                        <span class="home-quick-label">喂奶</span>
+                    </button>
+                    <button class="home-quick-btn" data-action="sleep" type="button">
+                        <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-moon"/></svg></span>
+                        <span class="home-quick-label">睡眠</span>
+                    </button>
+                    <button class="home-quick-btn" data-action="diaper" type="button">
+                        <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-diaper"/></svg></span>
+                        <span class="home-quick-label">尿布</span>
+                    </button>
+                    <button class="home-quick-btn" data-action="growth" type="button">
+                        <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chart"/></svg></span>
+                        <span class="home-quick-label">成长</span>
+                    </button>
+                </div>
+
+                <!-- 今日概览 -->
+                <h3 class="home-section-title">今日概览</h3>
+                <div class="home-stats">
+                    <div class="home-stat-card feeding">
+                        <div class="home-stat-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bottle"/></svg></div>
+                        <div class="home-stat-value" id="homeFeedingCount">0</div>
+                        <div class="home-stat-label">喂奶</div>
+                    </div>
+                    <div class="home-stat-card sleep">
+                        <div class="home-stat-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-moon"/></svg></div>
+                        <div class="home-stat-value" id="homeSleepTime">0m</div>
+                        <div class="home-stat-label">睡眠</div>
+                    </div>
+                    <div class="home-stat-card diaper">
+                        <div class="home-stat-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-diaper"/></svg></div>
+                        <div class="home-stat-value" id="homeDiaperCount">0</div>
+                        <div class="home-stat-label">换尿布</div>
+                    </div>
+                </div>
+
+                <!-- 最近记录 -->
+                <div class="home-recent">
+                    <h3 class="home-section-title">最近记录</h3>
+                    <div class="home-recent-list" id="homeRecentList">
+                        <p class="empty-tip">暂无记录</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 记录宫格 hub -->
+            <section class="page" id="page-record">
+                <div class="hub-header">
+                    <h3 class="section-title">记录</h3>
+                    <p class="hub-desc">喂养、睡眠、健康等日常记录，点击进入对应记录</p>
+                </div>
+                <div class="hub-grid" id="hub-record"></div>
+            </section>
+
+            <!-- 成长宫格 hub -->
+            <section class="page" id="page-growth-hub">
+                <div class="hub-header">
+                    <h3 class="section-title">成长</h3>
+                    <p class="hub-desc">身高体重曲线与发育里程碑</p>
+                </div>
+                <div class="hub-grid" id="hub-growth"></div>
+            </section>
+
+            <!-- 知识宫格 hub -->
+            <section class="page" id="page-knowledge-hub">
+                <div class="hub-header">
+                    <h3 class="section-title">知识</h3>
+                    <p class="hub-desc">育儿百科、食谱与亲子活动</p>
+                </div>
+                <div class="hub-grid" id="hub-knowledge"></div>
+            </section>
+
+            <!-- 系统宫格 hub -->
+            <section class="page" id="page-system">
+                <div class="hub-header">
+                    <h3 class="section-title">系统</h3>
+                    <p class="hub-desc">工具与设置</p>
+                </div>
+                <div class="hub-grid" id="hub-system"></div>
+            </section>
+
+            <!-- 喂奶记录页面 -->
+            <section class="page" id="page-feeding">
+                <div class="record-page-header">
+                    <h3 class="section-title">喂奶记录</h3>
+                    <button class="btn btn-primary btn-sm" id="addFeedingBtnPage">＋ 添加喂奶</button>
+                </div>
+                <div class="record-stats-bar" id="feedingStatsBar">
+                    <div class="stat-chip">今日 <strong id="feedingTodayCount">0</strong> 次</div>
+                    <div class="stat-chip">总量 <strong id="feedingTodayAmount">0</strong> ml</div>
+                    <div class="stat-chip">上次 <strong id="feedingLastTime">--</strong></div>
+                </div>
+                <!-- 快捷操作 -->
+                <div class="quick-actions" id="feedingQuickActions">
+                    <button class="quick-btn" data-type="breast" data-amount="0">母乳</button>
+                    <button class="quick-btn" data-type="bottle" data-amount="60">60ml</button>
+                    <button class="quick-btn" data-type="bottle" data-amount="90">90ml</button>
+                    <button class="quick-btn" data-type="bottle" data-amount="120">120ml</button>
+                </div>
+                <div class="care-list" id="feedingList">
+                    <p class="empty-tip">暂无喂奶记录</p>
+                </div>
+            </section>
+
+            <!-- 吸奶记录页面 -->
+            <section class="page" id="page-pumping">
+                <div class="record-page-header">
+                    <h3 class="section-title">吸奶记录</h3>
+                    <button class="btn btn-primary btn-sm" id="addPumpingBtnPage">＋ 添加吸奶</button>
+                </div>
+                <div class="record-stats-bar" id="pumpingStatsBar">
+                    <div class="stat-chip">今日 <strong id="pumpingTodayCount">0</strong> 次</div>
+                    <div class="stat-chip">总量 <strong id="pumpingTodayAmount">0</strong> ml</div>
+                </div>
+                <div class="care-list" id="pumpingList">
+                    <p class="empty-tip">暂无吸奶记录</p>
+                </div>
+            </section>
+
+            <!-- 睡眠记录页面 -->
+            <section class="page" id="page-sleep-record">
+                <div class="record-page-header">
+                    <h3 class="section-title">睡眠记录</h3>
+                    <div class="record-header-actions">
+                        <button class="btn btn-outline btn-sm" id="sleepTimerBtn">⏱ 计时器</button>
+                        <button class="btn btn-primary btn-sm" id="addSleepBtnPage">＋ 添加睡眠</button>
+                    </div>
+                </div>
+                <!-- 实时计时器卡片 -->
+                <div class="sleep-timer-card" id="sleepTimerCard" style="display:none">
+                    <div class="sleep-timer-inner">
+                        <div class="sleep-timer-icon">💤</div>
+                        <div class="sleep-timer-status" id="sleepTimerStatus">正在睡眠</div>
+                        <div class="sleep-timer-display" id="sleepTimerDisplay">00:00:00</div>
+                        <input type="hidden" id="sleepTimerStartTime">
+                        <div class="sleep-timer-controls">
+                            <button class="btn btn-primary" id="sleepTimerStopBtn">⏹ 结束睡眠</button>
+                            <button class="btn btn-outline" id="sleepTimerCancelBtn">取消</button>
+                        </div>
+                    </div>
+                </div>
+                <!-- 月龄睡眠参考 -->
+                <div class="sleep-reference-card" id="sleepReferenceCard">
+                    <div class="sleep-reference-title">💤 月龄睡眠参考</div>
+                    <div class="sleep-reference-content" id="sleepReferenceContent">
+                        <span>请设置宝宝生日后查看参考</span>
+                    </div>
+                </div>
+                <div class="record-stats-bar" id="sleepStatsBar">
+                    <div class="stat-chip">今日 <strong id="sleepTodayCount">0</strong> 次</div>
+                    <div class="stat-chip">总时长 <strong id="sleepTodayDuration">0</strong> 小时</div>
+                    <div class="stat-chip">夜间 <strong id="sleepTodayNight">0</strong> 小时</div>
+                    <div class="stat-chip">小憩 <strong id="sleepTodayNap">0</strong> 分钟</div>
+                    <div class="stat-chip">上次 <strong id="sleepLastTime">--</strong></div>
+                </div>
+                <!-- 快捷操作 -->
+                <div class="quick-actions" id="sleepQuickActions">
+                    <button class="quick-btn" data-duration="30" data-nap="1">😴 小憩30分</button>
+                    <button class="quick-btn" data-duration="60" data-nap="1">😴 小憩1小时</button>
+                    <button class="quick-btn" data-duration="90" data-nap="1">😴 小憩1.5时</button>
+                    <button class="quick-btn" data-duration="0" data-nap="0">🌙 夜间睡眠</button>
+                </div>
+                <!-- 本周概览 -->
+                <div class="sleep-weekly-summary" id="sleepWeeklySummary">
+                    <div class="weekly-summary-title">📊 本周概览</div>
+                    <div class="weekly-summary-stats" id="weeklySummaryStats">
+                        <div class="weekly-stat-item"><span class="weekly-stat-label">平均睡眠</span><strong>--</strong></div>
+                        <div class="weekly-stat-item"><span class="weekly-stat-label">入睡时间</span><strong>--</strong></div>
+                        <div class="weekly-stat-item"><span class="weekly-stat-label">睡眠次数</span><strong>--</strong></div>
+                        <div class="weekly-stat-item"><span class="weekly-stat-label">质量评分</span><strong>--</strong></div>
+                    </div>
+                </div>
+                <div class="care-list" id="sleepList">
+                    <p class="empty-tip">暂无睡眠记录<br><small>点击上方按钮或快捷按钮添加记录</small></p>
+                </div>
+            </section>
+
+            <!-- 换尿布记录页面 -->
+            <section class="page" id="page-diaper-record">
+                <div class="record-page-header">
+                    <h3 class="section-title">换尿布记录</h3>
+                    <div class="record-header-actions">
+                        <button class="btn btn-sm btn-secondary" id="diaperReportBtn">📊 报表</button>
+                        <button class="btn btn-primary btn-sm" id="addDiaperBtnPage">＋ 添加记录</button>
+                    </div>
+                </div>
+                <div class="record-stats-bar" id="diaperStatsBar">
+                    <div class="stat-chip">今日 <strong id="diaperTodayCount">0</strong> 次</div>
+                    <div class="stat-chip">小便 <strong id="diaperTodayWet">0</strong> 次</div>
+                    <div class="stat-chip">大便 <strong id="diaperTodayDirty">0</strong> 次</div>
+                    <div class="stat-chip">上次 <strong id="diaperLastTime">--</strong></div>
+                </div>
+                <!-- 快捷操作 -->
+                <div class="quick-actions" id="diaperQuickActions">
+                    <button class="quick-btn" data-type="wet">💧 小便</button>
+                    <button class="quick-btn" data-type="dirty">💩 大便</button>
+                    <button class="quick-btn" data-type="both">💧💩 都有</button>
+                    <button class="quick-btn" data-type="dry">✅ 干爽</button>
+                </div>
+                <!-- 皮肤状况快捷记录 -->
+                <div class="skin-condition-bar" id="skinConditionBar">
+                    <span class="skin-label">皮肤状况:</span>
+                    <button class="skin-btn" data-skin="normal">😊 正常</button>
+                    <button class="skin-btn" data-skin="slight_red">😐 轻微发红</button>
+                    <button class="skin-btn" data-skin="rash">😟 红臀</button>
+                </div>
+                <div class="care-list" id="diaperList">
+                    <p class="empty-tip">暂无换尿布记录<br><small>点击快捷按钮快速记录</small></p>
+                </div>
+            </section>
+
+            <!-- 时间线页面 -->
+            <section class="page" id="page-timeline">
+                <div class="timeline-header">
+                    <h3 class="section-title">宝宝时间线</h3>
+                    <div class="timeline-filter">
+                        <select id="timelineDays">
+                            <option value="1">今天</option>
+                            <option value="3">近3天</option>
+                            <option value="7" selected>近7天</option>
+                            <option value="30">近30天</option>
+                        </select>
+                        <select id="timelineType">
+                            <option value="all">全部类型</option>
+                            <option value="feeding">喂奶</option>
+                            <option value="sleep">睡眠</option>
+                            <option value="diaper">换尿布</option>
+                            <option value="growth">成长</option>
+                            <option value="milestone">里程碑</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="timeline-stats" id="timelineStats"></div>
+                <div class="timeline-list" id="timelineList">
+                    <p class="empty-tip">暂无记录</p>
+                </div>
+            </section>
+
+            <!-- 睡眠分析页面 -->
+            <section class="page" id="page-sleep-analysis">
+                <div class="sleep-analysis-header">
+                    <h3 class="section-title">睡眠分析</h3>
+                    <div class="sleep-analysis-range">
+                        <select id="sleepAnalysisRange">
+                            <option value="7" selected>近7天</option>
+                            <option value="14">近14天</option>
+                            <option value="30">近30天</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="sleep-analysis-stats" id="sleepAnalysisStats"></div>
+                <div class="sleep-prediction-card" id="sleepPredictionCard">
+                    <div class="prediction-header">
+                        <span class="prediction-icon"></span>
+                        <span class="prediction-title">睡眠分析</span>
+                    </div>
+                    <div class="prediction-content" id="sleepPredictionContent">
+                        <p class="prediction-loading">分析中...</p>
+                    </div>
+                </div>
+                <div class="sleep-pattern-card" id="sleepPatternCard">
+                    <h4>24小时睡眠分布</h4>
+                    <canvas id="sleepPatternCanvas" width="700" height="200"></canvas>
+                </div>
+                <div class="sleep-analysis-chart">
+                    <canvas id="sleepAnalysisCanvas" width="700" height="300"></canvas>
+                </div>
+                <div class="sleep-analysis-detail" id="sleepAnalysisDetail"></div>
+            </section>
+
+            <!-- 体温记录页面 -->
+            <section class="page" id="page-temperature">
+                <div class="temperature-header">
+                    <h3 class="section-title">体温监测</h3>
+                    <button class="btn btn-primary btn-sm" id="addTempBtn">＋ 记录体温</button>
+                </div>
+                <div class="temperature-summary" id="temperatureSummary"></div>
+                <div class="temperature-chart-container">
+                    <canvas id="temperatureCanvas" width="700" height="250"></canvas>
+                </div>
+                <div class="temperature-list" id="temperatureList"></div>
+            </section>
+
+
+            <!-- 24小时节律图页面 -->
+            <section class="page" id="page-pattern">
+                <div class="pattern-header">
+                    <h3 class="section-title">24小时节律</h3>
+                    <div class="pattern-type-toggle">
+                        <button class="pattern-type-btn active" data-type="feeding">喂养</button>
+                        <button class="pattern-type-btn" data-type="sleep">睡眠</button>
+                    </div>
+                </div>
+                <div class="pattern-stats" id="patternStats"></div>
+                <div class="pattern-chart-container">
+                    <canvas id="patternCanvas" width="700" height="350"></canvas>
+                </div>
+                <div class="pattern-insight" id="patternInsight"></div>
+            </section>
+
+            <!-- 成长记录页面 -->
+            <section class="page" id="page-growth">
+                <div class="record-page-header">
+                    <h3 class="section-title">成长记录</h3>
+                    <button class="btn btn-primary btn-sm" id="addGrowthBtnPage">＋ 添加记录</button>
+                </div>
+                <div class="growth-tabs">
+                    <button class="growth-tab-btn active" data-growth-tab="records">记录</button>
+                    <button class="growth-tab-btn" data-growth-tab="who-chart">WHO曲线</button>
+                    <button class="growth-tab-btn" data-growth-tab="velocity">生长速度</button>
+                    <button class="growth-tab-btn" data-growth-tab="correlation">记录关联</button>
+                </div>
+                <div class="growth-summary" id="growthSummary">
+                    <div class="growth-item">
+                        <span class="growth-label">身高</span>
+                        <span class="growth-value" id="latestHeight">-- cm</span>
+                    </div>
+                    <div class="growth-item">
+                        <span class="growth-label">体重</span>
+                        <span class="growth-value" id="latestWeightGrowth">-- kg</span>
+                    </div>
+                    <div class="growth-item">
+                        <span class="growth-label">BMI</span>
+                        <span class="growth-value" id="latestBmi">--</span>
+                    </div>
+                    <div class="growth-item">
+                        <span class="growth-label">头围</span>
+                        <span class="growth-value" id="latestHead">-- cm</span>
+                    </div>
+                </div>
+                <!-- 记录视图 -->
+                <div class="growth-view" id="growthViewRecords">
+                    <div class="growth-records" id="growthRecords">
+                        <h3 class="section-title">成长记录</h3>
+                        <div class="record-list" id="growthRecordList">
+                            <p class="empty-tip">暂无成长记录</p>
+                        </div>
+                    </div>
+                </div>
+                <!-- WHO 曲线视图 -->
+                <div class="growth-view" id="growthViewWhoChart" style="display:none">
+                <div class="who-chart-container">
+                    <div class="who-chart-tabs">
+                        <button class="who-tab active" data-metric="weight">体重</button>
+                        <button class="who-tab" data-metric="height">身高</button>
+                        <button class="who-tab" data-metric="head_circumference">头围</button>
+                        <button class="who-tab" data-metric="bmi">BMI</button>
+                    </div>
+                        <div class="who-chart-info" id="whoChartInfo"></div>
+                        <canvas id="whoChartCanvas" width="700" height="350"></canvas>
+                    </div>
+                </div>
+                <!-- 生长速度视图 -->
+                <div class="growth-view" id="growthViewVelocity" style="display:none">
+                    <div class="velocity-container">
+                        <h3 class="section-title">生长速度分析</h3>
+                        <div class="velocity-summary" id="velocitySummary">
+                            <p class="empty-tip">需要至少2条记录才能计算生长速度</p>
+                        </div>
+                        <div class="velocity-details" id="velocityDetails"></div>
+                    </div>
+                </div>
+                <!-- 记录关联视图 -->
+                <div class="growth-view" id="growthViewCorrelation" style="display:none">
+                    <div class="correlation-container">
+                        <h3 class="section-title">记录与成长关联</h3>
+                        <p class="section-subtitle">近30天喂养、睡眠与体重增长的关系</p>
+                        <div class="correlation-overview" id="correlationOverview"></div>
+                        <div class="correlation-cards">
+                            <div class="correlation-card" id="correlationFeeding">
+                                <div class="correlation-card-header">
+                                    <span class="correlation-icon feeding-icon"></span>
+                                    <span class="correlation-title">喂养统计</span>
+                                </div>
+                                <div class="correlation-body" id="correlationFeedingBody"></div>
+                            </div>
+                            <div class="correlation-card" id="correlationSleep">
+                                <div class="correlation-card-header">
+                                    <span class="correlation-icon sleep-icon"></span>
+                                    <span class="correlation-title">睡眠统计</span>
+                                </div>
+                                <div class="correlation-body" id="correlationSleepBody"></div>
+                            </div>
+                            <div class="correlation-card" id="correlationGrowth">
+                                <div class="correlation-card-header">
+                                    <span class="correlation-icon growth-icon"></span>
+                                    <span class="correlation-title">近期增长</span>
+                                </div>
+                                <div class="correlation-body" id="correlationGrowthBody"></div>
+                            </div>
+                        </div>
+                        <div class="correlation-insights" id="correlationInsights"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 育儿日记页面 -->
+            <section class="page" id="page-diary">
+                <div class="record-page-header">
+                    <h3 class="section-title">育儿日记</h3>
+                    <button class="btn btn-primary btn-sm" id="addDiaryBtn">＋ 写日记</button>
+                </div>
+                <div class="diary-stats" id="diaryStats"></div>
+                <div class="diary-search">
+                    <input type="text" id="diarySearchInput" placeholder=" 搜索日记标题或内容...">
+                </div>
+                <div class="diary-filter-bar">
+                    <select id="diaryMoodFilter" class="diary-filter-select">
+                        <option value="">全部心情</option>
+                        <option value="happy">开心</option>
+                        <option value="calm">平静</option>
+                        <option value="excited">兴奋</option>
+                        <option value="fussy">烦躁</option>
+                    </select>
+                    <label class="diary-fav-filter">
+                        <input type="checkbox" id="diaryFavFilter"> 只看收藏
+                    </label>
+                </div>
+                <div class="diary-list" id="diaryList">
+                    <p class="empty-tip">暂无日记<br><small>记录宝宝的成长点滴</small></p>
+                </div>
+            </section>
+
+            <!-- 里程碑页面 -->
+            <section class="page" id="page-milestones">
+                <div class="record-page-header">
+                    <h3 class="section-title">成长里程碑</h3>
+                    <button class="btn btn-primary btn-sm" id="addMilestoneBtn">＋ 添加</button>
+                </div>
+                <div class="milestones-categories">
+                    <button class="milestone-cat-btn active" data-cat="all">全部</button>
+                    <button class="milestone-cat-btn" data-cat="motor">运动</button>
+                    <button class="milestone-cat-btn" data-cat="language">语言</button>
+                    <button class="milestone-cat-btn" data-cat="social">社交</button>
+                    <button class="milestone-cat-btn" data-cat="cognitive">认知</button>
+                    <button class="milestone-cat-btn" data-cat="other">其他</button>
+                    <button class="milestone-cat-btn" data-cat="first">第一次</button>
+                </div>
+                <div class="milestones-timeline" id="milestonesTimeline">
+                    <p class="empty-tip">暂无里程碑记录<br><small>记录宝宝成长的每一个重要时刻</small></p>
+                </div>
+            </section>
+
+            <!-- 育儿知识页面 -->
+            <section class="page" id="page-knowledge">
+            <div class="knowledge-header">
+                <h3 class="section-title">育儿知识库</h3>
+                <button class="btn btn-primary btn-sm" id="addArticleBtn">＋ 新增文章</button>
+            </div>
+                <div class="knowledge-search">
+                    <input type="text" id="knowledgeSearchInput" placeholder=" 搜索文章标题...">
+                </div>
+                <div class="knowledge-categories">
+                    <button class="category-btn active" data-category="all">全部</button>
+                    <button class="category-btn" data-category="feeding">喂养</button>
+                    <button class="category-btn" data-category="sleep">睡眠</button>
+                    <button class="category-btn" data-category="development">发育</button>
+                    <button class="category-btn" data-category="health">健康</button>
+                    <button class="category-btn" data-category="care">护理</button>
+                    <button class="category-btn" data-category="疫苗">疫苗</button>
+                    <button class="category-btn" data-category="安全">安全</button>
+                    <button class="category-btn" data-category="心理">心理</button>
+                    <button class="category-btn" data-category="早教">早教</button>
+                    <button class="category-btn" data-category="营养">营养</button>
+                    <button class="category-btn" data-category="季节">季节</button>
+                </div>
+                <div class="knowledge-list" id="knowledgeList">
+                    <p class="empty-tip">加载中...</p>
+                </div>
+            </section>
+
+            <!-- 健康百科页面 -->
+            <section class="page" id="page-wiki">
+                <div class="knowledge-header">
+                    <h3 class="section-title">健康百科</h3>
+                    <button class="btn btn-primary btn-sm" id="addWikiBtn">＋ 新增条目</button>
+                </div>
+                <p style="font-size: 12px; color: var(--text-secondary); background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; padding: 10px 14px; margin: 0 0 12px;">
+                    以下内容仅供学习参考，不构成医疗建议；宝宝出现不适请及时就医，用药请遵医嘱。
+                </p>
+                <div class="knowledge-search">
+                    <input type="text" id="wikiSearchInput" placeholder=" 搜索疾病/症状...">
+                </div>
+                <div class="knowledge-categories" id="wikiCategories">
+                    <button class="category-btn active" data-category="all">全部</button>
+                    <button class="category-btn" data-category="常见病">常见病</button>
+                    <button class="category-btn" data-category="呼吸">呼吸</button>
+                    <button class="category-btn" data-category="消化">消化</button>
+                    <button class="category-btn" data-category="皮肤">皮肤</button>
+                    <button class="category-btn" data-category="急救">急救</button>
+                    <button class="category-btn" data-category="营养">营养</button>
+                    <button class="category-btn" data-category="发育">发育</button>
+                    <button class="category-btn" data-category="睡眠">睡眠</button>
+                    <button class="category-btn" data-category="过敏">过敏</button>
+                    <button class="category-btn" data-category="牙齿">牙齿</button>
+                    <button class="category-btn" data-category="心理">心理</button>
+                    <button class="category-btn" data-category="泌尿">泌尿</button>
+                    <button class="category-btn" data-category="血液">血液</button>
+                    <button class="category-btn" data-category="外科">外科</button>
+                    <button class="category-btn" data-category="急症">急症</button>
+                    <button class="category-btn" data-category="眼睛">眼睛</button>
+                </div>
+                <div class="knowledge-list" id="wikiList">
+                    <p class="empty-tip">加载中...</p>
+                </div>
+            </section>
+
+            <!-- 照片相册页面 -->
+            <section class="page" id="page-photos">
+                <div class="record-page-header">
+                    <h3 class="section-title">宝宝相册</h3>
+                    <div class="photos-header-actions">
+                        <button class="btn btn-outline btn-sm" id="photoCompareBtn">成长对比</button>
+                        <button class="btn btn-primary btn-sm" id="uploadPhotoBtn">上传照片</button>
+                    </div>
+                </div>
+                <div class="photos-stats" id="photosStats"></div>
+                <div class="photos-filter-bar">
+                    <select id="photoCategoryFilter" class="photo-filter-select">
+                        <option value="">全部类型</option>
+                        <option value="monthly">月度记录</option>
+                        <option value="milestone">里程碑</option>
+                        <option value="comparison">成长对比</option>
+                        <option value="daily">日常</option>
+                    </select>
+                    <select id="photoSortFilter" class="photo-filter-select">
+                        <option value="date_desc">最新优先</option>
+                        <option value="date_asc">最早优先</option>
+                    </select>
+                </div>
+                <div class="photos-grid" id="photosGrid">
+                    <p class="empty-tip">暂无照片<br><small>上传宝宝的美好瞬间</small></p>
+                </div>
+            </section>
+
+            <!-- 疫苗追踪页面 -->
+            <section class="page" id="page-vaccines">
+                <div class="record-page-header">
+                    <h3 class="section-title">疫苗追踪</h3>
+                    <div class="vaccines-actions">
+                        <button class="btn btn-outline btn-sm" id="showTimelineBtn">时间线</button>
+                        <button class="btn btn-outline btn-sm" id="exportVaccinesBtn">导出记录</button>
+                        <button class="btn btn-outline btn-sm" id="initVaccinesBtn">生成接种计划</button>
+                        <button class="btn btn-primary btn-sm" id="addVaccineBtn">+ 添加记录</button>
+                    </div>
+                </div>
+                <div class="vaccines-stats" id="vaccinesStats"></div>
+                <div class="vaccines-list" id="vaccinesList">
+                    <p class="empty-tip">暂无疫苗记录<br><small>点击"生成接种计划"自动生成推荐疫苗</small></p>
+                </div>
+            </section>
+
+            <!-- 看诊摘要页面 -->
+            <section class="page" id="page-clinic">
+
+                <div class="clinic-summary" id="clinicSummary">
+                    <p class="empty-tip">加载中...</p>
+                </div>
+                <div class="data-management">
+                    <h3 class="section-title">数据管理</h3>
+
+                    <!-- 存储总览卡片 -->
+                    <div class="storage-overview" id="storageOverview">
+                        <div class="storage-overview-header">
+                            <span class="storage-overview-title">存储占用</span>
+                            <button class="btn btn-sm btn-link" id="refreshStorageBtn">刷新</button>
+                        </div>
+                        <div class="storage-disk-bar-wrap">
+                            <div class="storage-disk-bar" id="diskUsageBar"><div class="storage-disk-bar-fill" id="diskUsageFill"></div></div>
+                            <span class="storage-disk-pct" id="diskUsagePct">--</span>
+                        </div>
+                        <div class="storage-grid" id="storageGrid">
+                            <div class="storage-item"><span class="storage-item-label">数据库</span><b id="storageDb">--</b></div>
+                            <div class="storage-item"><span class="storage-item-label">照片</span><b id="storagePhotos">--</b></div>
+                            <div class="storage-item"><span class="storage-item-label">备份</span><b id="storageBackups">--</b></div>
+                            <div class="storage-item"><span class="storage-item-label">日志</span><b id="storageLogs">--</b></div>
+                        </div>
+                        <div class="storage-disk-free" id="diskFreeText">可用空间：--</div>
+                    </div>
+
+                    <!-- 数据库健康 -->
+                    <div class="storage-health" id="storageHealth">
+                        <div class="storage-health-header">
+                            <span class="storage-overview-title">数据库健康</span>
+                            <button class="btn btn-sm btn-link" id="checkDbHealthBtn">检查</button>
+                        </div>
+                        <div class="storage-health-status" id="dbHealthStatus">点击"检查"查看完整性</div>
+                        <div class="storage-health-actions">
+                            <button class="btn btn-sm btn-outline" id="optimizeDbBtn" title="VACUUM 回收空闲页">优化数据库</button>
+                            <button class="btn btn-sm btn-outline" id="cleanOrphanBtn" title="清理磁盘上未被引用照片">清理孤立照片</button>
+                            <button class="btn btn-sm btn-outline" id="cleanLogsBtn" title="清空日志文件释放空间">清空日志</button>
+                        </div>
+                    </div>
+
+                    <!-- 自动备份设置 -->
+                    <div class="auto-backup" id="autoBackup">
+                        <label class="auto-backup-toggle">
+                            <input type="checkbox" id="autoBackupEnabled"> 启用定时自动备份
+                        </label>
+                        <div class="auto-backup-row">
+                            <span>间隔</span>
+                            <select id="autoBackupInterval">
+                                <option value="6">每 6 小时</option>
+                                <option value="12">每 12 小时</option>
+                                <option value="24" selected>每天</option>
+                                <option value="48">每 2 天</option>
+                                <option value="168">每周</option>
+                            </select>
+                            <span>保留</span>
+                            <select id="autoBackupKeep">
+                                <option value="5">5 个</option>
+                                <option value="10" selected>10 个</option>
+                                <option value="20">20 个</option>
+                                <option value="30">30 个</option>
+                            </select>
+                            <button class="btn btn-sm btn-primary" id="saveAutoBackupBtn">保存</button>
+                        </div>
+                        <div class="auto-backup-status" id="autoBackupStatus">未启用</div>
+                    </div>
+
+                    <div class="data-mgmt-actions">
+                        <button class="btn btn-outline" id="createBackupBtn">创建备份</button>
+                        <button class="btn btn-outline" id="exportAllBtn">导出JSON</button>
+                        <button class="btn btn-outline" id="importDataBtn">导入数据</button>
+                        <button class="btn btn-outline" id="triggerAutoBackupBtn">立即自动备份</button>
+                    </div>
+                    <p class="data-mgmt-tip">JSON 备份包含全部数据，自动保留最近 N 个；升级前亦自动做热备份</p>
+                    <input type="file" id="importFileInput" accept=".json" style="display:none">
+                    <input type="file" id="importBackupInput" accept=".json" style="display:none">
+                    <button class="btn btn-sm btn-link" onclick="document.getElementById('importBackupInput').click()" style="margin-top:4px;font-size:11px;color:var(--text-light)">
+                        从备份文件上传恢复
+                    </button>
+                    <div class="backup-history" id="backupHistory">
+                        <div class="backup-history-title">备份历史 <span class="backup-auto-tag" id="backupAutoTag" style="display:none">[含自动]</span></div>
+                        <div class="backup-list" id="backupList">
+                            <p class="backup-empty">暂无备份</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+<!-- 出牙追踪页面 -->
+<section class="page" id="page-teeth">
+    <div class="teeth-header">
+        <h3 class="section-title">出牙追踪</h3>
+        <button class="btn btn-primary btn-sm" id="addTeethBtn">＋ 记录出牙</button>
+    </div>
+    <div class="teeth-info-card">
+        <div class="teeth-info-title">出牙知识</div>
+        <p>大多数宝宝在6个月左右开始长牙，2-3岁出齐20颗乳牙。出牙顺序和时间个体差异很大。</p>
+        <div class="teeth-timeline">
+            <div class="teeth-timeline-item"><span class="timeline-age">6-10月</span><span class="timeline-teeth">下中切牙</span></div>
+            <div class="teeth-timeline-item"><span class="timeline-age">8-12月</span><span class="timeline-teeth">上中切牙</span></div>
+            <div class="teeth-timeline-item"><span class="timeline-age">9-13月</span><span class="timeline-teeth">上侧切牙</span></div>
+            <div class="teeth-timeline-item"><span class="timeline-age">10-16月</span><span class="timeline-teeth">下侧切牙</span></div>
+            <div class="teeth-timeline-item"><span class="timeline-age">13-19月</span><span class="timeline-teeth">第一乳磨牙</span></div>
+            <div class="teeth-timeline-item"><span class="timeline-age">16-23月</span><span class="timeline-teeth">犬牙</span></div>
+            <div class="teeth-timeline-item"><span class="timeline-age">23-33月</span><span class="timeline-teeth">第二乳磨牙</span></div>
+        </div>
+    </div>
+    <div class="teeth-chart-container">
+        <h4 class="teeth-chart-title">牙位图</h4>
+        <div class="teeth-chart">
+            <div class="teeth-row teeth-upper">
+                <div class="teeth-label">右上</div>
+                <div class="teeth-items" id="teethUpperRight"></div>
+                <div class="teeth-divider"></div>
+                <div class="teeth-items" id="teethUpperLeft"></div>
+                <div class="teeth-label">左上</div>
+            </div>
+            <div class="teeth-row teeth-lower">
+                <div class="teeth-label">右下</div>
+                <div class="teeth-items" id="teethLowerRight"></div>
+                <div class="teeth-divider"></div>
+                <div class="teeth-items" id="teethLowerLeft"></div>
+                <div class="teeth-label">左下</div>
+            </div>
+        </div>
+    </div>
+    <div class="teeth-list" id="teethList">
+        <p class="empty-tip">暂无出牙记录</p>
+    </div>
+</section>
+
+<!-- 育儿健康档案页面 -->
+<section class="page" id="page-health">
+    <div class="health-header">
+        <h3 class="section-title">健康档案</h3>
+    </div>
+    <div class="health-tabs">
+        <button class="health-tab active" data-tab="overview">概览</button>
+        <button class="health-tab" data-tab="checkup">体检</button>
+        <button class="health-tab" data-tab="vaccine">疫苗</button>
+        <button class="health-tab" data-tab="growth">生长</button>
+        <button class="health-tab" data-tab="milestone">里程碑</button>
+        <button class="health-tab" data-tab="screening">筛查</button>
+        <button class="health-tab" data-tab="indicators">指标</button>
+        <button class="health-tab" data-tab="allergy">过敏</button>
+        <button class="health-tab" data-tab="feeding">喂养</button>
+        <button class="health-tab" data-tab="reminders">⏰ 提醒</button>
+    </div>
+
+    <!-- 概览 Tab -->
+    <div class="health-tab-content active" id="tab-overview">
+        <div class="health-overview-cards">
+            <div class="health-overview-card">
+                <div class="health-overview-num" id="ovCheckupCount">0</div>
+                <div class="health-overview-label">体检记录</div>
+            </div>
+            <div class="health-overview-card">
+                <div class="health-overview-num" id="ovLatestHeight">-</div>
+                <div class="health-overview-label">身高(cm)</div>
+            </div>
+            <div class="health-overview-card">
+                <div class="health-overview-num" id="ovLatestWeight">-</div>
+                <div class="health-overview-label">体重(kg)</div>
+            </div>
+            <div class="health-overview-card">
+                <div class="health-overview-num" id="ovVaccine">0/0</div>
+                <div class="health-overview-label">疫苗(已接/总计)</div>
+            </div>
+            <div class="health-overview-card">
+                <div class="health-overview-num" id="ovMilestone">0/0</div>
+                <div class="health-overview-label">里程碑(达成/总计)</div>
+            </div>
+            <div class="health-overview-card">
+                <div class="health-overview-num" id="ovScreening">0</div>
+                <div class="health-overview-label">筛查记录</div>
+            </div>
+            <div class="health-overview-card">
+                <div class="health-overview-num" id="ovAllergy">0</div>
+                <div class="health-overview-label">过敏项</div>
+            </div>
+            <div class="health-overview-card">
+                <div class="health-overview-num" id="ovAsq">0</div>
+                <div class="health-overview-label">ASQ筛查</div>
+            </div>
+            <div class="health-overview-card">
+                <div class="health-overview-num" id="ovFeeding">0</div>
+                <div class="health-overview-label">喂养摘要</div>
+            </div>
+            <div class="health-overview-card">
+                <div class="health-overview-num" id="ovPendingReminders">0</div>
+                <div class="health-overview-label">待办提醒</div>
+            </div>
+        </div>
+        <div class="health-recent">
+            <h4>最近记录</h4>
+            <div id="ovRecentList"><p class="empty-tip">暂无记录</p></div>
+        </div>
+    </div>
+
+    <!-- 体检 Tab -->
+    <div class="health-tab-content" id="tab-checkup">
+        <div class="health-action-bar">
+            <button class="btn btn-primary btn-sm" id="addCheckupBtn">＋ 添加体检</button>
+            <div class="health-filter">
+                <select id="checkupTypeFilter">
+                    <option value="">全部类型</option>
+                    <option value="routine">常规体检</option>
+                    <option value="vaccine">疫苗接种</option>
+                    <option value="dental">口腔检查</option>
+                    <option value="eye">视力检查</option>
+                    <option value="blood">血常规</option>
+                    <option value="other">其他</option>
+                </select>
+            </div>
+        </div>
+        <div class="health-list" id="checkupList">
+            <p class="empty-tip">暂无体检记录</p>
+        </div>
+    </div>
+
+    <!-- 生长曲线 Tab -->
+    <div class="health-tab-content" id="tab-growth">
+        <div class="health-action-bar">
+            <button class="btn btn-primary btn-sm" id="addGrowthBtnHealth">＋ 添加成长记录</button>
+        </div>
+        <div class="growth-controls">
+            <button class="growth-metric-btn active" data-metric="weight">体重</button>
+            <button class="growth-metric-btn" data-metric="height">身高</button>
+            <button class="growth-metric-btn" data-metric="head_circumference">头围</button>
+            <button class="growth-metric-btn" data-metric="bmi">BMI</button>
+        </div>
+        <div class="growth-chart-container">
+            <canvas id="growthChart" width="700" height="350"></canvas>
+        </div>
+        <div class="growth-data-table" id="growthTable"></div>
+    </div>
+
+    <!-- 指标 Tab -->
+    <div class="health-tab-content" id="tab-indicators">
+        <div class="health-action-bar">
+            <select id="indicatorNameFilter">
+                <option value="">全部指标</option>
+            </select>
+        </div>
+        <div class="indicator-list" id="indicatorList">
+            <p class="empty-tip">暂无指标数据</p>
+        </div>
+    </div>
+
+    <!-- 提醒 Tab -->
+    <div class="health-tab-content" id="tab-reminders">
+        <div class="health-action-bar">
+            <button class="btn btn-primary btn-sm" id="addReminderBtn">＋ 添加提醒</button>
+            <label class="health-show-done">
+                <input type="checkbox" id="showCompletedReminders">显示已完成
+            </label>
+        </div>
+        <div class="reminder-list" id="reminderList">
+            <p class="empty-tip">暂无提醒</p>
+        </div>
+    </div>
+
+    <!-- 疫苗 Tab -->
+    <div class="health-tab-content" id="tab-vaccine">
+        <div class="health-action-bar">
+            <button class="btn btn-primary btn-sm" id="addVaccineBtn2">＋ 添加疫苗</button>
+            <button class="btn btn-secondary btn-sm" id="loadScheduleBtn">加载标准程序</button>
+            <div class="health-filter">
+                <select id="vaccineStatusFilter">
+                    <option value="">全部状态</option>
+                    <option value="pending">待接种</option>
+                    <option value="completed">已完成</option>
+                    <option value="delayed">延期</option>
+                </select>
+            </div>
+        </div>
+        <div class="vaccine-schedule-section" id="vaccineScheduleSection" style="display:none">
+            <h4>一类疫苗（免费）<span class="vaccine-toggle" onclick="toggleVaccineSection('standard')">收起▲</span></h4>
+            <div id="vaccineStandardList"></div>
+            <h4>二类疫苗（自费推荐）<span class="vaccine-toggle" onclick="toggleVaccineSection('recommended')">收起▲</span></h4>
+            <div id="vaccineRecommendedList"></div>
+        </div>
+        <div class="vaccine-list" id="vaccineList">
+            <p class="empty-tip">暂无疫苗记录，点击"加载标准程序"查看接种计划</p>
+        </div>
+    </div>
+
+    <!-- 里程碑 Tab -->
+    <div class="health-tab-content" id="tab-milestone">
+        <div class="health-action-bar">
+            <button class="btn btn-secondary btn-sm" id="initMilestoneBtn">初始化里程碑</button>
+            <button class="btn btn-primary btn-sm" id="addMilestoneBtn2">＋ 添加</button>
+            <div class="health-filter">
+                <select id="milestoneCategoryFilter">
+                    <option value="">全部分类</option>
+                    <option value="motor">大运动</option>
+                    <option value="fine_motor">精细运动</option>
+                    <option value="language">语言</option>
+                    <option value="cognitive">认知</option>
+                    <option value="social">社交</option>
+                    <option value="self_care">自理</option>
+                </select>
+            </div>
+            <div class="health-filter">
+                <select id="milestoneStatusFilter">
+                    <option value="">全部状态</option>
+                    <option value="pending">待达成</option>
+                    <option value="achieved">已达成</option>
+                    <option value="delayed">延迟</option>
+                    <option value="concerned">需关注</option>
+                </select>
+            </div>
+        </div>
+        <div class="milestone-progress" id="milestoneProgress"></div>
+        <div class="milestone-list" id="milestoneList">
+            <p class="empty-tip">暂无里程碑，点击"初始化里程碑"自动生成标准发育里程碑</p>
+        </div>
+    </div>
+
+    <!-- 筛查 Tab -->
+    <div class="health-tab-content" id="tab-screening">
+        <div class="health-action-bar">
+            <button class="btn btn-primary btn-sm" id="addScreeningBtn">＋ 添加筛查</button>
+            <button class="btn btn-secondary btn-sm" id="addAsqFromHealthBtn"> ASQ筛查</button>
+            <div class="health-filter">
+                <select id="screeningTypeFilter">
+                    <option value="">全部类型</option>
+                    <option value="vision_筛查">视力筛查</option>
+                    <option value="hearing_筛查">听力筛查</option>
+                    <option value="vision_诊断">视力诊断</option>
+                    <option value="hearing_诊断">听力诊断</option>
+                </select>
+            </div>
+        </div>
+        <div class="screening-summary" id="screeningSummary"></div>
+
+        <!-- ASQ筛查区域 -->
+        <div class="asq-section" id="healthAsqSection">
+            <h4 class="form-section-title">ASQ发育筛查</h4>
+            <div class="asq-list" id="healthAsqList">
+                <p class="empty-tip">暂无ASQ筛查记录</p>
+            </div>
+        </div>
+
+        <!-- 视力听力筛查记录 -->
+        <h4 class="form-section-title" style="margin-top:16px">视力/听力筛查记录</h4>
+        <div class="screening-list" id="screeningList">
+            <p class="empty-tip">暂无筛查记录</p>
+        </div>
+    </div>
+
+    <!-- 过敏 Tab -->
+    <div class="health-tab-content" id="tab-allergy">
+        <div class="health-action-bar">
+            <button class="btn btn-primary btn-sm" id="addAllergyBtn">＋ 添加过敏</button>
+            <div class="health-filter">
+                <select id="allergyTypeFilter">
+                    <option value="">全部类型</option>
+                    <option value="food">食物过敏</option>
+                    <option value="drug">药物过敏</option>
+                    <option value="environmental">环境过敏</option>
+                    <option value="other">其他</option>
+                </select>
+            </div>
+            <label class="health-show-done">
+                <input type="checkbox" id="showResolvedAllergies">显示已缓解
+            </label>
+        </div>
+        <div class="allergy-alert-box" id="allergyAlertBox" style="display:none">
+            <strong>严重过敏警示：</strong>需紧急就医的情况请标注
+        </div>
+        <div class="allergy-list" id="allergyList">
+            <p class="empty-tip">暂无过敏记录</p>
+        </div>
+    </div>
+
+    <!-- 喂养摘要 Tab -->
+    <div class="health-tab-content" id="tab-feeding">
+        <div class="health-action-bar">
+            <button class="btn btn-secondary btn-sm" id="autoGenerateFeedingBtn">自动生成</button>
+            <button class="btn btn-primary btn-sm" id="addFeedingSummaryBtn">＋ 添加摘要</button>
+        </div>
+        <div id="feedingSummaryList">
+            <p class="empty-tip">暂无喂养摘要</p>
+        </div>
+    </div>
+</section>
+
+<!-- 成长里程碑页面 -->
+<section class="page" id="page-firsts">
+    <div class="firsts-header">
+        <h3 class="section-title">成长里程碑</h3>
+        <button class="btn btn-primary btn-sm" id="addFirstsBtn">＋ 添加成就</button>
+    </div>
+    <div class="firsts-info-card">
+        <div class="firsts-info-title">宝宝第一次</div>
+        <p>记录宝宝成长中的每一个重要时刻，这些珍贵的第一次值得永远珍藏。</p>
+        <div class="firsts-templates">
+            <button class="firsts-template-btn" data-title="第一次微笑" data-cat="social">微笑</button>
+            <button class="firsts-template-btn" data-title="第一次翻身" data-cat="motor">翻身</button>
+            <button class="firsts-template-btn" data-title="第一次独坐" data-cat="motor">独坐</button>
+            <button class="firsts-template-btn" data-title="第一次爬行" data-cat="motor">爬行</button>
+            <button class="firsts-template-btn" data-title="第一次站立" data-cat="motor">站立</button>
+            <button class="firsts-template-btn" data-title="第一次走路" data-cat="motor">走路</button>
+            <button class="firsts-template-btn" data-title="第一次叫妈妈" data-cat="language">叫妈妈</button>
+            <button class="firsts-template-btn" data-title="第一次叫爸爸" data-cat="language">叫爸爸</button>
+            <button class="firsts-template-btn" data-title="第一次挥手拜拜" data-cat="social">拜拜</button>
+            <button class="firsts-template-btn" data-title="第一次拍手" data-cat="motor">拍手</button>
+        </div>
+    </div>
+    <div class="firsts-list" id="firstsList">
+        <p class="empty-tip">暂无里程碑记录</p>
+    </div>
+</section>
+<!-- 数据报告页面 -->
+<section class="page" id="page-reports">
+    <div class="reports-header">
+        <h3 class="section-title">数据分析报告</h3>
+    </div>
+    <div class="reports-tabs">
+        <button class="report-tab active" data-tab="sleep">睡眠</button>
+        <button class="report-tab" data-tab="feeding">喂养</button>
+        <button class="report-tab" data-tab="diaper">排泄</button>
+        <button class="report-tab" data-tab="growth">成长</button>
+    </div>
+    <div class="report-content">
+        <div class="report-summary-cards" id="reportSummaryCards"></div>
+        <div class="report-chart-container">
+            <h4 class="report-chart-title" id="reportChartTitle">睡眠趋势</h4>
+            <canvas id="reportChart" width="700" height="250"></canvas>
+        </div>
+        <div class="report-stats" id="reportStats"></div>
+    </div>
+</section>
+<!-- ASQ发育筛查页面 -->
+<section class="page" id="page-asq">
+    <div class="asq-header">
+        <h3 class="section-title">ASQ发育筛查</h3>
+        <button class="btn btn-primary btn-sm" id="addAsqBtn">＋ 新建筛查</button>
+    </div>
+    <div class="asq-info-card">
+        <p>ASQ-3（年龄与阶段问卷）是标准化的发育筛查工具，涵盖沟通、大运动、精细运动、解决问题、个人-社交五大领域。</p>
+        <p class="asq-info-note">建议筛查月龄：2、4、6、8、10、12、14、16、18、20、22、24、27、30、33、36个月</p>
+    </div>
+    <div class="asq-list" id="asqList">
+        <p class="empty-tip">暂无筛查记录</p>
+    </div>
+</section>
+
+            <!-- 设置页面 -->
+            <section class="page" id="page-settings">
+    <div class="settings-header">
+        <h3 class="section-title">应用设置</h3>
+    </div>
+
+    <!-- 通用偏好 -->
+    <div class="settings-card">
+        <div class="settings-card-head">
+            <span class="settings-card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+            </span>
+            <div class="settings-card-head-text">
+                <div class="settings-card-title">通用偏好</div>
+                <div class="settings-card-desc">单位、列表分页与外观显示</div>
+            </div>
+        </div>
+
+        <div class="settings-row">
+            <label class="settings-row-label" for="settingsWeightUnit">体重单位</label>
+            <select id="settingsWeightUnit" class="settings-select">
+                <option value="kg">千克 (kg)</option>
+                <option value="lb">磅 (lb)</option>
+            </select>
+        </div>
+        <div class="settings-row">
+            <label class="settings-row-label" for="settingsHeightUnit">身高单位</label>
+            <select id="settingsHeightUnit" class="settings-select">
+                <option value="cm">厘米 (cm)</option>
+                <option value="in">英寸 (in)</option>
+            </select>
+        </div>
+        <div class="settings-row">
+            <label class="settings-row-label" for="settingsTempUnit">温度单位</label>
+            <select id="settingsTempUnit" class="settings-select">
+                <option value="°C">摄氏度 (°C)</option>
+                <option value="°F">华氏度 (°F)</option>
+            </select>
+        </div>
+        <div class="settings-row">
+            <label class="settings-row-label" for="settingsPageSize">每页记录数</label>
+            <select id="settingsPageSize" class="settings-select">
+                <option value="10">10 条</option>
+                <option value="20">20 条</option>
+                <option value="50">50 条</option>
+            </select>
+        </div>
+        <div class="settings-row">
+            <label class="settings-row-label" for="darkModeToggle">深色模式</label>
+            <label class="toggle-switch">
+                <input type="checkbox" id="darkModeToggle">
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+        <div class="settings-row">
+            <div>
+                <label class="settings-row-label" for="keepLoginToggle">保持登录状态</label>
+                <div class="settings-row-hint">开启后 30 天内无需重复登录</div>
+            </div>
+            <label class="toggle-switch">
+                <input type="checkbox" id="keepLoginToggle">
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+
+        <button class="btn btn-primary settings-save-btn" id="saveSettingsBtn">保存设置</button>
+        <p class="settings-tip" id="settingsTip"></p>
+    </div>
+
+    <!-- AI 大模型配置 -->
+    <div class="settings-card settings-card--llm" id="llmSettingsSection">
+        <div class="settings-card-head">
+            <span class="settings-card-icon settings-card-icon--ai">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l2.3 5.9 5.9 2.3-5.9 2.3L12 18.9l-2.3-5.9-5.9-2.3 5.9-2.3L12 2.5z"/><path d="M19 14.5l1.1 2.9 2.9 1.1-2.9 1.1L19 22.5l-1.1-2.9-2.9-1.1 2.9-1.1L19 14.5z" opacity=".55"/></svg>
+            </span>
+            <div class="settings-card-head-text">
+                <div class="settings-card-title">AI 大模型</div>
+                <div class="settings-card-desc">配置后可获得更智能的 AI 回答，未配置时使用本地规则引擎（无需联网）</div>
+            </div>
+            <span class="llm-status-badge" id="llmStatusBadge">规则引擎</span>
+        </div>
+
+        <div class="llm-panel">
+            <!-- 提供商 -->
+            <div class="llm-field">
+                <div class="llm-field-head">
+                    <label class="llm-field-label" for="llmProvider">提供商</label>
+                    <a href="#" class="llm-get-key-link" id="getKeyLink" target="_blank" rel="noopener" style="display:none;">查看文档</a>
+                </div>
+                <select id="llmProvider" class="settings-select settings-select-block">
+                    <option value="">关闭（使用规则引擎）</option>
+                </select>
+            </div>
+
+            <!-- 接口地址 -->
+            <div class="llm-field" id="llmUrlRow" style="display:none;">
+                <label class="llm-field-label" for="llmApiUrl">API 地址</label>
+                <input type="text" id="llmApiUrl" class="settings-input" placeholder="自动根据提供商填充，可自定义">
+                <p class="settings-field-hint" id="llmApiUrlHint">默认由提供商模板自动填充，支持修改为代理地址</p>
+            </div>
+
+            <!-- Base URL（高级） -->
+            <div class="llm-field" id="llmBaseUrlRow" style="display:none;">
+                <label class="llm-field-label" for="llmBaseUrl">Base URL</label>
+                <input type="text" id="llmBaseUrl" class="settings-input" placeholder="https://api.openai.com/v1">
+                <p class="settings-field-hint">API 服务的基础地址，留空则使用提供商默认值</p>
+            </div>
+
+            <!-- API Key（仅云端服务） -->
+            <div class="llm-field" id="llmApiKeyRow" style="display:none;">
+                <label class="llm-field-label" for="llmApiKey">API Key</label>
+                <div class="llm-apikey-wrapper">
+                    <input type="password" id="llmApiKey" class="settings-input" placeholder="输入 API Key（本地 AES-256 加密存储）" autocomplete="new-password">
+                    <button type="button" class="llm-toggle-pwd" id="toggleApiKeyBtn" title="显示/隐藏">显示</button>
+                </div>
+                <div class="llm-apikey-status" id="llmApiKeyStatus" style="display:none;">
+                    <span class="llm-apikey-status-dot"></span>
+                    <span class="llm-apikey-status-ok">已配置</span>
+                    <span class="llm-apikey-status-masked" id="llmApiKeyMasked"></span>
+                </div>
+            </div>
+
+            <!-- 模型名称 -->
+            <div class="llm-field" id="llmModelRow" style="display:none;">
+                <div class="llm-field-head">
+                    <label class="llm-field-label" for="llmModel">模型名称</label>
+                    <span class="llm-field-hint-inline" id="llmModelHint">选择具体使用的模型</span>
+                </div>
+                <select id="llmModel" class="settings-select settings-select-block"></select>
+                <!-- 自定义模型输入 -->
+                <div class="llm-custom-model" id="llmCustomModelRow" style="display:none; margin-top:8px;">
+                    <div class="llm-custom-model-input">
+                        <input type="text" id="llmCustomModelInput" class="settings-input" placeholder="输入自定义模型名称，按回车添加">
+                        <button type="button" class="btn btn-sm" id="addCustomModelBtn">添加</button>
+                    </div>
+                    <div class="llm-custom-model-tags" id="llmCustomModelTags"></div>
+                    <p class="settings-field-hint">添加自定义模型后可在上方下拉框选择</p>
+                </div>
+                <div class="llm-model-tags" id="llmModelTags"></div>
+                <p class="settings-field-hint settings-field-hint--accent" id="llmModelHintText" style="display:none;"></p>
+            </div>
+
+            <!-- 视觉增强 -->
+            <div class="llm-field" id="llmVisionModelRow" style="display:none;">
+                <div class="llm-field-head">
+                    <label class="llm-field-label" for="llmVisionEnabled">视觉增强</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="llmVisionEnabled">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <p class="llm-field-desc">开启后可发送图片给 AI 分析（如身高曲线图、疫苗记录）</p>
+            </div>
+
+            <div class="llm-field" id="llmVisionSelectRow" style="display:none;">
+                <label class="llm-field-label" for="llmVisionModel">视觉模型</label>
+                <select id="llmVisionModel" class="settings-select settings-select-block"></select>
+                <p class="llm-field-desc" id="llmVisionModelHint">选择支持图片分析的模型</p>
+            </div>
+
+            <!-- 高级配置折叠面板 -->
+            <div class="llm-advanced-toggle" id="llmAdvancedToggle">
+                <span class="llm-advanced-toggle-text">高级配置</span>
+                <span class="llm-advanced-toggle-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                </span>
+            </div>
+            <div class="llm-advanced-panel" id="llmAdvancedPanel" style="display:none;">
+                <div class="llm-field">
+                    <div class="llm-field-head">
+                        <label class="llm-field-label" for="llmTemperature">回复随机性 (Temperature)</label>
+                        <span class="settings-range-val" id="llmTemperatureVal">0.7</span>
+                    </div>
+                    <div class="llm-range-wrapper">
+                        <input type="range" id="llmTemperature" class="settings-range" min="0" max="1" step="0.1" value="0.7">
+                    </div>
+                    <div class="llm-range-labels">
+                        <span>稳定</span>
+                        <span>平衡</span>
+                        <span>创意</span>
+                    </div>
+                </div>
+
+                <div class="llm-field">
+                    <label class="llm-field-label" for="llmMaxTokens">最大回复长度</label>
+                    <input type="number" id="llmMaxTokens" class="settings-input" min="0" max="32000" step="100" placeholder="0 = 使用厂商默认">
+                </div>
+
+                <div class="llm-field">
+                    <label class="llm-field-label" for="llmTimeout">请求超时（秒）</label>
+                    <input type="number" id="llmTimeout" class="settings-input" min="5" max="120" step="5" value="30">
+                </div>
+
+                <div class="llm-field">
+                    <label class="llm-field-label" for="llmSystemPrompt">系统提示词</label>
+                    <textarea id="llmSystemPrompt" class="settings-textarea" rows="3" placeholder="留空使用内置育儿顾问提示词"></textarea>
+                    <button type="button" class="btn btn-text btn-sm llm-reset-prompt" id="resetSystemPromptBtn">恢复默认</button>
+                </div>
+            </div>
+
+            <!-- 数据外发同意 -->
+            <div class="llm-consent-row" id="llmConsentRow" style="display:none;">
+                <div>
+                    <label class="llm-field-label" for="llmConsent">同意数据外发至所选厂商</label>
+                    <p class="llm-field-desc">云端厂商需要此同意才能启用；宝宝的月龄、身高等数据将发送至厂商服务器</p>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="llmConsent">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="llm-actions">
+                <button type="button" class="btn btn-primary" id="saveLLMBtn">保存配置</button>
+                <button type="button" class="btn btn-outline" id="testLLMBtn">测试连接</button>
+            </div>
+            <p class="settings-tip" id="llmTip"></p>
+
+            <!-- 连接测试结果 -->
+            <div class="llm-test-result" id="llmTestResult" style="display:none;">
+                <div class="llm-test-result-header">
+                    <span class="llm-test-result-icon" id="llmTestResultIcon"></span>
+                    <span class="llm-test-result-text" id="llmTestResultText"></span>
+                </div>
+                <div class="llm-test-result-detail" id="llmTestResultDetail"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 数据管理 -->
+    <div class="settings-card">
+        <div class="settings-card-head">
+            <span class="settings-card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+            </span>
+            <div class="settings-card-head-text">
+                <div class="settings-card-title">数据管理</div>
+                <div class="settings-card-desc">导出或导入本机备份数据（JSON 格式）</div>
+            </div>
+        </div>
+        <div class="data-actions">
+            <button type="button" class="btn btn-outline" id="exportDataBtn2">导出数据</button>
+            <button type="button" class="btn btn-outline" id="importDataBtn2">导入数据</button>
+        </div>
+        <p class="data-tip" id="dataTip"></p>
+        <input type="file" id="importFileInput2" accept=".json" style="display:none;">
+    </div>
+
+    <!-- 账号安全 -->
+    <div class="settings-card">
+        <div class="settings-card-head">
+            <span class="settings-card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </span>
+            <div class="settings-card-head-text">
+                <div class="settings-card-title">账号安全</div>
+                <div class="settings-card-desc">密码保护本机数据</div>
+            </div>
+        </div>
+        <div class="data-actions">
+            <button type="button" class="btn btn-outline btn-logout" onclick="authLogout()">退出登录</button>
+        </div>
+        <p class="settings-card-note">忘记密码可在设备上删除 secret_key 与密码哈希后重新设置。</p>
+    </div>
+
+    <!-- 推送通知设置 -->
+    <div class="settings-card">
+        <div class="settings-card-head">
+            <span class="settings-card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            </span>
+            <div class="settings-card-head-text">
+                <div class="settings-card-title">推送通知</div>
+                <div class="settings-card-desc">配置后可在手机上接收喂奶、换尿布等提醒</div>
+            </div>
+        </div>
+
+        <div class="settings-row">
+            <label class="settings-row-label" for="notifyEnabled">启用推送</label>
+            <label class="toggle-switch">
+                <input type="checkbox" id="notifyEnabled">
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+
+        <div class="settings-group-title">推送渠道</div>
+        <div class="settings-field">
+            <label class="settings-field-label" for="notifyWechat">企业微信 Webhook</label>
+            <input type="text" id="notifyWechat" class="settings-input" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx">
+        </div>
+        <div class="settings-field">
+            <label class="settings-field-label" for="notifyDingtalk">钉钉 Webhook</label>
+            <input type="text" id="notifyDingtalk" class="settings-input" placeholder="https://oapi.dingtalk.com/robot/send?access_token=xxx">
+        </div>
+        <div class="settings-field">
+            <label class="settings-field-label" for="notifyFeishu">飞书 Webhook</label>
+            <input type="text" id="notifyFeishu" class="settings-input" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/xxx">
+        </div>
+        <div class="settings-field">
+            <label class="settings-field-label" for="notifyBark">Bark (iOS)</label>
+            <input type="text" id="notifyBark" class="settings-input" placeholder="https://api.day.app/your-key">
+        </div>
+        <div class="settings-field">
+            <label class="settings-field-label" for="notifyPushplus">PushPlus Token</label>
+            <input type="text" id="notifyPushplus" class="settings-input" placeholder="你的 PushPlus Token">
+        </div>
+
+        <div class="settings-group-title">勿扰模式</div>
+        <div class="settings-row">
+            <label class="settings-row-label" for="notifyDndEnabled">启用勿扰</label>
+            <label class="toggle-switch">
+                <input type="checkbox" id="notifyDndEnabled">
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+        <div class="settings-field">
+            <label class="settings-field-label" for="notifyDndStart">勿扰开始时间</label>
+            <input type="time" id="notifyDndStart" class="settings-input" value="22:00">
+        </div>
+        <div class="settings-field">
+            <label class="settings-field-label" for="notifyDndEnd">勿扰结束时间</label>
+            <input type="time" id="notifyDndEnd" class="settings-input" value="07:00">
+        </div>
+
+        <div class="settings-group-title">定时提醒</div>
+        <div class="settings-row">
+            <label class="settings-row-label" for="notifyFeedingEnabled">喂奶提醒</label>
+            <label class="toggle-switch">
+                <input type="checkbox" id="notifyFeedingEnabled">
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+        <div class="settings-field">
+            <label class="settings-field-label" for="notifyFeedingInterval">喂奶间隔（小时）</label>
+            <input type="number" id="notifyFeedingInterval" class="settings-input" value="3" min="1" max="12" step="0.5">
+        </div>
+        <div class="settings-row">
+            <label class="settings-row-label" for="notifyDiaperEnabled">换尿布提醒</label>
+            <label class="toggle-switch">
+                <input type="checkbox" id="notifyDiaperEnabled">
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+        <div class="settings-field">
+            <label class="settings-field-label" for="notifyDiaperInterval">换尿布间隔（小时）</label>
+            <input type="number" id="notifyDiaperInterval" class="settings-input" value="2" min="1" max="8" step="0.5">
+        </div>
+        <div class="settings-row">
+            <label class="settings-row-label" for="notifyMedEnabled">用药提醒</label>
+            <label class="toggle-switch">
+                <input type="checkbox" id="notifyMedEnabled">
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+        <div class="settings-row">
+            <label class="settings-row-label" for="notifyVaccineEnabled">疫苗提醒</label>
+            <label class="toggle-switch">
+                <input type="checkbox" id="notifyVaccineEnabled">
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+
+        <div class="settings-actions">
+            <button type="button" class="btn btn-primary" id="saveNotifyBtn">保存推送设置</button>
+            <button type="button" class="btn btn-outline" id="testNotifyBtn">发送测试</button>
+        </div>
+        <p class="settings-tip" id="notifyTip"></p>
+    </div>
+</section>
+
+<!-- 发育飞跃期页面 -->
+<section class="page" id="page-leap">
+    <div class="leap-header">
+        <h3 class="section-title">发育飞跃期</h3>
+        <button class="btn btn-primary btn-sm" id="addLeapBtn">＋ 记录飞跃</button>
+    </div>
+    <div class="leap-info-card">
+        <p>基于Wonder Weeks理论，婴儿在特定周龄会经历10次发育飞跃期。每个飞跃期宝宝可能变得烦躁、睡眠倒退，但之后会获得新能力。</p>
+        <p style="font-size: 12px; color: var(--text-light); margin-top: 8px;">Wonder Weeks 是其各自所有者的商标，仅用于描述发育理论。</p>
+    </div>
+    <div class="leap-timeline" id="leapTimeline">
+        <p class="empty-tip">加载中...</p>
+    </div>
+</section>
+
+<!-- 囟门追踪页面 -->
+<section class="page" id="page-fontanelle">
+    <div class="fontanelle-header">
+        <h3 class="section-title">囟门追踪</h3>
+        <button class="btn btn-primary btn-sm" id="addFontanelleBtn">＋ 记录检查</button>
+    </div>
+    <div class="fontanelle-info-card">
+        <div class="fontanelle-info-title">囟门知识</div>
+        <p>前囟通常在12-18个月闭合，后囟在2-3个月闭合。定期监测囟门大小和闭合情况有助于评估颅骨发育。</p>
+        <div class="fontanelle-milestones">
+            <div class="fontanelle-milestone"><span class="milestone-dot posterior"></span>后囟 2-3个月闭合</div>
+            <div class="fontanelle-milestone"><span class="milestone-dot anterior"></span>前囟 12-18个月闭合</div>
+        </div>
+    </div>
+    <div class="fontanelle-chart-container">
+        <h4 class="fontanelle-chart-title">前囟大小变化趋势</h4>
+        <canvas id="fontanelleChart" width="700" height="200"></canvas>
+    </div>
+    <div class="fontanelle-list" id="fontanelleList">
+        <p class="empty-tip">暂无囟门记录</p>
+    </div>
+</section>
+
+<!-- 成长对比照片页面 -->
+<section class="page" id="page-growthphotos">
+    <div class="growthphotos-header">
+        <h3 class="section-title">成长对比</h3>
+        <button class="btn btn-primary btn-sm" id="addGrowthPhotoBtn">＋ 添加照片</button>
+    </div>
+    <div class="gp-compare-bar" id="gpCompareBar">
+        <span class="gp-compare-hint" id="gpCompareHint">点击照片，选两张进行对比</span>
+        <button class="btn btn-outline btn-sm" id="gpClearCompare">清除选择</button>
+    </div>
+    <div class="gp-compare-panel" id="gpComparePanel"></div>
+    <div class="growthphotos-timeline" id="growthphotosTimeline">
+        <p class="empty-tip">暂无对比照片</p>
+    </div>
+</section>
+
+<!-- 安抚音效页面 -->
+<section class="page" id="page-sounds">
+    <div class="sounds-header">
+        <h3 class="section-title">安抚音效</h3>
+        <div class="sounds-timer">
+            <label>定时关闭：</label>
+            <select id="soundsTimer">
+                <option value="0">不定时</option>
+                <option value="15">15分钟</option>
+                <option value="30" selected>30分钟</option>
+                <option value="60">60分钟</option>
+                <option value="120">120分钟</option>
+            </select>
+        </div>
+    </div>
+    <div class="sounds-grid">
+        <div class="sound-card" data-sound="white-noise">
+            <div class="sound-icon"></div>
+            <div class="sound-name">白噪音</div>
+            <div class="sound-desc">稳定频率，模拟子宫环境</div>
+            <div class="sound-status">点击播放</div>
+        </div>
+        <div class="sound-card" data-sound="pink-noise">
+            <div class="sound-icon"></div>
+            <div class="sound-name">粉红噪音</div>
+            <div class="sound-desc">柔和低频，助眠效果佳</div>
+            <div class="sound-status">点击播放</div>
+        </div>
+        <div class="sound-card" data-sound="brown-noise">
+            <div class="sound-icon"></div>
+            <div class="sound-name">棕噪音</div>
+            <div class="sound-desc">深沉轰鸣，如瀑布远处</div>
+            <div class="sound-status">点击播放</div>
+        </div>
+        <div class="sound-card" data-sound="heartbeat">
+            <div class="sound-icon"></div>
+            <div class="sound-name">心跳声</div>
+            <div class="sound-desc">模拟母亲心跳节奏</div>
+            <div class="sound-status">点击播放</div>
+        </div>
+        <div class="sound-card" data-sound="ocean">
+            <div class="sound-icon"></div>
+            <div class="sound-name">海浪声</div>
+            <div class="sound-desc">潮汐起伏，舒缓心情</div>
+            <div class="sound-status">点击播放</div>
+        </div>
+        <div class="sound-card" data-sound="rain">
+            <div class="sound-icon"></div>
+            <div class="sound-name">雨声</div>
+            <div class="sound-desc">绵绵细雨，安静放松</div>
+            <div class="sound-status">点击播放</div>
+        </div>
+        <div class="sound-card" data-sound="shushing">
+            <div class="sound-icon"></div>
+            <div class="sound-name">嘘声</div>
+            <div class="sound-desc">模拟安抚嘘声</div>
+            <div class="sound-status">点击播放</div>
+        </div>
+        <div class="sound-card" data-sound="fan">
+            <div class="sound-icon"></div>
+            <div class="sound-name">风扇声</div>
+            <div class="sound-desc">稳定机械声，掩盖噪音</div>
+            <div class="sound-status">点击播放</div>
+        </div>
+        <div class="sound-card" data-sound="lullaby">
+            <div class="sound-icon"></div>
+            <div class="sound-name">摇篮曲</div>
+            <div class="sound-desc">轻柔旋律，经典催眠</div>
+            <div class="sound-status">点击播放</div>
+        </div>
+    </div>
+    <div class="sounds-player" id="soundsPlayer" style="display:none;">
+        <div class="player-info">
+            <span class="player-icon" id="playerIcon"></span>
+            <span class="player-name" id="playerName">白噪音</span>
+        </div>
+        <div class="player-controls">
+            <button class="player-btn" id="playerStop">⏹ 停止</button>
+            <button class="player-btn" id="playerPause">⏸ 暂停</button>
+        </div>
+        <div class="player-volume">
+            <span></span>
+            <input type="range" id="playerVolume" min="0" max="100" value="50">
+        </div>
+        <div class="player-timer" id="playerTimer">剩余: --:--</div>
+    </div>
+</section>
+
+<!-- BMI追踪页面 -->
+<section class="page" id="page-bmi">
+    <div class="bmi-header">
+        <h3 class="section-title">BMI 追踪</h3>
+        <button class="btn btn-primary btn-sm" id="addBmiBtn">＋ 记录</button>
+    </div>
+    <div class="bmi-summary" id="bmiSummary">
+        <div class="bmi-current">
+            <span class="bmi-value" id="bmiCurrentValue">--</span>
+            <span class="bmi-label">当前 BMI</span>
+        </div>
+        <div class="bmi-percentile">
+            <span class="bmi-percent-value" id="bmiPercentile">--</span>
+            <span class="bmi-percent-label">百分位</span>
+        </div>
+        <div class="bmi-status">
+            <span class="bmi-status-badge" id="bmiStatusBadge">--</span>
+            <span class="bmi-status-label">评估</span>
+        </div>
+    </div>
+    <div class="bmi-chart-container">
+        <canvas id="bmiChart" width="350" height="200"></canvas>
+    </div>
+    <div class="bmi-history">
+        <h4 class="bmi-section-subtitle">历史记录</h4>
+        <div id="bmiHistoryList">
+            <p class="empty-tip">暂无BMI记录</p>
+        </div>
+    </div>
+</section>
+
+<!-- 辅食食谱页面 -->
+<section class="page" id="page-recipes">
+    <div class="recipes-header">
+        <h3 class="section-title">辅食食谱</h3>
+        <div class="recipes-header-actions">
+            <button class="btn btn-secondary btn-sm" id="recommendRecipeBtn">智能推荐</button>
+            <button class="btn btn-primary btn-sm" id="addRecipeBtn">＋ 新增食谱</button>
+        </div>
+    </div>
+    <div class="recipes-filters">
+        <select id="recipeAgeFilter" class="recipe-filter-select">
+            <option value="">全部月龄</option>
+            <option value="6月+">6月+</option>
+            <option value="7月+">7月+</option>
+            <option value="8月+">8月+</option>
+            <option value="9月+">9月+</option>
+            <option value="10月+">10月+</option>
+            <option value="12月+">12月+</option>
+        </select>
+        <select id="recipeCategoryFilter" class="recipe-filter-select">
+            <option value="">全部分类</option>
+            <option value="谷物">谷物</option>
+            <option value="蔬菜">蔬菜</option>
+            <option value="水果">水果</option>
+            <option value="蛋白质">蛋白质</option>
+            <option value="肉类">肉类</option>
+            <option value="混合">混合</option>
+            <option value="甜品">甜品</option>
+            <option value="汤羹">汤羹</option>
+        </select>
+        <label class="recipe-fav-filter">
+            <input type="checkbox" id="recipeFavFilter"> 只看收藏
+        </label>
+    </div>
+    <div class="recipes-search">
+        <input type="text" id="recipeSearchInput" placeholder=" 搜索食谱或食材...">
+    </div>
+    <div class="recipe-list" id="recipeList">
+        <p class="empty-tip">加载中...</p>
+    </div>
+</section>
+
+<!-- 食谱新增/编辑弹窗 -->
+<div class="modal-overlay" id="recipeFormModal">
+    <div class="modal modal-large">
+        <div class="modal-header">
+            <h2 id="recipeFormTitle">新增食谱</h2>
+            <button class="modal-close" id="closeRecipeFormModal">X</button>
+        </div>
+        <div class="modal-body">
+            <form id="recipeForm" class="recipe-form">
+                <input type="hidden" id="recipeFormId">
+                <div class="form-row">
+                    <label>食谱名称 <span class="required">*</span></label>
+                    <input type="text" id="recipeFormTitleInput" placeholder="如：南瓜泥" required>
+                </div>
+                <div class="form-row">
+                    <label>图标文字 <span class="tip">(如：南瓜、鸡蛋，留空显示分类图标)</span></label>
+                    <input type="text" id="recipeFormIcon" placeholder="可选">
+                </div>
+                <div class="form-row form-row-2">
+                    <div>
+                        <label>适用月龄</label>
+                        <select id="recipeFormAge">
+                            <option value="6月+">6月+</option>
+                            <option value="7月+">7月+</option>
+                            <option value="8月+">8月+</option>
+                            <option value="9月+">9月+</option>
+                            <option value="10月+">10月+</option>
+                            <option value="12月+">12月+</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>分类</label>
+                        <select id="recipeFormCategory">
+                            <option value="谷物">谷物</option>
+                            <option value="蔬菜">蔬菜</option>
+                            <option value="水果">水果</option>
+                            <option value="蛋白质">蛋白质</option>
+                            <option value="肉类">肉类</option>
+                            <option value="混合">混合</option>
+                            <option value="甜品">甜品</option>
+                            <option value="汤羹">汤羹</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row form-row-2">
+                    <div>
+                        <label>准备时间(分钟)</label>
+                        <input type="number" id="recipeFormPrepTime" placeholder="5" min="0">
+                    </div>
+                    <div>
+                        <label>烹饪时间(分钟)</label>
+                        <input type="number" id="recipeFormCookTime" placeholder="15" min="0">
+                    </div>
+                </div>
+                <div class="form-row form-row-2">
+                    <div>
+                        <label>份量(人份)</label>
+                        <input type="text" id="recipeFormServings" placeholder="1">
+                    </div>
+                    <div>
+                        <label>难度</label>
+                        <select id="recipeFormDifficulty">
+                            <option value="简单">简单</option>
+                            <option value="中等">中等</option>
+                            <option value="困难">困难</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <label>食材 <span class="tip">(用顿号「、」分隔)</span></label>
+                    <textarea id="recipeFormIngredients" rows="2" placeholder="如：南瓜、水"></textarea>
+                </div>
+                <div class="form-row">
+                    <label>步骤 <span class="tip">(每行一步)</span></label>
+                    <textarea id="recipeFormInstructions" rows="4" placeholder="1. 南瓜去皮去籽切块&#10;2. 蒸15-20分钟至软烂&#10;3. 用勺子压成泥"></textarea>
+                </div>
+                <div class="form-row">
+                    <label>过敏原 <span class="tip">(用顿号分隔，无则留空)</span></label>
+                    <input type="text" id="recipeFormAllergens" placeholder="如：鸡蛋、牛奶">
+                </div>
+                <div class="form-row">
+                    <label>营养价值</label>
+                    <input type="text" id="recipeFormNutrition" placeholder="如：富含β-胡萝卜素和膳食纤维">
+                </div>
+                <div class="form-row">
+                    <label>小贴士</label>
+                    <textarea id="recipeFormTips" rows="2" placeholder="制作或喂食的小建议"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="cancelRecipeForm">取消</button>
+                    <button type="submit" class="btn btn-primary" id="saveRecipeForm">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 活动推荐页面 -->
+<section class="page" id="page-activities">
+    <div class="activities-header">
+        <h3 class="section-title">活动游戏推荐</h3>
+        <div class="activities-header-actions">
+            <button class="btn btn-sm btn-secondary" id="activityGuideBtn">📖 指导</button>
+            <button class="btn btn-sm btn-secondary" id="activityStatsBtn">📊 统计</button>
+            <button class="btn btn-sm btn-secondary" id="activityFavoritesBtn">⭐ 收藏</button>
+        </div>
+    </div>
+    <div class="activities-age-badge" id="activitiesAgeBadge"></div>
+
+    <!-- 智能推荐区域 -->
+    <div class="activity-recommend-section" id="activityRecommendSection">
+        <div class="activity-section-title">🎯 为你推荐</div>
+        <div class="activity-recommend-list" id="activityRecommendList">
+            <p class="empty-tip">加载中...</p>
+        </div>
+    </div>
+
+    <!-- 分类筛选 -->
+    <div class="activity-categories-extended">
+        <button class="activity-cat-ext-btn active" data-cat="all">全部</button>
+        <button class="activity-cat-ext-btn" data-cat="physical">🏃 体能</button>
+        <button class="activity-cat-ext-btn" data-cat="motor">✋ 精细动作</button>
+        <button class="activity-cat-ext-btn" data-cat="cognitive">🧠 认知</button>
+        <button class="activity-cat-ext-btn" data-cat="social">👥 社交</button>
+        <button class="activity-cat-ext-btn" data-cat="language">💬 语言</button>
+        <button class="activity-cat-ext-btn" data-cat="art">🎨 艺术</button>
+        <button class="activity-cat-ext-btn" data-cat="sensory">👂 感官</button>
+    </div>
+    <div class="activity-list" id="activityList">
+        <p class="empty-tip">加载中...</p>
+    </div>
+</section>
+
+<!-- AI 助手页面 -->
+<section class="page" id="page-ai">
+    <div class="ai-header">
+        <h3 class="section-title"> AI 智能助手</h3>
+        <span class="ai-badge" id="aiLLMBadge">规则引擎</span>
+    </div>
+    <div class="ai-container">
+        <!-- 侧边栏：常见问题（点击直接回复）与数据查询 -->
+        <div class="ai-sidebar">
+            <div class="ai-quick-title">常见问题</div>
+            <div class="ai-faq-cat">生长评估</div>
+            <button class="ai-quick-btn" data-question="宝宝体重正常吗？">体重评估</button>
+            <button class="ai-quick-btn" data-question="宝宝身高发育如何？">身高分析</button>
+            <div class="ai-faq-cat">喂养睡眠</div>
+            <button class="ai-quick-btn" data-question="喂养建议">喂养指导</button>
+            <button class="ai-quick-btn" data-question="睡眠问题怎么办？">睡眠建议</button>
+            <button class="ai-quick-btn" data-question="辅食添加指南">辅食添加</button>
+            <div class="ai-faq-cat">健康护理</div>
+            <button class="ai-quick-btn" data-question="宝宝发烧了怎么办？">发烧护理</button>
+            <button class="ai-quick-btn" data-question="宝宝吐奶怎么办？">吐奶拍嗝</button>
+            <button class="ai-quick-btn" data-question="维生素D要补到什么时候？">维D补充</button>
+            <button class="ai-quick-btn" data-question="疫苗接种提醒">疫苗提醒</button>
+            <button class="ai-quick-btn" data-question="发育里程碑">发育评估</button>
+            <button class="ai-quick-btn" data-question="过敏注意事项">过敏防护</button>
+            <div class="ai-faq-cat">点击查询宝宝数据</div>
+            <button class="ai-quick-btn ai-quick-query" data-question="查询最近的喂养记录">最近喂养</button>
+            <button class="ai-quick-btn ai-quick-query" data-question="查询最近7天的睡眠情况">睡眠统计</button>
+            <button class="ai-quick-btn ai-quick-query" data-question="查询最新生长数据">生长数据</button>
+            <button class="ai-quick-btn ai-quick-query" data-question="查询疫苗接种记录">疫苗记录</button>
+            <button class="ai-quick-btn ai-quick-query" data-question="宝宝现在几个月大了？">月龄查询</button>
+            <button class="ai-quick-btn ai-analyze-btn" id="aiAnalyzeBtn">一键分析</button>
+<button class="ai-quick-btn ai-clear-btn" id="aiClearHistoryBtn">清除历史</button>
+        </div>
+        <!-- 聊天区域 -->
+        <div class="ai-chat-area">
+            <div class="ai-chat-toolbar">
+                <label class="ai-model-label" for="aiModelSelect">回答模型</label>
+                <select id="aiModelSelect" class="ai-model-select" title="选择本次对话使用的回答模型"></select>
+            </div>
+            <div class="ai-chat-messages" id="aiChatMessages">
+                <div class="ai-message ai-message-bot">
+                    <div class="ai-message-avatar"></div>
+                    <div class="ai-message-content">
+                        <p>你好！我是育儿宝 AI 助手。</p>
+                        <p>我可以帮你分析宝宝的生长发育数据、提供喂养和睡眠建议、指导辅食添加等。</p>
+                        <p>请直接输入你的问题，或者点击左侧快捷问题。</p>
+                    </div>
+                </div>
+            </div>
+            <div class="ai-faq-chips" id="aiFaqChips">
+                <button class="ai-faq-chip" data-question="查询最近的喂养记录">最近喂养</button>
+                <button class="ai-faq-chip" data-question="宝宝体重正常吗？">体重评估</button>
+                <button class="ai-faq-chip" data-question="喂养建议">喂养指导</button>
+                <button class="ai-faq-chip" data-question="睡眠问题怎么办？">睡眠建议</button>
+                <button class="ai-faq-chip" data-question="辅食添加指南">辅食添加</button>
+                <button class="ai-faq-chip" data-question="宝宝发烧了怎么办？">发烧护理</button>
+                <button class="ai-faq-chip" data-question="宝宝哭闹怎么办？">哭闹安抚</button>
+                <button class="ai-faq-chip" data-question="维生素D要补到什么时候？">维D补充</button>
+            </div>
+            <div class="ai-chat-input-area">
+                <input type="text" id="aiChatInput" placeholder="输入你的问题，如：6个月宝宝该添加什么辅食？" />
+                <button class="btn btn-primary" id="aiSendBtn">发送</button>
+            </div>
+        </div>
+    </div>
+    <!-- 分析结果面板 -->
+    <div class="ai-analysis-panel" id="aiAnalysisPanel" style="display:none;">
+        <div class="ai-analysis-header">
+            <h3>智能分析报告</h3>
+            <button class="ai-analysis-close" id="aiAnalysisClose">X</button>
+        </div>
+        <div class="ai-analysis-content" id="aiAnalysisContent"></div>
+    </div>
+</section>
+
+<!-- 趴睡训练页面 -->
+<section class="page" id="page-tummytime">
+    <div class="tummytime-header">
+        <h3 class="section-title">趴睡训练</h3>
+        <div class="tummytime-header-actions">
+            <button class="btn btn-outline btn-sm" id="addTummyManualBtn">＋ 手动记录</button>
+            <button class="btn btn-primary btn-sm" id="startTummyBtn">▶ 开始训练</button>
+        </div>
+    </div>
+    <div class="tummytime-info-card">
+        <div class="tummytime-info-title">趴睡训练好处</div>
+        <p>趴睡训练（Tummy Time）有助于增强宝宝颈部、背部和肩部肌肉，促进大运动发育，预防扁头综合征。建议从出生后开始，每天多次短时间练习。</p>
+        <div class="tummytime-tips">
+            <div class="tummytime-tip"><span class="tip-icon">✓</span>在宝宝清醒且不太饿时练习</div>
+            <div class="tummytime-tip"><span class="tip-icon">✓</span>从每天2-3次，每次1-2分钟开始</div>
+            <div class="tummytime-tip"><span class="tip-icon">✓</span>逐渐增加时间和次数</div>
+            <div class="tummytime-tip"><span class="tip-icon">✓</span>全程看护，宝宝烦躁时停止</div>
+        </div>
+    </div>
+    <!-- 训练目标卡片 -->
+    <div class="tummytime-goal-card" id="tummytimeGoalCard">
+        <div class="tummytime-goal-info">
+            <div class="tummytime-goal-label">今日目标</div>
+            <div class="tummytime-goal-value" id="tummytimeGoalDisplay">10 分钟</div>
+        </div>
+        <div class="tummytime-goal-progress">
+            <div class="tummytime-goal-bar">
+                <div class="tummytime-goal-fill" id="tummytimeGoalFill" style="width: 0%"></div>
+            </div>
+            <div class="tummytime-goal-text" id="tummytimeGoalText">已完成 0/10 分钟</div>
+        </div>
+        <button class="btn btn-outline btn-xs" id="setTummyGoalBtn">设置目标</button>
+    </div>
+    <!-- 统计卡片 -->
+    <div class="tummytime-stats" id="tummytimeStats">
+        <div class="tummytime-stat-card">
+            <div class="tummytime-stat-value" id="statTodayMin">0</div>
+            <div class="tummytime-stat-label">今日(分)</div>
+        </div>
+        <div class="tummytime-stat-card">
+            <div class="tummytime-stat-value" id="statWeekMin">0</div>
+            <div class="tummytime-stat-label">本周(分)</div>
+        </div>
+        <div class="tummytime-stat-card">
+            <div class="tummytime-stat-value" id="statMonthMin">0</div>
+            <div class="tummytime-stat-label">本月(分)</div>
+        </div>
+        <div class="tummytime-stat-card">
+            <div class="tummytime-stat-value" id="statStreakDay">0</div>
+            <div class="tummytime-stat-label">连续(天)</div>
+        </div>
+    </div>
+    <!-- 进度图表 -->
+    <div class="tummytime-chart-card">
+        <h4 class="section-subtitle">7天训练趋势</h4>
+        <canvas id="tummytimeChart" width="700" height="200"></canvas>
+    </div>
+    <!-- 计时器 -->
+    <div class="tummytime-timer-card">
+        <h4 class="section-subtitle">训练计时器</h4>
+        <div class="tummytime-timer" id="tummyTimer">00:00</div>
+        <div class="tummytime-timer-controls">
+            <button class="btn btn-primary" id="tummyPlayBtn">▶ 开始</button>
+            <button class="btn btn-outline" id="tummyPauseBtn">⏸ 暂停</button>
+            <button class="btn btn-outline" id="tummyStopBtn">⏹ 保存</button>
+        </div>
+    </div>
+    <!-- 里程碑成就 -->
+    <div class="tummytime-milestones" id="tummytimeMilestones">
+        <h4 class="section-subtitle">里程碑成就</h4>
+        <div class="tummytime-milestone-grid" id="tummytimeMilestoneGrid"></div>
+    </div>
+    <!-- 训练记录 -->
+    <div class="tummytime-records">
+        <h4 class="section-subtitle">训练记录</h4>
+        <div class="tummytime-list" id="tummytimeList">
+            <p class="empty-tip">暂无趴睡训练记录</p>
+        </div>
+    </div>
+</section>
+
+<!-- 辅食过敏测试页面 -->
+<section class="page" id="page-allergy-detail">
+    <div class="allergy-header">
+        <h3 class="section-title">辅食过敏测试</h3>
+        <button class="btn btn-primary btn-sm" id="addAllergyBtn2">＋ 添加测试</button>
+    </div>
+    <div class="allergy-info-card">
+        <div class="allergy-info-title">过敏测试指南</div>
+        <p>添加新辅食时，建议每次只添加一种新食物，连续观察3-5天。如出现不良反应，立即停止并记录。常见过敏原：鸡蛋、牛奶、花生、小麦、大豆、鱼类、虾、坚果。</p>
+        <div class="allergy-scale">
+            <div class="allergy-scale-item">
+                <span class="severity-dot none"></span>
+                <span>无症状</span>
+            </div>
+            <div class="allergy-scale-item">
+                <span class="severity-dot mild"></span>
+                <span>轻微（轻微皮疹、少量红疹）</span>
+            </div>
+            <div class="allergy-scale-item">
+                <span class="severity-dot moderate"></span>
+                <span>中度（明显皮疹、呕吐、腹泻）</span>
+            </div>
+            <div class="allergy-scale-item">
+                <span class="severity-dot severe"></span>
+                <span>严重（呼吸困难、肿胀、休克）</span>
+            </div>
+        </div>
+    </div>
+    <div class="allergy-list" id="allergyList2">
+        <p class="empty-tip">暂无过敏测试记录</p>
+    </div>
+</section>
+
+<!-- 辅食记录页面 -->
+<section class="page" id="page-solidfood">
+    <div class="solidfood-header">
+        <h3 class="section-title">辅食记录</h3>
+        <button class="btn btn-primary btn-sm" id="addSolidFoodBtn">＋ 添加辅食</button>
+    </div>
+    <div class="solidfood-stats" id="solidfoodStats">
+        <p class="empty-tip">加载中...</p>
+    </div>
+    <div class="solidfood-categories">
+        <button class="sf-cat-btn active" data-cat="all">全部</button>
+        <button class="sf-cat-btn" data-cat="vegetable">蔬菜</button>
+        <button class="sf-cat-btn" data-cat="fruit">水果</button>
+        <button class="sf-cat-btn" data-cat="grain">谷物</button>
+        <button class="sf-cat-btn" data-cat="meat">肉类</button>
+        <button class="sf-cat-btn" data-cat="dairy">奶制品</button>
+        <button class="sf-cat-btn" data-cat="other">其他</button>
+    </div>
+    <div class="solidfood-list" id="solidfoodList">
+        <p class="empty-tip">暂无辅食记录<br><small>记录宝宝尝试的每一种新食物，方便排查过敏原</small></p>
+    </div>
+</section>
+
+<!-- 纸尿裤价格对比页面 -->
+<section class="page" id="page-diaper-price">
+    <div class="record-page-header">
+        <h3 class="section-title">比价记账</h3>
+        <button class="btn btn-primary btn-sm" id="addShoppingBtn">＋ 添加</button>
+    </div>
+
+    <div class="shopping-tabs">
+        <button class="shopping-tab active" data-shopping-tab="compare">🛒 用品比价</button>
+        <button class="shopping-tab" data-shopping-tab="ledger">💰 记账本</button>
+    </div>
+
+    <!-- 比价面板 -->
+    <div id="shoppingComparePane">
+        <div class="diaper-price-info-card">
+            <div class="diaper-price-info-title">比价小贴士</div>
+            <p>单价 = 价格 ÷ 包装量。同一品类同规格才能直接对比，划走最划算的会置顶标出。支持纸尿裤、奶粉、湿巾、辅食等多种育儿用品。</p>
+        </div>
+        <div class="shopping-cat-chips" id="shoppingCatChips">
+            <button class="cat-chip active" data-cat="">全部</button>
+            <button class="cat-chip" data-cat="diaper">纸尿裤</button>
+            <button class="cat-chip" data-cat="formula">奶粉</button>
+            <button class="cat-chip" data-cat="wipes">湿巾</button>
+            <button class="cat-chip" data-cat="food">辅食</button>
+            <button class="cat-chip" data-cat="care">洗护</button>
+            <button class="cat-chip" data-cat="toy">玩具</button>
+            <button class="cat-chip" data-cat="other">其他</button>
+        </div>
+        <div class="diaper-price-filters">
+            <input type="text" id="shoppingSpecFilter" class="diaper-filter-input" placeholder="规格筛选: L / 3段 / 80片...">
+            <input type="text" id="shoppingBrandFilter" class="diaper-filter-input" placeholder="搜索品牌/系列...">
+        </div>
+        <div class="diaper-price-list" id="shoppingPriceList">
+            <p class="empty-tip">暂无价格记录，点右上角"＋ 添加"开始比价</p>
+        </div>
+    </div>
+
+    <!-- 记账面板 -->
+    <div id="shoppingLedgerPane" style="display:none;">
+        <div class="ledger-month-nav">
+            <button class="ledger-month-btn" id="ledgerPrevMonth" type="button">‹</button>
+            <span class="ledger-month-label" id="ledgerMonthLabel">----</span>
+            <button class="ledger-month-btn" id="ledgerNextMonth" type="button">›</button>
+            <button class="btn btn-primary btn-sm ledger-add-btn" id="addExpenseBtn">＋ 记一笔</button>
+        </div>
+        <div class="ledger-summary-card">
+            <div class="ledger-total">
+                <span class="ledger-total-label">本月支出</span>
+                <span class="ledger-total-value" id="ledgerMonthTotal">¥0.00</span>
+            </div>
+            <div class="ledger-cats" id="ledgerCatBars"></div>
+        </div>
+        <div class="ledger-trend-card">
+            <div class="ledger-trend-title">近 6 个月趋势</div>
+            <div class="ledger-trend-bars" id="ledgerTrendBars"></div>
+        </div>
+        <div class="ledger-list" id="ledgerList">
+            <p class="empty-tip">本月暂无支出记录</p>
+        </div>
+    </div>
+</section>
+
+<!-- 用药提醒页面 -->
+<section class="page" id="page-med-reminder">
+    <div class="record-page-header">
+        <h3 class="section-title">用药提醒</h3>
+        <button class="btn btn-primary btn-sm" id="addMedReminderBtn">＋ 添加提醒</button>
+    </div>
+    <div class="med-reminder-info-card">
+        <div class="med-reminder-info-title">⏰ 用药提醒说明</div>
+        <p>记录宝宝正在服用的药物，设置下次用药时间。系统会在首页显示即将到期的用药提醒。请咨询医生确认用药方案。</p>
+    </div>
+    <div class="med-reminder-stats" id="medReminderStats"></div>
+    <div class="med-reminder-active">
+        <h4 class="section-subtitle">活跃提醒</h4>
+        <div id="activeRemindersList">
+            <p class="empty-tip">暂无活跃用药提醒<br><small>添加提醒后系统会按时推送通知</small></p>
+        </div>
+    </div>
+    <div class="med-reminder-all">
+        <h4 class="section-subtitle">全部提醒</h4>
+        <div id="allRemindersList"></div>
+    </div>
+</section>
+
+</main>
+
+<!-- 底部导航 -->
+        <!-- 底部导航：首页/记录/成长/知识/系统 5 个 tab -->
+        <nav class="app-nav">
+            <div class="nav-groups">
+                <button class="nav-tab active" data-hub="home" type="button"><span class="nav-group-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-home"/></svg></span><span class="nav-group-label">首页</span></button>
+                <button class="nav-tab" data-hub="record" type="button"><span class="nav-group-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-clipboard"/></svg></span><span class="nav-group-label">记录</span></button>
+                <button class="nav-tab" data-hub="growth" type="button"><span class="nav-group-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chart"/></svg></span><span class="nav-group-label">成长</span></button>
+                <button class="nav-tab" data-hub="knowledge" type="button"><span class="nav-group-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-book-open"/></svg></span><span class="nav-group-label">知识</span></button>
+                <button class="nav-tab" data-hub="system" type="button"><span class="nav-group-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-gear"/></svg></span><span class="nav-group-label">系统</span></button>
+            </div>
+        </nav>
+    </div>
+
+    <!-- 添加宝宝弹窗 -->
+    <div class="modal-overlay" id="addBabyModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="babyModalTitle">添加宝宝</h2>
+                <button class="modal-close" id="closeBabyModal">X</button>
+            </div>
+            <div class="modal-body">
+                <form id="babyForm">
+                    <div class="form-group">
+                        <label for="babyName">宝宝昵称</label>
+                        <input type="text" id="babyName" placeholder="请输入宝宝昵称" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="babyBirthday">生日</label>
+                        <input type="date" id="babyBirthday" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="babyDueDate">预产期（选填）</label>
+                        <input type="date" id="babyDueDate">
+                        <p style="margin:4px 0 0;font-size:12px;color:var(--text-light);">早产宝宝填写后，生长曲线将按纠正月龄评估</p>
+                    </div>
+                    <div class="form-group">
+                        <label for="babyGender">性别</label>
+                        <select id="babyGender">
+                            <option value="boy">男</option>
+                            <option value="girl">女</option>
+                            <option value="other">其他</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-cancel" id="cancelBabyForm">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 快捷记录弹窗 -->
+    <div class="modal-overlay" id="recordModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="recordModalTitle">添加记录</h2>
+                <button class="modal-close" id="closeRecordModal">X</button>
+            </div>
+            <div class="modal-body" id="recordModalBody">
+                <!-- 动态内容 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 吸奶记录弹窗 -->
+    <div class="modal-overlay" id="pumpingModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>添加吸奶记录</h2>
+                <button class="modal-close" id="closePumpingModal">X</button>
+            </div>
+            <div class="modal-body">
+                <form id="pumpingForm">
+                    <div class="form-group">
+                        <label>吸奶时间</label>
+                        <input type="datetime-local" id="pumpTime" required>
+                    </div>
+                    <div class="form-group">
+                        <label>吸奶模式</label>
+                        <select id="pumpMode">
+                            <option value="left">仅左侧</option>
+                            <option value="right">仅右侧</option>
+                            <option value="separate">左右分开计时</option>
+                            <option value="simultaneous">双侧同时计时</option>
+                        </select>
+                        <div class="timer-hint" id="pumpModeHint">只吸左侧，右侧不计时</div>
+                    </div>
+                    <!-- 计时器区域 -->
+                    <div class="form-group side-timer-group">
+                        <label>计时器</label>
+                        <!-- 单侧计时器（左/右模式） -->
+                        <div class="single-timer-container" id="singleTimerContainer" style="display:none">
+                            <div class="single-timer-display" id="singleTimerDisplay">00:00</div>
+                            <div class="single-timer-buttons">
+                                <button type="button" class="side-timer-btn start" id="singleTimerStart">开始</button>
+                                <button type="button" class="side-timer-btn stop" id="singleTimerStop" style="display:none">停止</button>
+                                <button type="button" class="side-timer-btn reset" id="singleTimerReset">重置</button>
+                            </div>
+                        </div>
+                        <!-- 双侧同时计时器 -->
+                        <div class="simultaneous-timer-container" id="simultaneousTimerContainer" style="display:none">
+                            <div class="sim-timer-master">
+                                <div class="sim-timer-display" id="simTimerDisplay">00:00</div>
+                                <div class="sim-timer-buttons">
+                                    <button type="button" class="side-timer-btn start" id="simTimerStart">开始</button>
+                                    <button type="button" class="side-timer-btn stop" id="simTimerStop" style="display:none">全部停止</button>
+                                    <button type="button" class="side-timer-btn reset" id="simTimerReset">重置</button>
+                                </div>
+                            </div>
+                            <div class="sim-timer-sides">
+                                <div class="sim-side-box" id="simLeftBox">
+                                    <div class="sim-side-label">左侧</div>
+                                    <div class="sim-side-status" id="simLeftStatus">进行中</div>
+                                    <button type="button" class="side-timer-btn stop small" id="simLeftStop">停止左侧</button>
+                                </div>
+                                <div class="sim-side-box" id="simRightBox">
+                                    <div class="sim-side-label">右侧</div>
+                                    <div class="sim-side-status" id="simRightStatus">进行中</div>
+                                    <button type="button" class="side-timer-btn stop small" id="simRightStop">停止右侧</button>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 左右独立计时器 -->
+                        <div class="side-timer-container" id="sideTimerContainer">
+                            <div class="side-timer-box" id="pumpLeftTimerBox">
+                                <div class="side-timer-label">左侧</div>
+                                <div class="side-timer-display" id="pumpLeftTimerDisplay">00:00</div>
+                                <div class="side-timer-buttons">
+                                    <button type="button" class="side-timer-btn start" id="pumpLeftTimerStart">开始</button>
+                                    <button type="button" class="side-timer-btn stop" id="pumpLeftTimerStop" style="display:none">停止</button>
+                                </div>
+                            </div>
+                            <div class="side-timer-box" id="pumpRightTimerBox">
+                                <div class="side-timer-label">右侧</div>
+                                <div class="side-timer-display" id="pumpRightTimerDisplay">00:00</div>
+                                <div class="side-timer-buttons">
+                                    <button type="button" class="side-timer-btn start" id="pumpRightTimerStart">开始</button>
+                                    <button type="button" class="side-timer-btn stop" id="pumpRightTimerStop" style="display:none">停止</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 奶量输入 -->
+                    <div id="pumpAmountSingle" class="form-group">
+                        <label>总奶量 (ml)</label>
+                        <input type="number" id="pumpTotalAmount" placeholder="可选">
+                    </div>
+                    <div id="pumpAmountDouble" class="form-group-row" style="display:none">
+                        <div class="form-group">
+                            <label>左侧奶量 (ml)</label>
+                            <input type="number" id="pumpLeftAmount" placeholder="可选">
+                        </div>
+                        <div class="form-group">
+                            <label>右侧奶量 (ml)</label>
+                            <input type="number" id="pumpRightAmount" placeholder="可选">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>备注</label>
+                        <input type="text" id="pumpNote" placeholder="可选">
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-cancel" id="cancelPumpingForm">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 成长记录弹窗 -->
+    <div class="modal-overlay" id="growthModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>添加成长记录</h2>
+                <button class="modal-close" id="closeGrowthModal">X</button>
+            </div>
+            <div class="modal-body">
+                <form id="growthForm">
+                    <div class="form-group">
+                        <label for="growthDate">测量日期</label>
+                        <input type="date" id="growthDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="growthHeight">身高 (cm)</label>
+                        <input type="number" id="growthHeight" step="0.1" placeholder="可选">
+                    </div>
+                    <div class="form-group">
+                        <label for="growthWeight">体重 (kg)</label>
+                        <input type="number" id="growthWeight" step="0.01" placeholder="可选">
+                    </div>
+                    <div class="form-group">
+                        <label for="growthBmi">BMI</label>
+                        <input type="number" id="growthBmi" step="0.1" placeholder="可自动计算" class="auto-calc">
+                        <small class="form-hint">输入身高和体重后自动计算</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="growthHead">头围 (cm)</label>
+                        <input type="number" id="growthHead" step="0.1" placeholder="可选">
+                    </div>
+                    <div class="form-group">
+                        <label for="growthNote">备注</label>
+                        <textarea id="growthNote" placeholder="可选"></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-cancel" id="cancelGrowthForm">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 日记弹窗 -->
+    <div class="modal-overlay" id="diaryModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="diaryModalTitle">写日记</h2>
+                <button class="modal-close" id="closeDiaryModal">X</button>
+            </div>
+            <div class="modal-body">
+                <form id="diaryForm">
+                    <div class="form-group">
+                        <label for="diaryTitle">标题</label>
+                        <input type="text" id="diaryTitle" placeholder="给今天起个标题吧" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="diaryDate">日期</label>
+                        <input type="date" id="diaryDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="diaryContent">内容</label>
+                        <textarea id="diaryContent" rows="5" placeholder="记录今天的美好时光..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="diaryMood">宝宝心情</label>
+                        <select id="diaryMood">
+                            <option value="">选择心情</option>
+                            <option value="happy">开心</option>
+                            <option value="calm">平静</option>
+                            <option value="fussy">烦躁</option>
+                            <option value="excited">兴奋</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-cancel" id="cancelDiaryForm">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 照片上传弹窗 -->
+    <div class="modal-overlay" id="photoModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>上传照片</h2>
+                <button class="modal-close" id="closePhotoModal">X</button>
+            </div>
+            <div class="modal-body">
+                <form id="photoForm">
+                    <div class="form-group">
+                        <label for="photoFile">选择照片</label>
+                        <input type="file" id="photoFile" accept="image/*" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="photoDate">拍摄日期</label>
+                        <input type="date" id="photoDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="photoDesc">描述</label>
+                        <input type="text" id="photoDesc" placeholder="给照片加个描述吧">
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-cancel" id="cancelPhotoForm">取消</button>
+                        <button type="submit" class="btn btn-primary">上传</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 照片查看弹窗 -->
+    <div class="modal-overlay" id="photoViewModal">
+        <div class="modal modal-large modal-fullscreen">
+            <div class="modal-header">
+                <h2 id="photoViewTitle">照片</h2>
+                <button class="modal-close" id="closePhotoViewModal">✕</button>
+            </div>
+            <div class="modal-body photo-view-body">
+                <img id="photoViewImage" src="" alt="照片">
+                <div class="photo-view-info" id="photoViewInfo"></div>
+                <div class="photo-edit-desc">
+                    <label>照片描述</label>
+                    <div class="photo-desc-edit-row">
+                        <input type="text" id="editPhotoDesc" placeholder="添加照片描述...">
+                        <button class="btn btn-primary btn-sm" onclick="savePhotoDesc()">保存</button>
+                    </div>
+                </div>
+                <div class="photo-view-actions">
+                    <button class="btn btn-danger btn-sm" id="deletePhotoBtn">删除</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 疫苗添加/编辑弹窗 -->
+    <div class="modal-overlay" id="vaccineModal">
+        <div class="modal modal-large">
+            <div class="modal-header">
+                <h2 id="vaccineModalTitle">添加疫苗记录</h2>
+                <button class="modal-close" id="closeVaccineModal">X</button>
+            </div>
+            <div class="modal-body">
+                <form id="vaccineForm">
+                    <input type="hidden" id="vaccineId">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="vaccineName">疫苗名称 *</label>
+                            <input type="text" id="vaccineName" placeholder="如：乙肝疫苗" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="vaccineDose">剂次</label>
+                            <input type="number" id="vaccineDose" min="1" value="1">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="vaccineType">类型</label>
+                            <select id="vaccineType">
+                                <option value="free">一类疫苗（免费）</option>
+                                <option value="paid">二类疫苗（自费）</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="vaccineStatus">状态</label>
+                            <select id="vaccineStatus">
+                                <option value="pending">待接种</option>
+                                <option value="completed">已接种</option>
+                                <option value="delayed">延期</option>
+                                <option value="skipped">跳过</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="vaccineScheduled">计划日期</label>
+                            <input type="date" id="vaccineScheduled">
+                        </div>
+                        <div class="form-group">
+                            <label for="vaccineActual">实际接种日期</label>
+                            <input type="date" id="vaccineActual">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="vaccineHospital">接种单位</label>
+                            <input type="text" id="vaccineHospital" placeholder="如：XX社区卫生服务中心">
+                        </div>
+                        <div class="form-group">
+                            <label for="vaccineDoctor">接种医生</label>
+                            <input type="text" id="vaccineDoctor" placeholder="医生姓名（可选）">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="vaccineManufacturer">生产厂家</label>
+                            <input type="text" id="vaccineManufacturer" placeholder="如：深圳康泰">
+                        </div>
+                        <div class="form-group">
+                            <label for="vaccineBatch">批号</label>
+                            <input type="text" id="vaccineBatch" placeholder="疫苗批号">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="vaccineSite">接种部位</label>
+                            <select id="vaccineSite">
+                                <option value="">未知</option>
+                                <option value="左上臂">左上臂</option>
+                                <option value="右上臂">右上臂</option>
+                                <option value="左大腿">左大腿</option>
+                                <option value="右大腿">右大腿</option>
+                                <option value="臀部">臀部</option>
+                                <option value="口服">口服</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="vaccineNextDose">下次接种日期</label>
+                            <input type="date" id="vaccineNextDose">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>不良反应</label>
+                        <div style="display:flex;gap:10px;align-items:center">
+                            <label style="font-weight:normal"><input type="checkbox" id="vaccineReaction"> 有反应</label>
+                            <input type="text" id="vaccineReactionDetail" placeholder="如：低热37.8、局部红肿" style="flex:1">
+                            <select id="vaccineReactionSeverity" style="width:80px">
+                                <option value="none">无</option>
+                                <option value="mild">轻度</option>
+                                <option value="moderate">中度</option>
+                                <option value="severe">重度</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="vaccineNote">备注</label>
+                        <textarea id="vaccineNote" rows="2" placeholder="可选备注信息"></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-cancel" id="cancelVaccineForm">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 分享卡片弹窗 -->
+    <div class="modal-overlay" id="shareCardModal">
+        <div class="modal modal-large">
+            <div class="modal-header">
+                <h2>宝宝分享卡片</h2>
+                <button class="modal-close" id="closeShareCardModal">X</button>
+            </div>
+            <div class="modal-body share-card-body">
+                <div class="share-card-preview" id="shareCardPreview">
+                    <canvas id="shareCardCanvas" width="600" height="800"></canvas>
+                </div>
+                <div class="share-card-actions">
+                    <button class="btn btn-primary" id="downloadCardBtn">保存图片</button>
+                    <button class="btn btn-cancel" id="shareCardRefreshBtn">刷新</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 批量记录弹窗 -->
+    <div class="modal-overlay" id="batchRecordModal">
+        <div class="modal modal-large">
+            <div class="modal-header">
+                <h2>批量添加记录</h2>
+                <button class="modal-close" id="closeBatchRecordModal">X</button>
+            </div>
+            <div class="modal-body batch-record-body">
+                <div class="batch-record-tabs">
+                    <button class="batch-tab active" data-type="feeding">喂奶</button>
+                    <button class="batch-tab" data-type="sleep">睡眠</button>
+                    <button class="batch-tab" data-type="diaper">尿布</button>
+                    <button class="batch-tab" data-type="growth">成长</button>
+                </div>
+                <div class="batch-record-list" id="batchRecordList">
+                    <!-- 动态生成记录行 -->
+                </div>
+                <div class="batch-record-footer">
+                    <button class="btn btn-outline btn-sm" id="addBatchRowBtn">＋ 添加一行</button>
+                </div>
+                <div class="batch-record-submit">
+                    <button class="btn btn-cancel" id="cancelBatchForm">取消</button>
+                    <button class="btn btn-primary" id="submitBatchBtn">保存全部</button>
+                </div>
+                <p class="batch-record-tip">点击"添加一行"快速录入多条记录，然后一次性保存</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 知识文章弹窗 -->
+    <div class="modal-overlay" id="articleModal">
+        <div class="modal modal-large">
+            <div class="modal-header">
+                <h2 id="articleTitle">文章标题</h2>
+                <button class="btn btn-sm btn-icon" id="editArticleBtn" title="编辑"></button>
+                <button class="btn btn-sm btn-icon" id="deleteArticleBtn" title="删除"></button>
+                <button class="modal-close" id="closeArticleModal">X</button>
+            </div>
+            <div class="modal-body">
+                <div class="article-content" id="articleContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 育儿知识文章新增/编辑弹窗 -->
+    <div class="modal-overlay" id="articleFormModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="articleFormTitle">新增文章</h2>
+                <button class="modal-close" id="closeArticleFormModal">X</button>
+            </div>
+            <div class="modal-body">
+                <form id="articleForm" class="recipe-form">
+                    <input type="hidden" id="articleFormId">
+                    <div class="form-group">
+                        <label>分类 <span class="required">*</span></label>
+                        <select id="articleFormCategory">
+                            <option value="喂养">喂养</option>
+                            <option value="睡眠">睡眠</option>
+                            <option value="发育">发育</option>
+                            <option value="健康">健康</option>
+                            <option value="护理">护理</option>
+                            <option value="疫苗">疫苗</option>
+                            <option value="安全">安全</option>
+                            <option value="心理">心理</option>
+                            <option value="早教">早教</option>
+                            <option value="营养">营养</option>
+                            <option value="季节">季节</option>
+                            <option value="其他">其他</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>标题 <span class="required">*</span></label>
+                        <input type="text" id="articleFormTitleInput" placeholder="如：宝宝厌奶期应对" required>
+                    </div>
+                    <div class="form-group">
+                        <label>适用月龄</label>
+                        <input type="text" id="articleFormAgeRange" placeholder="如：6-12个月">
+                    </div>
+                    <div class="form-group">
+                        <label>正文</label>
+                        <textarea id="articleFormContent" rows="8" placeholder="支持 ## 二级标题、### 三级标题、**加粗**、- 列表 等简单 Markdown"></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelArticleForm">取消</button>
+                        <button type="submit" class="btn btn-primary" id="saveArticleForm">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 健康百科详情弹窗 -->
+    <div class="modal-overlay" id="wikiModal">
+        <div class="modal modal-large">
+            <div class="modal-header">
+                <h2 id="wikiTitle">百科标题</h2>
+                <button class="btn btn-sm btn-icon" id="editWikiBtn" title="编辑"></button>
+                <button class="btn btn-sm btn-icon" id="deleteWikiBtn" title="删除"></button>
+                <button class="modal-close" id="closeWikiModal">X</button>
+            </div>
+            <div class="modal-body" id="wikiModalBody"></div>
+        </div>
+    </div>
+
+    <!-- 健康百科新增/编辑弹窗 -->
+    <div class="modal-overlay" id="wikiFormModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="wikiFormTitle">新增百科条目</h2>
+                <button class="modal-close" id="closeWikiFormModal">X</button>
+            </div>
+            <div class="modal-body">
+                <form id="wikiForm" class="recipe-form">
+                    <input type="hidden" id="wikiFormId">
+                    <div class="form-group">
+                        <label>分类 <span class="required">*</span></label>
+                        <select id="wikiFormCategory">
+                            <option value="常见病">常见病</option>
+                            <option value="呼吸">呼吸</option>
+                            <option value="消化">消化</option>
+                            <option value="皮肤">皮肤</option>
+                            <option value="急救">急救</option>
+                            <option value="营养">营养</option>
+                            <option value="发育">发育</option>
+                            <option value="睡眠">睡眠</option>
+                            <option value="过敏">过敏</option>
+                            <option value="牙齿">牙齿</option>
+                            <option value="心理">心理</option>
+                            <option value="泌尿">泌尿</option>
+                            <option value="血液">血液</option>
+                            <option value="外科">外科</option>
+                            <option value="急症">急症</option>
+                            <option value="眼睛">眼睛</option>
+                            <option value="其他">其他</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>标题 <span class="required">*</span></label>
+                        <input type="text" id="wikiFormTitleInput" placeholder="如：中耳炎" required>
+                    </div>
+                    <div class="form-group">
+                        <label>症状</label>
+                        <textarea id="wikiFormSymptoms" rows="2" placeholder="主要症状，用、分隔"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>正文（可分段写【病因】【处理】【预防】【就医信号】）</label>
+                        <textarea id="wikiFormContent" rows="8" placeholder="一段总体介绍，另起段落写病因/处理/预防/就医信号"></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelWikiForm">取消</button>
+                        <button type="submit" class="btn btn-primary" id="saveWikiForm">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 体温记录弹窗 -->
+    <div class="modal-overlay" id="temperatureModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>记录体温</h2>
+                <button class="modal-close" id="closeTemperatureModal">X</button>
+            </div>
+            <div class="modal-body">
+                <form id="temperatureForm">
+                    <div class="form-group">
+                        <label for="tempValue">体温值 (°C)</label>
+                        <input type="number" id="tempValue" step="0.1" min="35" max="42" placeholder="36.5" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="tempMethod">测量方式</label>
+                        <select id="tempMethod">
+                            <option value="ear">耳温枪</option>
+                            <option value="armpit">腋下</option>
+                            <option value="oral">口腔</option>
+                            <option value="rectal">肛温</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="tempTime">测量时间</label>
+                        <input type="datetime-local" id="tempTime">
+                    </div>
+                    <div class="form-group">
+                        <label for="tempNote">备注</label>
+                        <input type="text" id="tempNote" placeholder="可选">
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-cancel" id="cancelTempForm">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 用药记录弹窗 -->
+    <div class="modal-overlay" id="medicationModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>添加用药记录</h2>
+                <button class="modal-close" id="closeMedicationModal">X</button>
+            </div>
+            <div class="modal-body">
+                <form id="medicationForm">
+                    <div class="form-group">
+                        <label for="medName">药品名称</label>
+                        <input type="text" id="medName" placeholder="如：布洛芬混悬液" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="medDosage">剂量</label>
+                        <div class="form-row">
+                            <input type="text" id="medDosage" placeholder="如：2.5">
+                            <select id="medDosageUnit">
+                                <option value="mg">mg</option>
+                                <option value="ml">ml</option>
+                                <option value="drops">滴</option>
+                                <option value="tablets">片</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="medTime">用药时间</label>
+                        <input type="datetime-local" id="medTime">
+                    </div>
+                    <div class="form-group">
+                        <label for="medInterval">下次用药间隔（小时）</label>
+                        <input type="number" id="medInterval" min="0" max="24" placeholder="0表示不设置" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="medNote">备注</label>
+                        <input type="text" id="medNote" placeholder="可选">
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-cancel" id="cancelMedicationForm">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 里程碑添加/编辑弹窗 -->
+    <div class="modal-overlay" id="milestoneModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="milestoneModalTitle">添加里程碑</h2>
+                <button class="modal-close" id="closeMilestoneModal">X</button>
+            </div>
+            <div class="modal-body">
+                <form id="milestoneForm">
+                    <input type="hidden" id="milestoneId">
+                    <div class="form-group">
+                        <label for="milestoneTitle">里程碑标题</label>
+                        <input type="text" id="milestoneTitle" placeholder="如：第一次翻身" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="milestoneDate">达成日期</label>
+                        <input type="date" id="milestoneDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="milestoneCategory">分类</label>
+                        <select id="milestoneCategory">
+                            <option value="motor">运动能力</option>
+                            <option value="language">语言能力</option>
+                            <option value="social">社交能力</option>
+                            <option value="cognitive">认知能力</option>
+                            <option value="other">其他</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="milestoneDesc">详细描述</label>
+                        <textarea id="milestoneDesc" rows="3" placeholder="记录这个特别的时刻..."></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-cancel" id="cancelMilestoneForm">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+<!-- 提示消息 -->
+<div class="toast" id="toast"></div>
+
+<!-- ASQ筛查弹窗 -->
+<div class="modal-overlay" id="asqModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>ASQ发育筛查</h2>
+            <button class="modal-close" id="closeAsqModal">X</button>
+        </div>
+        <div class="modal-body" id="asqModalBody"></div>
+    </div>
+</div>
+
+<!-- 出牙记录弹窗 -->
+<div class="modal-overlay" id="toothModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>记录出牙</h2>
+            <button class="modal-close" id="closeToothModal">X</button>
+        </div>
+        <div class="modal-body" id="toothModalBody"></div>
+    </div>
+    </div>
+
+    <!-- 辅食记录弹窗 -->
+<div class="modal-overlay" id="sfModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>添加辅食记录</h2>
+            <button class="modal-close" id="closeSfModal">X</button>
+        </div>
+        <div class="modal-body" id="sfModalBody"></div>
+    </div>
+</div>
+
+<!-- 发育飞跃期弹窗 -->
+<div class="modal-overlay" id="leapModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>记录发育飞跃</h2>
+            <button class="modal-close" id="closeLeapModal">X</button>
+        </div>
+        <div class="modal-body" id="leapModalBody"></div>
+    </div>
+</div>
+
+<!-- 囟门记录弹窗 -->
+<div class="modal-overlay" id="fontanelleModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>记录囟门检查</h2>
+            <button class="modal-close" id="closeFontanelleModal">X</button>
+        </div>
+        <div class="modal-body" id="fontanelleModalBody"></div>
+    </div>
+</div>
+
+<!-- 成长照片弹窗 -->
+<div class="modal-overlay" id="gpModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>添加成长照片</h2>
+            <button class="modal-close" id="closeGpModal">X</button>
+        </div>
+        <div class="modal-body" id="gpModalBody"></div>
+    </div>
+</div>
+
+<!-- 食谱详情弹窗 -->
+<div class="modal-overlay" id="recipeModal">
+<div class="modal modal-large">
+<div class="modal-header">
+<h2 id="recipeDetailTitle">食谱详情</h2>
+<div class="modal-header-actions">
+<button class="btn btn-sm btn-icon" id="favoriteRecipeBtn" title="收藏/取消收藏"></button>
+<button class="btn btn-sm btn-icon" id="cookingModeBtn" title="烹饪模式"></button>
+<button class="btn btn-sm btn-icon" id="printRecipeBtn" title="打印食谱"></button>
+<button class="btn btn-sm btn-icon" id="editRecipeBtn" title="编辑"></button>
+<button class="btn btn-sm btn-icon" id="deleteRecipeBtn" title="删除"></button>
+<button class="modal-close" id="closeRecipeModal">X</button>
+</div>
+</div>
+<div class="modal-body" id="recipeModalBody"></div>
+</div>
+</div>
+
+<!-- 活动详情弹窗 -->
+<div class="modal-overlay" id="activityModal">
+    <div class="modal modal-large">
+        <div class="modal-header">
+            <h2>活动详情</h2>
+            <button class="modal-close" id="closeActivityModal" onclick="closeActivityModal()">X</button>
+        </div>
+        <div class="modal-body" id="activityModalBody"></div>
+    </div>
+</div>
+
+<!-- 健康记录弹窗 -->
+<div class="modal-overlay" id="healthModal">
+    <div class="modal modal-large">
+        <div class="modal-header">
+            <h2>添加健康记录</h2>
+            <button class="modal-close" onclick="hideModal('healthModal')">X</button>
+        </div>
+        <div class="modal-body" id="healthModalBody"></div>
+        <div class="modal-footer">
+            <button class="btn btn-primary" onclick="submitHealthRecord()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 成长里程碑弹窗 -->
+<div class="modal-overlay" id="firstsModal">
+    <div class="modal modal-large">
+        <div class="modal-header">
+            <h2>添加里程碑</h2>
+            <button class="modal-close" onclick="hideModal('firstsModal')">X</button>
+        </div>
+        <div class="modal-body" id="firstsModalBody"></div>
+        <div class="modal-footer">
+            <button class="btn btn-primary" onclick="submitFirstsRecord()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 趴睡训练弹窗 -->
+<div class="modal-overlay" id="tummytimeModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>添加趴睡训练记录</h2>
+            <button class="modal-close" onclick="hideModal('tummytimeModal')">✕</button>
+        </div>
+        <div class="modal-body" id="tummytimeModalBody">
+            <div class="form-group">
+                <label>开始时间</label>
+                <input type="datetime-local" id="tummytimeStart">
+            </div>
+            <div class="form-group">
+                <label>时长 (分钟)</label>
+                <input type="number" id="tummytimeDuration" placeholder="如: 5" min="1" max="120">
+            </div>
+            <div class="form-group">
+                <label>训练里程碑</label>
+                <select id="tummytimeMilestone">
+                    <option value="">选择里程碑（可选）</option>
+                    <option value="首次抬头">🎉 首次抬头</option>
+                    <option value="保持30秒">⏱ 保持30秒</option>
+                    <option value="保持1分钟">💪 保持1分钟</option>
+                    <option value="保持3分钟">🔥 保持3分钟</option>
+                    <option value="保持5分钟">⭐ 保持5分钟</option>
+                    <option value="伸手够物">🤲 伸手够物</option>
+                    <option value="翻身尝试">🔄 翻身尝试</option>
+                    <option value="独自支撑">🏆 独自支撑</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>训练备注</label>
+                <textarea id="tummytimeNote" rows="2" placeholder="训练情况、宝宝反应..."></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="hideModal('tummytimeModal')">取消</button>
+            <button class="btn btn-primary" onclick="submitTummytimeRecord()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 过敏测试弹窗 -->
+<div class="modal-overlay" id="allergyModal">
+    <div class="modal modal-large">
+        <div class="modal-header">
+            <h2>添加过敏测试记录</h2>
+            <button class="modal-close" onclick="hideModal('allergyModal')">X</button>
+        </div>
+        <div class="modal-body" id="allergyModalBody"></div>
+        <div class="modal-footer">
+            <button class="btn btn-primary" onclick="submitAllergyTest()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 用品比价弹窗 -->
+<div class="modal-overlay" id="shoppingModal">
+    <div class="modal modal-large">
+        <div class="modal-header">
+            <h2 id="shoppingModalTitle">添加价格记录</h2>
+            <button class="modal-close" onclick="hideModal('shoppingModal')">X</button>
+        </div>
+        <div class="modal-body" id="shoppingModalBody"></div>
+        <div class="modal-footer">
+            <button class="btn btn-primary" onclick="submitPriceRecord()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 记账弹窗 -->
+<div class="modal-overlay" id="expenseModal">
+    <div class="modal modal-large">
+        <div class="modal-header">
+            <h2>记一笔支出</h2>
+            <button class="modal-close" onclick="hideModal('expenseModal')">X</button>
+        </div>
+        <div class="modal-body" id="expenseModalBody"></div>
+        <div class="modal-footer">
+            <button class="btn btn-primary" onclick="submitExpenseRecord()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 用药提醒弹窗 -->
+<div class="modal-overlay" id="medReminderModal">
+    <div class="modal modal-large">
+        <div class="modal-header">
+            <h2>添加用药提醒</h2>
+            <button class="modal-close" onclick="hideModal('medReminderModal')">X</button>
+        </div>
+        <div class="modal-body" id="medReminderModalBody"></div>
+        <div class="modal-footer">
+            <button class="btn btn-primary" onclick="submitMedReminder()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 健康档案-体检记录弹窗 -->
+<div class="modal-overlay" id="checkupFormModal">
+    <div class="modal modal-large">
+        <div class="modal-header">
+            <h2 id="checkupFormTitle">添加体检记录</h2>
+            <button class="modal-close" onclick="hideModal('checkupFormModal')">X</button>
+        </div>
+        <div class="modal-body" id="checkupFormBody"></div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="hideModal('checkupFormModal')">取消</button>
+            <button class="btn btn-primary" onclick="submitCheckupRecord()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 健康档案-提醒弹窗 -->
+<div class="modal-overlay" id="reminderFormModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="reminderFormTitle">添加提醒</h2>
+            <button class="modal-close" onclick="hideModal('reminderFormModal')">X</button>
+        </div>
+        <div class="modal-body" id="reminderFormBody"></div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="hideModal('reminderFormModal')">取消</button>
+            <button class="btn btn-primary" onclick="submitReminder()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 健康档案-体检详情弹窗 -->
+<div class="modal-overlay" id="checkupDetailModal">
+    <div class="modal modal-large">
+        <div class="modal-header">
+            <h2>体检详情</h2>
+            <button class="modal-close" onclick="hideModal('checkupDetailModal')">X</button>
+        </div>
+        <div class="modal-body" id="checkupDetailBody"></div>
+    </div>
+</div>
+
+<!-- 登录认证遮罩（未认证时拦截全部数据请求） -->
+<div id="authOverlay" class="modal-overlay">
+    <div class="modal" style="max-width:340px;width:90%;" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2 id="authTitle">登录育儿宝</h2>
+        </div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+            <div id="authLoginFields">
+                <input type="password" id="authPwd" placeholder="请输入管理密码" style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;font-size:15px;" onkeydown="if(event.key==='Enter')authSubmit()">
+            </div>
+            <div id="authError" style="color:#e74c3c;font-size:13px;min-height:18px;"></div>
+            <button class="btn btn-primary" onclick="authSubmit()" style="width:100%;">确定</button>
+        </div>
+    </div>
+</div>
+
+<!-- 小萌宠物浮窗 -->
+<div class="pet-mascot" id="xiaomengMascot">
+    <div class="pet-bubble" id="xiaomengBubble"></div>
+<button class="pet-avatar" id="xiaomengAvatar" type="button" aria-label="小萌 · 你的育儿小助手" title="单击跟我说话，双击进入聊天">
+            <img id="xiaomengAvatarImg" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="小萌">
+    </button>
+</div>
+
+<!-- 小萌聊天面板 -->
+<div class="modal-overlay" id="xiaomengChat">
+    <div class="modal pet-chat-modal">
+        <div class="modal-header">
+            <div class="pet-chat-title">
+                <img id="xiaomengChatImg" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="小萌" class="pet-chat-avatar">
+                <div>
+                    <h2>小萌</h2>
+                    <p class="pet-chat-sub">你的育儿小助手</p>
+                </div>
+            </div>
+            <button class="modal-close" id="xiaomengChatClose" type="button" aria-label="关闭">×</button>
+        </div>
+        <div class="modal-body pet-chat-body" id="xiaomengChatBody">
+            <div class="chat-msg bot">嗨～我是小萌，宝宝今天还好吗？有什么想记录的随时找我 </div>
+        </div>
+        <div class="pet-chat-toolbar">
+            <label class="ai-model-label" for="xiaomengModelSelect">回答模型</label>
+            <select id="xiaomengModelSelect" class="ai-model-select" title="选择本次对话使用的回答模型"></select>
+        </div>
+        <div class="pet-chat-input">
+            <input type="text" id="xiaomengInput" placeholder="和小萌说点什么…" autocomplete="off">
+            <button class="btn btn-primary" id="xiaomengSend" type="button">发送</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function() {
+        // 小萌头像路径必须跟随当前网关前缀，硬编码只适用于默认 fnOS 路径。
+        // 先显示透明占位避免 broken image 图标，再换成真实地址。
+        var prefix = window.GATEWAY_PREFIX || '';
+        var src = prefix + '/images/xiaomeng-mascot.png';
+        var a = document.getElementById('xiaomengAvatarImg');
+        var c = document.getElementById('xiaomengChatImg');
+        if (a) a.src = src;
+        if (c) c.src = src;
+    })();
+</script>
+
+<script src="/app/babycare-fpk/js/app.js"></script>
+</body>
+</html>

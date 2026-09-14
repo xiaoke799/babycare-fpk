@@ -1,0 +1,57 @@
+[
+  {
+    "stepTitle": "育儿宝初始设置",
+    "items": [
+      {
+        "type": "text",
+        "field": "wizard_baby_name",
+        "label": "宝宝昵称",
+        "placeholder": "请输入宝宝的昵称",
+        "initValue": "",
+        "rules": [
+          { "required": true, "message": "请输入宝宝昵称" },
+          { "maxlength": 20, "message": "昵称不超过 20 字" }
+        ]
+      },
+      {
+        "type": "date",
+        "field": "wizard_baby_birthday",
+        "label": "宝宝生日",
+        "initValue": "",
+        "rules": [
+          { "required": true, "message": "请选择宝宝生日" }
+        ]
+      },
+      {
+        "type": "select",
+        "field": "wizard_baby_gender",
+        "label": "宝宝性别",
+        "initValue": "boy",
+        "options": [
+          { "value": "boy", "label": "男" },
+          { "value": "girl", "label": "女" },
+          { "value": "other", "label": "其他" }
+        ],
+        "rules": [
+          { "required": true, "message": "请选择宝宝性别" }
+        ]
+      },
+      {
+        "type": "switch",
+        "field": "wizard_enable_ai",
+        "label": "启用 AI 功能",
+        "initValue": false,
+        "help": "启用后可使用 AI 分析、聊天等功能（需要配置 LLM 提供商）"
+      },
+      {
+        "type": "number",
+        "field": "wizard_data_retention_days",
+        "label": "数据保留天数",
+        "initValue": 0,
+        "min": 0,
+        "max": 3650,
+        "help": "0 表示永久保留，超过指定天数的记录将被自动清理"
+      }
+    ]
+  }
+]

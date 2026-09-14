@@ -1,0 +1,52 @@
+#!/bin/bash
+
+echo "Installing 育儿宝 (babycare-fpk) ${TRIM_APPVER} ..."
+
+# 创建必要目录
+mkdir -p "${TRIM_PKGVAR}"
+mkdir -p "${TRIM_PKGETC}"
+mkdir -p "${TRIM_PKGHOME}"
+
+# 定位应用目录（适配不同磁盘安装）
+APP_DEST="${TRIM_APPDEST:-$TRIM_PKGHOME}"
+
+# 自动发现：如果 APP_DEST 无效，搜索可能的路径
+if [ -z "$APP_DEST" ] || [ ! -d "$APP_DEST" ] || [ ! -f "$APP_DEST/backend/requirements.txt" ]; then
+    for candidate in \
+        /vol1/@appcenter/babycare-fpk \
+        /vol2/@appcenter/babycare-fpk \
+        /vol1/@apphome/babycare-fpk \
+        /vol2/@apphome/babycare-fpk \
+        /var/apps/babycare-fpk/target
+    do
+        if [ -f "$candidate/backend/requirements.txt" ]; then
+            APP_DEST="$candidate"
+            echo "Auto-discovered APP_DEST: $APP_DEST"
+            break
+        fi
+    done
+fi
+
+BACKEND_DIR="$APP_DEST/backend"
+VENDOR_DIR="$BACKEND_DIR/vendor"
+
+# 依赖策略：vendor 内嵌为权威来源，仅当 vendor 缺失时才尝试 pip 兜底
+if [ -d "$VENDOR_DIR" ]; then
+    echo "Using vendored dependencies (vendor/ directory present)."
+    # 验证 Flask 可导入
+    if python3 -c "import sys; sys.path.insert(0, '$VENDOR_DIR'); import flask" 2>/dev/null; then
+        echo "Flask dependency verified via vendor."
+    else
+        echo "Warning: vendor Flask import test failed."
+    fi
+elif [ -f "$BACKEND_DIR/requirements.txt" ]; then
+    # vendor 不存在时才尝试 pip（离线环境可能失败）
+    echo "No vendor directory. Attempting pip install (may fail offline)..."
+    pip3 install -r "$BACKEND_DIR/requirements.txt" 2>/dev/null || \
+        python3 -m pip install -r "$BACKEND_DIR/requirements.txt" 2>/dev/null || \
+        echo "Warning: pip install failed. Please install dependencies manually."
+else
+    echo "Warning: Neither vendor/ nor requirements.txt found at $BACKEND_DIR"
+fi
+
+echo "babycare-fpk installation preparation completed."

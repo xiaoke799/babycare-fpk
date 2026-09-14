@@ -1,0 +1,18 @@
+# 生命周期脚本必须保持 LF（CRLF 会导致飞牛设备上 shell 脚本无法执行）
+cmd/* text eol=lf
+*.sh text eol=lf
+
+# manifest 用 LF 保持与 fnpack 产物一致
+manifest text eol=lf
+
+# Windows 专用文件
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制不走转换
+*.png binary
+*.ico binary
+*.whl binary
+*.gz binary
+*.tgz binary
+*.fpk binary

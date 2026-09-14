@@ -1,0 +1,48 @@
+#!/bin/bash
+
+echo "Upgrading 育儿宝 from ${TRIM_OLD_APPVER} to ${TRIM_APPVER} ..."
+
+DATA_DIR="${TRIM_PKGVAR:-/var/apps/babycare-fpk/var}"
+PID_FILE="$DATA_DIR/babycare-fpk.pid"
+STOP_FLAG_FILE="$DATA_DIR/.stop_requested"
+
+# 设置停止标志，防止 watchdog 在升级期间自动重启旧版本
+mkdir -p "$DATA_DIR"
+touch "$STOP_FLAG_FILE" 2>/dev/null
+
+# 停止应用（SIGTERM → 等待最多10秒 → SIGKILL 升级）
+if [ -f "$PID_FILE" ]; then
+    PID=$(cat "${PID_FILE}")
+    if kill -0 "$PID" 2>/dev/null; then
+        kill "$PID" 2>/dev/null
+        COUNT=0
+        while kill -0 "$PID" 2>/dev/null && [ "$COUNT" -lt 10 ]; do
+            sleep 1
+            COUNT=$((COUNT + 1))
+        done
+        if kill -0 "$PID" 2>/dev/null; then
+            kill -9 "$PID" 2>/dev/null
+        fi
+    fi
+    rm -f "$PID_FILE"
+fi
+
+echo "Application stopped for upgrade."
+
+# 重装 Python 依赖（新版本可能引入新的依赖）
+APP_DEST="${TRIM_APPDEST:-/var/apps/babycare-fpk/target}"
+BACKEND_DIR="$APP_DEST/app/backend"
+if [ -f "$BACKEND_DIR/requirements.txt" ]; then
+    echo "Reinstalling Python dependencies..."
+    PIP_LOG="${TRIM_TEMP_LOGFILE:-$APP_DEST/install.log}"
+    if command -v pip3 >/dev/null 2>&1; then
+        pip3 install -r "$BACKEND_DIR/requirements.txt" >>"$PIP_LOG" 2>&1 \
+            || python3 -m pip install -r "$BACKEND_DIR/requirements.txt" >>"$PIP_LOG" 2>&1 \
+            || echo "Warning: dependency reinstall failed, see $PIP_LOG"
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 -m pip install -r "$BACKEND_DIR/requirements.txt" >>"$PIP_LOG" 2>&1 \
+            || echo "Warning: dependency reinstall failed, see $PIP_LOG"
+    fi
+fi
+
+echo "Upgrade preparation completed."

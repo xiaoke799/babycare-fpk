@@ -1,0 +1,41 @@
+# 构建输出
+*.fpk
+app.tgz
+.build_temp/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# 数据库
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE / 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# IDE / Qoder / OMO 缓存
+.codegraph/
+.omo/
+.qoder/
+
+# 临时文件
+temp_wizard_test/
+test_data/
+*.bak
+*.log
+
+# 密钥和本地配置
+secret_key
+.env
+.env.local
