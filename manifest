@@ -1,7 +1,7 @@
 appname=babycare-fpk
 version=0.0.1
 display_name=育儿宝
-desc=飞牛 fnOS 原生综合育儿软件(.fpk) - 宝宝成长记录、照护追踪与育儿知识。支持多宝宝管理、WHO生长曲线、喂奶/睡眠/尿布记录、里程碑、日记、知识库、看诊摘要。
+desc=<p>育儿宝是一款部署在你自己的 NAS 上的本地优先育儿记录应用。支持多宝宝管理、WHO 生长曲线、喂奶/睡眠/尿布记录、里程碑、日记、知识库与看诊摘要，数据完全本地存储，无需依赖第三方云服务。</p><img src="https://gitee.com/xiaoke799/babycare-fpk/raw/master/docs/images/intro1.webp" style="width:100%;border-radius:14px;margin:10px 0;"><img src="https://gitee.com/xiaoke799/babycare-fpk/raw/master/docs/images/intro2.webp" style="width:100%;border-radius:14px;margin:10px 0;"><img src="https://gitee.com/xiaoke799/babycare-fpk/raw/master/docs/images/intro3.webp" style="width:100%;border-radius:14px;margin:10px 0;"><h3>核心功能</h3><p>多宝宝切换、喂养与睡眠尿布记录、生长曲线与里程碑、用药提醒、AI 育儿问答、看诊摘要，一站式照护宝宝成长。</p>
 source=thirdparty
 platform=all
 maintainer=xiaoke799
