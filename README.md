@@ -1,5 +1,7 @@
 # 育儿宝 (BabyCare-FPK) - 飞牛 fnOS 原生育儿应用
 
+**语言 / Language**: [简体中文](README.md) | [English](README_EN.md)
+
 ## 简介
 
 育儿宝是飞牛 fnOS 平台原生 NAS 育儿应用，面向使用飞牛 OS NAS 的家庭用户，主打本地私有存储，所有育儿相关数据全部保存在用户自己的 NAS 设备内，不上传第三方云端，契合当下用户对个人家庭隐私安全的诉求，打造属于家庭的私密育儿数字空间。
@@ -75,7 +77,8 @@
 babycare-fpk/
 ├── manifest              # 应用包描述文件
 ├── NOTICE                # 第三方组件与数据归属声明
-├── README.md             # 项目说明
+├── README.md             # 项目说明（中文）
+├── README_EN.md          # Project intro (English)
 ├── USER_AGREEMENT.md     # 用户协议
 ├── PRIVACY.md            # 隐私政策
 ├── LICENSE               # Apache-2.0 开源协议
