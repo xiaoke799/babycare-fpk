@@ -7,6 +7,8 @@
 设计原则：防御性校验 + 清晰错误信息 + 不破坏已有合法数据。
 """
 
+import datetime
+
 # ==================== 数值范围定义 ====================
 
 # 喂奶量：0-2000ml（单次最大 2L，覆盖极端情况）
@@ -39,6 +41,10 @@ VALID_FEEDING_TYPES = {"breast", "bottle", "solid", "mixed"}
 VALID_DIAPER_TYPES = {"wet", "dirty", "both", "dry"}
 VALID_SLEEP_QUALITY = {"good", "normal", "poor"}
 VALID_BABY_GENDERS = {"boy", "girl"}
+VALID_FEEDING_SIDES = {"left", "right", "both"}
+
+# 秒级时长（左右侧哺乳计时器用）：上限 24 小时
+SECONDS_MAX = 86400
 
 # ==================== 文本长度限制 ====================
 
@@ -153,3 +159,57 @@ def truncate_text(value, max_length):
     if len(s) > max_length:
         return s[:max_length]
     return s
+
+
+def now_local_str():
+    """当前本地时间 'YYYY-MM-DD HH:MM:SS'。
+
+    不要 new Date().toISOString().slice(0,10) 那套：那是 UTC，东八区早上 8 点前会差一天。
+    """
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def validate_datetime(value, field_name="时间", default_now=False):
+    """归一化时间为 'YYYY-MM-DD HH:MM:SS'。返回 (ok, 值, 错误)。
+
+    库里时间一律存这个格式：前端 datetime-local 给的是 'YYYY-MM-DDTHH:MM'，
+    快捷按钮给的是 'YYYY-MM-DD HH:MM:SS'，两种混存会让按日期范围筛选漏记录
+    （字符串比较时 'T' > ' '，带 T 的下午记录会被 '当天 23:59:59' 挡在门外）。
+    """
+    if value in (None, ""):
+        if default_now:
+            return True, now_local_str(), None
+        return True, None, None
+
+    raw = str(value).strip()
+    text = raw.replace("T", " ").replace("/", "-").strip()
+
+    fmt_used = None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            dt = datetime.datetime.strptime(text, fmt)
+            fmt_used = fmt
+            break
+        except ValueError:
+            continue
+    if fmt_used is None:
+        return False, None, f"{field_name}格式无法识别：{raw}，请用 YYYY-MM-DD HH:MM"
+
+    if fmt_used == "%Y-%m-%d":
+        # 只给到日期：落到当天 12:00，避免凌晨/未来时刻把统计日算错
+        dt = dt.replace(hour=12, minute=0, second=0)
+
+    return True, dt.strftime("%Y-%m-%d %H:%M:%S"), None
+
+
+def validate_seconds(value, field_name="时长"):
+    """验证秒级时长（左右侧哺乳计时器）。0 视为未填，返回 None。"""
+    if value in (None, ""):
+        return True, None, None
+    try:
+        v = int(round(float(value)))
+    except (TypeError, ValueError):
+        return False, None, f"{field_name}必须为数字（单位：秒）"
+    if v < 0 or v > SECONDS_MAX:
+        return False, None, f"{field_name}需在 0-{SECONDS_MAX} 秒之间"
+    return True, (v if v > 0 else None), None

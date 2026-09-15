@@ -1122,7 +1122,43 @@ def _ensure_table(table: str, create_sql: str):
         if not exists:
             conn.execute(create_sql)
             conn.commit()
-            app.logger.warning("兑底建表: %s（历史库缺失，已补建）", table)
+            app.logger.warning("兜底建表: %s（历史库缺失，已补建）", table)
+    finally:
+        conn.close()
+
+
+# 喂奶/吸奶历史数据清洗语句（幂等，可反复执行）。
+# 抽成常量是为了让离线自检能直接读到同一份 SQL，不出现「测试里的语句和线上不一致」。
+FEEDING_CLEANUP_SQL = (
+    "UPDATE feeding_records SET start_time = replace(start_time, 'T', ' ') WHERE start_time LIKE '%T%'",
+    "UPDATE feeding_records SET end_time = replace(end_time, 'T', ' ') WHERE end_time LIKE '%T%'",
+    "UPDATE pumping_records SET pump_time = replace(pump_time, 'T', ' ') WHERE pump_time LIKE '%T%'",
+    "UPDATE feeding_records SET amount = NULL WHERE amount = 0",
+    "UPDATE feeding_records SET side = NULL WHERE side = ''",
+    "UPDATE pumping_records SET side = NULL WHERE side = ''",
+)
+
+
+def _normalize_record_timestamps():
+    """幂等数据清洗：历史记录里带 'T' 的时间统一成空格分隔，顺带清掉脏值。
+
+    前端 datetime-local 提交的是 'YYYY-MM-DDTHH:MM'，快捷按钮写入的是
+    'YYYY-MM-DD HH:MM:SS'。SQLite 里这是字符串，'T'(0x54) > ' '(0x20)，
+    按 `start_time <= '当天 23:59:59'` 筛选时，带 T 的下午/晚上记录会被漏掉。
+    另外快捷按钮会给母乳写 amount=0、给瓶喂写 side=''，这里一并清成 NULL。
+    """
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        changed = 0
+        for sql in FEEDING_CLEANUP_SQL:
+            try:
+                changed += conn.execute(sql).rowcount or 0
+            except sqlite3.Error:
+                # 表/列不存在（历史库版本差异）就跳过，不能阻断启动
+                continue
+        conn.commit()
+        if changed:
+            app.logger.warning("清洗历史喂奶/吸奶记录：%d 行", changed)
     finally:
         conn.close()
 
@@ -1159,6 +1195,8 @@ def _run_migrations():
     _ensure_column('pumping_records', 'left_duration INTEGER DEFAULT NULL')
     _ensure_column('pumping_records', 'right_duration INTEGER DEFAULT NULL')
     _ensure_column('pumping_records', 'side TEXT DEFAULT NULL')
+    # 历史数据清洗（时间格式 / 0ml / 空哺乳侧），幂等，可反复执行
+    _normalize_record_timestamps()
     # 健康记录（发烧/就医/用药）页需要体温、症状、用药三列。
     # 该表是「体检记录」和「健康记录」两个页面共用的，新装库由 CREATE TABLE 带上，
     # 历史库靠这里每次启动兜底补列——缺列会让新增健康记录的 INSERT 直接 500。

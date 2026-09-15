@@ -11803,3 +11803,71 @@ input:checked + .toggle-slider:before {
         padding: 24px 28px;
     }
 }
+
+/* ==================== 喂奶：距上次提醒条 ==================== */
+.feeding-reminder {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    border-radius: var(--radius);
+    background: #FFF3E6;
+    border: 1px solid #FFD9B3;
+    font-size: 13px;
+    color: #A8560F;
+}
+
+.feeding-reminder.overdue {
+    background: #FFECEF;
+    border-color: #FFC2CE;
+    color: #C2405F;
+    animation: feedingReminderPulse 2s ease-in-out infinite;
+}
+
+.feeding-reminder-text {
+    flex: 1;
+    line-height: 1.5;
+}
+
+.feeding-reminder-btn {
+    flex: 0 0 auto;
+    padding: 6px 14px;
+    min-height: 32px;
+    border: none;
+    border-radius: 16px;
+    background: var(--primary-color);
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+@keyframes feedingReminderPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.72; }
+}
+
+/* ==================== 照护列表：按天分组 ==================== */
+.care-day-group {
+    margin-bottom: 8px;
+}
+
+.care-day-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 6px 2px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.care-day-header .care-day-title {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.care-day-header .care-day-sum {
+    font-size: 12px;
+}

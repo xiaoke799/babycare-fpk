@@ -1035,10 +1035,43 @@ function formatDate(date) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/**
+ * 安全解析时间字符串。
+ * 库里存的是 'YYYY-MM-DD HH:MM:SS'（空格分隔），iOS Safari 不认这种格式，
+ * 直接 new Date() 会得到 Invalid Date，页面上的「X 分钟前」就变成 NaN。
+ */
+function parseDateSafe(value) {
+    if (!value) return null;
+    const s = String(value).trim().replace(' ', 'T');
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+}
+
 function formatDateTime(datetime) {
     if (!datetime) return '';
-    const d = new Date(datetime);
+    const d = parseDateSafe(datetime);
+    if (!d) return String(datetime).slice(0, 16);   // 解析不了就原样展示，别显示 Invalid Date
     return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** 秒 → 「12分30秒」（喂奶/吸奶时长展示） */
+function formatDurationCN(seconds) {
+    const s = Number(seconds) || 0;
+    if (s <= 0) return '';
+    const m = Math.floor(s / 60);
+    const rest = s % 60;
+    return rest ? `${m}分${rest}秒` : `${m}分`;
+}
+
+/** 分钟 → 「2小时10分」/「45分钟」 */
+function formatAgoCN(minutes) {
+    const m = Number(minutes);
+    if (!isFinite(m) || m < 0) return '--';
+    if (m < 1) return '刚刚';
+    if (m < 60) return `${m}分钟前`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}小时${m % 60 ? (m % 60) + '分' : ''}前`;
+    return `${Math.floor(h / 24)}天前`;
 }
 
 function getToday() {
@@ -1713,6 +1746,181 @@ function initQuickActions() {
     });
 }
 
+// ==================== 喂奶表单（新增 / 编辑共用同一套） ====================
+
+// 后端 validators.VALID_FEEDING_TYPES 也是这四个，改这里记得同步
+const FEEDING_TYPE_OPTIONS = [
+    { value: 'breast', label: '母乳' },
+    { value: 'bottle', label: '配方奶' },
+    { value: 'mixed', label: '混合喂养' },
+    { value: 'solid', label: '辅食' },
+];
+
+// 当前正在编辑的喂奶记录 id，null 表示新增
+let editingFeedingId = null;
+// 编辑态回填用的原始记录（新增时是空对象）
+let feedingFormRecord = {};
+
+/** 生成喂奶表单 HTML。传 r 就是编辑态（回填原值），不传就是新增。 */
+function feedingFormHtml(r) {
+    const rec = r || {};
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const defaultLocal = `${formatDate(now)}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const toLocal = v => (v ? String(v).trim().replace(' ', 'T').slice(0, 16) : '');
+    const type = rec.feeding_type || 'breast';
+    const side = rec.side || '';
+
+    const typeOptions = FEEDING_TYPE_OPTIONS
+        .map(o => `<option value="${o.value}"${type === o.value ? ' selected' : ''}>${o.label}</option>`)
+        .join('');
+
+    return `
+        <form id="feedingForm">
+            <div class="form-group">
+                <label>喂养类型</label>
+                <select id="feedingType">${typeOptions}</select>
+            </div>
+            <div class="form-group">
+                <label>开始时间</label>
+                <input type="datetime-local" id="feedingStart" value="${toLocal(rec.start_time) || defaultLocal}" required>
+            </div>
+            <div class="form-group">
+                <label>结束时间 <small>（可选，填了能算出本次时长）</small></label>
+                <input type="datetime-local" id="feedingEnd" value="${toLocal(rec.end_time)}">
+            </div>
+            <div class="form-group" id="amountGroup">
+                <label>奶量 (ml)</label>
+                <input type="number" id="feedingAmount" value="${rec.amount != null ? rec.amount : ''}" placeholder="可选">
+            </div>
+            <div class="form-group" id="sideGroup">
+                <label>哺乳侧</label>
+                <select id="feedingSide">
+                    <option value="">选择</option>
+                    <option value="left"${side === 'left' ? ' selected' : ''}>左侧</option>
+                    <option value="right"${side === 'right' ? ' selected' : ''}>右侧</option>
+                    <option value="both"${side === 'both' ? ' selected' : ''}>双侧</option>
+                </select>
+            </div>
+            <!-- 母乳左右侧计时器 -->
+            <div class="form-group side-timer-group" id="sideTimerGroup">
+                <label>⏱ 左右侧计时</label>
+                <div class="side-timer-container">
+                    <div class="side-timer-box" id="leftTimerBox">
+                        <div class="side-timer-label">左侧</div>
+                        <div class="side-timer-display" id="leftTimerDisplay">00:00</div>
+                        <div class="side-timer-buttons">
+                            <button type="button" class="side-timer-btn start" id="leftTimerStart">开始</button>
+                            <button type="button" class="side-timer-btn stop" id="leftTimerStop" style="display:none">停止</button>
+                        </div>
+                    </div>
+                    <div class="side-timer-box" id="rightTimerBox">
+                        <div class="side-timer-label">右侧</div>
+                        <div class="side-timer-display" id="rightTimerDisplay">00:00</div>
+                        <div class="side-timer-buttons">
+                            <button type="button" class="side-timer-btn start" id="rightTimerStart">开始</button>
+                            <button type="button" class="side-timer-btn stop" id="rightTimerStop" style="display:none">停止</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="side-timer-total">总时长: <span id="sideTimerTotal">00:00</span></div>
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <input type="text" id="feedingNote" value="${escapeHtml(rec.note || '')}" placeholder="可选">
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-cancel" id="cancelRecordForm">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    `;
+}
+
+/** 按喂养类型显示/隐藏字段：母乳不填奶量，瓶喂/辅食不选侧和计时，混合喂养都要 */
+function applyFeedingTypeVisibility(type) {
+    const amountGroup = document.getElementById('amountGroup');
+    const sideGroup = document.getElementById('sideGroup');
+    const sideTimerGroup = document.getElementById('sideTimerGroup');
+    const showSide = (type === 'breast' || type === 'mixed');
+    if (amountGroup) amountGroup.style.display = (type === 'breast') ? 'none' : 'block';
+    if (sideGroup) sideGroup.style.display = showSide ? 'block' : 'none';
+    if (sideTimerGroup) sideTimerGroup.style.display = showSide ? 'block' : 'none';
+}
+
+/** 初始化喂奶表单：绑事件、按类型显隐、回填计时器秒数 */
+function setupFeedingForm(rec) {
+    initSideTimers();
+    // 编辑时把已有计时值填回去，否则一进编辑界面就「归零」，保存后时长被抹掉
+    leftTimerSeconds = Number(rec.left_duration) || 0;
+    rightTimerSeconds = Number(rec.right_duration) || 0;
+    updateSideTimerDisplay('left', leftTimerSeconds);
+    updateSideTimerDisplay('right', rightTimerSeconds);
+    updateSideTimerTotal();
+
+    const typeSelect = document.getElementById('feedingType');
+    applyFeedingTypeVisibility(typeSelect ? typeSelect.value : 'breast');
+    typeSelect?.addEventListener('change', function () {
+        applyFeedingTypeVisibility(this.value);
+    });
+
+    document.getElementById('feedingForm')?.addEventListener('submit', function (e) {
+        e.preventDefault();
+        submitFeedingForm();
+    });
+}
+
+/** 收集表单数据。时间统一成 'YYYY-MM-DD HH:MM:SS'，后端也只认这一种格式。 */
+function collectFeedingForm() {
+    const startEl = document.getElementById('feedingStart');
+    const start = startEl?.value || '';
+    if (!start) {
+        showToast.error('请填写开始时间');
+        return null;
+    }
+    const end = document.getElementById('feedingEnd')?.value || '';
+    const amountRaw = document.getElementById('feedingAmount')?.value;
+
+    return {
+        start_time: start.replace('T', ' ') + ':00',
+        end_time: end ? end.replace('T', ' ') + ':00' : null,
+        feeding_type: document.getElementById('feedingType')?.value || '',
+        amount: (amountRaw === '' || amountRaw == null) ? null : Number(amountRaw),
+        side: document.getElementById('feedingSide')?.value || null,
+        note: document.getElementById('feedingNote')?.value || '',
+        left_duration: leftTimerSeconds > 0 ? leftTimerSeconds : null,
+        right_duration: rightTimerSeconds > 0 ? rightTimerSeconds : null,
+    };
+}
+
+function submitFeedingForm() {
+    if (!App.currentBaby) return;
+    const payload = collectFeedingForm();
+    if (!payload) return;
+
+    const isEdit = !!editingFeedingId;
+    const url = isEdit
+        ? `/api/babies/${App.currentBaby}/feeding/${editingFeedingId}`
+        : `/api/babies/${App.currentBaby}/feeding`;
+
+    api(url, {
+        method: isEdit ? 'PUT' : 'POST',
+        body: JSON.stringify(payload),
+    }).then(res => {
+        if (res.success) {
+            hideModal('recordModal');
+            showToast.success(isEdit ? '已更新' : '记录已添加');
+            resetSideTimers();
+            editingFeedingId = null;
+            loadFeedingPage();
+            loadTimeline();
+            loadDashboard();
+        } else {
+            showToast.error(res.message || '保存失败');
+        }
+    });
+}
+
 function showRecordModal(type) {
     const titles = {
         feeding: '喂奶记录',
@@ -1734,66 +1942,9 @@ function showRecordModal(type) {
 
     let html = '';
     if (type === 'feeding') {
-        html = `
-            <form id="feedingForm">
-                <div class="form-group">
-                    <label>开始时间</label>
-                    <input type="datetime-local" id="feedingStart" value="${dateTimeLocal}" required>
-                </div>
-                <div class="form-group">
-                    <label>喂养类型</label>
-                    <select id="feedingType">
-                        <option value="breast">母乳</option>
-                        <option value="bottle">配方奶</option>
-                        <option value="solid">辅食</option>
-                    </select>
-                </div>
-                <div class="form-group" id="amountGroup">
-                    <label>奶量 (ml)</label>
-                    <input type="number" id="feedingAmount" placeholder="可选">
-                </div>
-                <div class="form-group" id="sideGroup">
-                    <label>哺乳侧</label>
-                    <select id="feedingSide">
-                        <option value="">选择</option>
-                        <option value="left">左侧</option>
-                        <option value="right">右侧</option>
-                        <option value="both">双侧</option>
-                    </select>
-                </div>
-                <!-- 母乳左右侧计时器 -->
-                <div class="form-group side-timer-group" id="sideTimerGroup">
-                    <label>⏱ 左右侧计时</label>
-                    <div class="side-timer-container">
-                        <div class="side-timer-box" id="leftTimerBox">
-                            <div class="side-timer-label">左侧</div>
-                            <div class="side-timer-display" id="leftTimerDisplay">00:00</div>
-                            <div class="side-timer-buttons">
-                                <button type="button" class="side-timer-btn start" id="leftTimerStart">开始</button>
-                                <button type="button" class="side-timer-btn stop" id="leftTimerStop" style="display:none">停止</button>
-                            </div>
-                        </div>
-                        <div class="side-timer-box" id="rightTimerBox">
-                            <div class="side-timer-label">右侧</div>
-                            <div class="side-timer-display" id="rightTimerDisplay">00:00</div>
-                            <div class="side-timer-buttons">
-                                <button type="button" class="side-timer-btn start" id="rightTimerStart">开始</button>
-                                <button type="button" class="side-timer-btn stop" id="rightTimerStop" style="display:none">停止</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="side-timer-total">总时长: <span id="sideTimerTotal">00:00</span></div>
-                </div>
-                <div class="form-group">
-                    <label>备注</label>
-                    <input type="text" id="feedingNote" placeholder="可选">
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-cancel" id="cancelRecordForm">取消</button>
-                    <button type="submit" class="btn btn-primary">保存</button>
-                </div>
-            </form>
-        `;
+        editingFeedingId = null;
+        feedingFormRecord = {};
+        html = feedingFormHtml(null);
     } else if (type === 'sleep') {
         html = `
             <form id="sleepForm">
@@ -1882,63 +2033,17 @@ function showRecordModal(type) {
 
 function bindRecordFormEvents(type) {
     document.getElementById('cancelRecordForm')?.addEventListener('click', () => {
-        if (type === 'feeding') resetSideTimers();
+        if (type === 'feeding') {
+            resetSideTimers();
+            editingFeedingId = null;
+            feedingFormRecord = {};
+        }
         hideModal('recordModal');
     });
 
     if (type === 'feeding') {
-        // 初始化左右侧计时器
-        initSideTimers();
-        resetSideTimers();
-
-        // 切换喂养类型时显示/隐藏相关字段
-        document.getElementById('feedingType')?.addEventListener('change', function() {
-            const amountGroup = document.getElementById('amountGroup');
-            const sideGroup = document.getElementById('sideGroup');
-            const sideTimerGroup = document.getElementById('sideTimerGroup');
-            if (this.value === 'breast') {
-                amountGroup.style.display = 'none';
-                sideGroup.style.display = 'block';
-                sideTimerGroup.style.display = 'block';
-            } else if (this.value === 'bottle') {
-                amountGroup.style.display = 'block';
-                sideGroup.style.display = 'none';
-                sideTimerGroup.style.display = 'none';
-            } else {
-                amountGroup.style.display = 'block';
-                sideGroup.style.display = 'none';
-                sideTimerGroup.style.display = 'none';
-            }
-        });
-
-        document.getElementById('feedingForm')?.addEventListener('submit', function(e) {
-            e.preventDefault();
-            const data = {
-                baby_id: App.currentBaby,
-                start_time: document.getElementById('feedingStart')?.value || '',
-                feeding_type: document.getElementById('feedingType')?.value || '',
-                amount: document.getElementById('feedingAmount')?.value || null,
-                side: document.getElementById('feedingSide')?.value || null,
-                note: document.getElementById('feedingNote')?.value || '',
-                left_duration: leftTimerSeconds > 0 ? leftTimerSeconds : null,
-                right_duration: rightTimerSeconds > 0 ? rightTimerSeconds : null
-            };
-
-            api(`/api/babies/${App.currentBaby}/feeding`, {
-                method: 'POST',
-                body: JSON.stringify(data)
-            }).then(res => {
-                if (res.success) {
-                    hideModal('recordModal');
-                    showToast.success('记录已添加');
-                    loadFeedingPage();
-                    loadTimeline();
-                    loadDashboard();
-                } else {
-                    showToast.error(res.message || '添加失败');
-                }
-            });
-        });
+        // 新增/编辑走同一套表单：setupFeedingForm 负责计时器回填、类型显隐和提交
+        setupFeedingForm(feedingFormRecord);
     } else if (type === 'sleep') {
         document.getElementById('sleepForm')?.addEventListener('submit', function(e) {
             e.preventDefault();
@@ -2165,69 +2270,156 @@ function showPumpingModal() {
 }
 
 // ==================== 喂奶记录页面 ====================
+// 日期范围：1=今日 3=近3天 7=近7天 0=全部
+let feedingRange = 1;
+
 function loadFeedingPage() {
     if (!App.currentBaby) return;
     const container = document.getElementById('feedingList');
     if (!container) return;
 
-    api(`/api/babies/${App.currentBaby}/feeding`).then(res => {
+    const params = new URLSearchParams();
+    if (feedingRange > 0) {
+        const start = new Date();
+        start.setDate(start.getDate() - (feedingRange - 1));
+        params.set('start', formatDate(start));
+    }
+    params.set('limit', '200');
+
+    api(`/api/babies/${App.currentBaby}/feeding?${params.toString()}`).then(res => {
         if (!res.success) return;
-
-        // 更新统计栏
-        const today = getToday();
-        const todayRecords = (res.data || []).filter(r => r.start_time && r.start_time.startsWith(today));
-        const todayAmount = todayRecords.reduce((sum, r) => sum + (r.amount || 0), 0);
-        const countEl = document.getElementById('feedingTodayCount');
-        const amountEl = document.getElementById('feedingTodayAmount');
-        const lastEl = document.getElementById('feedingLastTime');
-        if (countEl) countEl.textContent = todayRecords.length;
-        if (amountEl) amountEl.textContent = todayAmount;
-
-        // 计算距离上次喂奶时间
-        if (lastEl && res.data && res.data.length > 0) {
-            const lastRecord = res.data[0];
-            if (lastRecord.start_time) {
-                const lastTime = new Date(lastRecord.start_time);
-                const now = new Date();
-                const diffMs = now - lastTime;
-                const diffMin = Math.floor(diffMs / 60000);
-                if (diffMin < 60) {
-                    lastEl.textContent = `${diffMin}分钟前`;
-                } else if (diffMin < 1440) {
-                    lastEl.textContent = `${Math.floor(diffMin / 60)}小时前`;
-                } else {
-                    lastEl.textContent = `${Math.floor(diffMin / 1440)}天前`;
-                }
-            }
-        } else if (lastEl) {
-            lastEl.textContent = '--';
-        }
-
-        if (!res.data || res.data.length === 0) {
-            container.innerHTML = '<p class="empty-tip">暂无喂奶记录<br><small>点击上方按钮或快捷按钮添加记录</small></p>';
-            return;
-        }
-        container.innerHTML = res.data.map(renderFeedingItems).join('');
+        renderFeedingList(res.data || []);
     });
 
-    // 绑定添加按钮事件
+    loadFeedingStats();
+    bindFeedingPageControls();
+}
+
+/** 顶部统计栏：今日次数 / 瓶喂总量 / 亲喂总时长 / 距上次 */
+function loadFeedingStats() {
+    api(`/api/babies/${App.currentBaby}/feeding/stats`).then(res => {
+        if (!res.success) return;
+        const d = res.data || {};
+        const total = d.today_total || {};
+        setText('feedingTodayCount', total.count || 0);
+        setText('feedingTodayAmount', Math.round(total.amount || 0));
+        setText('feedingTodayBreast', Math.round((total.breast_seconds || 0) / 60));
+
+        const lastEl = document.getElementById('feedingLastTime');
+        if (lastEl) {
+            lastEl.textContent = (d.minutes_since_last == null) ? '--' : formatAgoCN(d.minutes_since_last);
+        }
+        renderFeedingReminder(d);
+    });
+}
+
+/** 距上次喂奶提醒条：超过设定小时数就变红提示 */
+function renderFeedingReminder(stats) {
+    const box = document.getElementById('feedingReminder');
+    const textEl = document.getElementById('feedingReminderText');
+    if (!box || !textEl) return;
+
+    const minutes = stats.minutes_since_last;
+    if (minutes == null) {
+        box.style.display = 'none';
+        return;
+    }
+
+    const hours = getFeedingReminderHours();
+    const threshold = hours * 60;
+    const overdue = minutes >= threshold;
+    box.style.display = 'flex';
+    box.classList.toggle('overdue', overdue);
+
+    if (overdue) {
+        textEl.textContent = `距离上次喂奶已经 ${formatAgoCN(minutes)}，超过 ${hours} 小时了，该喂啦`;
+    } else {
+        const left = Math.max(0, Math.round(threshold - minutes));
+        textEl.textContent = `距离上次喂奶 ${formatAgoCN(minutes)}，还有约 ${left} 分钟到 ${hours} 小时`;
+    }
+}
+
+/** 提醒间隔（小时）：优先用「通知设置」里保存的值，没有就用 3 小时 */
+function getFeedingReminderHours() {
+    const saved = parseFloat(localStorage.getItem('feedingReminderHours'));
+    return (isFinite(saved) && saved > 0) ? saved : 3;
+}
+
+/** 列表按天分组，每天带一行小计 */
+function renderFeedingList(records) {
+    const container = document.getElementById('feedingList');
+    if (!container) return;
+
+    if (!records.length) {
+        container.innerHTML = '<p class="empty-tip">暂无喂奶记录<br><small>点击上方按钮或快捷按钮添加记录</small></p>';
+        return;
+    }
+
+    const groups = new Map();
+    records.forEach(r => {
+        const day = (r.start_time || '').slice(0, 10) || '未知日期';
+        if (!groups.has(day)) groups.set(day, []);
+        groups.get(day).push(r);
+    });
+
+    const today = getToday();
+    const yesterday = formatDate(new Date(Date.now() - 86400000));
+    let html = '';
+    groups.forEach((items, day) => {
+        const title = day === today ? '今天' : (day === yesterday ? '昨天' : day);
+        const amount = items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        const seconds = items.reduce(
+            (s, r) => s + (Number(r.left_duration) || 0) + (Number(r.right_duration) || 0), 0);
+        let sum = `${items.length} 次`;
+        if (amount) sum += ` · ${Math.round(amount)}ml`;
+        if (seconds) sum += ` · 亲喂 ${Math.round(seconds / 60)} 分`;
+
+        html += `<div class="care-day-group">
+            <div class="care-day-header">
+                <span class="care-day-title">${escapeHtml(title)}</span>
+                <span class="care-day-sum">${sum}</span>
+            </div>
+            ${items.map(renderFeedingItems).join('')}
+        </div>`;
+    });
+    container.innerHTML = html;
+}
+
+/** 页面上的按钮只绑一次（loadFeedingPage 会被反复调用） */
+function bindFeedingPageControls() {
     const btn = document.getElementById('addFeedingBtnPage');
     if (btn && !btn._bound) {
         btn._bound = true;
         btn.addEventListener('click', () => showRecordModal('feeding'));
     }
 
-    // 绑定快捷操作按钮
     const quickActions = document.getElementById('feedingQuickActions');
     if (quickActions && !quickActions._bound) {
         quickActions._bound = true;
         quickActions.addEventListener('click', (e) => {
             const btn = e.target.closest('.quick-btn');
             if (!btn) return;
-            const type = btn.dataset.type;
-            const amount = parseInt(btn.dataset.amount) || 0;
-            quickAddFeeding(type, amount);
+            quickAddFeeding(btn.dataset.type, parseInt(btn.dataset.amount) || 0);
         });
+    }
+
+    const tabs = document.getElementById('feedingRangeTabs');
+    if (tabs && !tabs._bound) {
+        tabs._bound = true;
+        tabs.addEventListener('click', (e) => {
+            const btn = e.target.closest('.tab-btn');
+            if (!btn) return;
+            tabs.querySelectorAll('.tab-btn').forEach(x => x.classList.remove('active'));
+            btn.classList.add('active');
+            feedingRange = parseInt(btn.dataset.range) || 0;
+            loadFeedingPage();
+        });
+    }
+
+    const remindBtn = document.getElementById('feedingReminderBtn');
+    if (remindBtn && !remindBtn._bound) {
+        remindBtn._bound = true;
+        remindBtn.addEventListener('click', () => showRecordModal('feeding'));
     }
 }
 
@@ -2237,10 +2429,14 @@ function quickAddFeeding(type, amount) {
     const data = {
         baby_id: App.currentBaby,
         feeding_type: type,
-        amount: amount,
         start_time: nowLocalStr(),
-        side: type === 'breast' ? 'both' : '',
     };
+    if (type === 'breast') {
+        // 母乳不记 ml，写 0 会在库里留脏值，也会让「总量」统计失真
+        data.side = 'both';
+    } else if (amount > 0) {
+        data.amount = amount;
+    }
     api('/api/babies/' + App.currentBaby + '/feeding', {
         method: 'POST',
         body: JSON.stringify(data)
@@ -2773,14 +2969,25 @@ function quickAddDiaper(type) {
 }
 
 function renderFeedingItems(r) {
-    const typeMap = { breast: '母乳', bottle: '配方奶', solid: '辅食' };
+    const typeMap = { breast: '母乳', bottle: '配方奶', solid: '辅食', mixed: '混合' };
     const sideMap = { left: '左侧', right: '右侧', both: '双侧' };
-    let durationInfo = '';
-    if (r.left_duration || r.right_duration) {
-        const left = r.left_duration ? `${Math.floor(r.left_duration / 60)}分${r.left_duration % 60}秒` : '';
-        const right = r.right_duration ? `${Math.floor(r.right_duration / 60)}分${r.right_duration % 60}秒` : '';
-        durationInfo = ` [左:${left || '-'} 右:${right || '-'}]`;
+    const parts = [];
+
+    if (r.amount) parts.push(`${escapeHtml(String(r.amount))}ml`);
+    if (r.side) parts.push(sideMap[r.side] || escapeHtml(String(r.side)));
+
+    const totalSec = (Number(r.left_duration) || 0) + (Number(r.right_duration) || 0);
+    if (totalSec) {
+        const lr = `（左 ${formatDurationCN(r.left_duration) || '-'} / 右 ${formatDurationCN(r.right_duration) || '-'}）`;
+        parts.push(`亲喂 ${formatDurationCN(totalSec)}${lr}`);
+    } else {
+        // 没计左右侧、只填了起止时间 → 直接算本次时长
+        const s = parseDateSafe(r.start_time);
+        const e = parseDateSafe(r.end_time);
+        if (s && e && e > s) parts.push(`时长 ${formatDurationCN(Math.round((e - s) / 1000))}`);
     }
+    if (r.note) parts.push(escapeHtml(r.note));
+
     return `
         <div class="care-item">
             <button class="care-delete" onclick="deleteRecord('feeding', ${r.id})">✕</button>
@@ -2789,89 +2996,24 @@ function renderFeedingItems(r) {
                 <span class="care-type">${typeMap[r.feeding_type] || r.feeding_type}</span>
                 <span class="care-time">${formatDateTime(r.start_time)}</span>
             </div>
-            <div class="care-detail">
-                ${r.amount ? `${escapeHtml(String(r.amount))}ml` : ''} ${r.side ? sideMap[r.side] : ''} ${durationInfo} ${r.note ? escapeHtml(r.note) : ''}
-            </div>
+            <div class="care-detail">${parts.join(' · ')}</div>
         </div>
     `;
 }
 
-// 编辑喂奶记录
+// 编辑喂奶记录：与新增共用同一套表单，左右侧计时时长会回填，保存时不会被抹掉
 function editFeeding(id) {
     if (!App.currentBaby) return;
     api(`/api/babies/${App.currentBaby}/feeding/${id}`).then(res => {
         if (!res.success) return showToast.error('加载失败');
         const r = res.data;
+        editingFeedingId = id;
+        feedingFormRecord = r;
         // 复用 recordModal 容器（showModal 只认元素 id，不能直接传 HTML 字符串）
         document.getElementById('recordModalTitle').textContent = '编辑喂奶记录';
-        const body = document.getElementById('recordModalBody');
-        body.innerHTML = `
-            <form id="editFeedingForm">
-                <div class="form-group">
-                    <label>类型</label>
-                    <select id="editFeedingType">
-                        <option value="breast" ${r.feeding_type === 'breast' ? 'selected' : ''}>母乳</option>
-                        <option value="bottle" ${r.feeding_type === 'bottle' ? 'selected' : ''}>配方奶</option>
-                        <option value="solid" ${r.feeding_type === 'solid' ? 'selected' : ''}>辅食</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>奶量 (ml)</label>
-                    <input type="number" id="editFeedingAmount" value="${r.amount || ''}" placeholder="0">
-                </div>
-                <div class="form-group">
-                    <label>喂奶侧</label>
-                    <select id="editFeedingSide">
-                        <option value="">不限</option>
-                        <option value="left" ${r.side === 'left' ? 'selected' : ''}>左侧</option>
-                        <option value="right" ${r.side === 'right' ? 'selected' : ''}>右侧</option>
-                        <option value="both" ${r.side === 'both' ? 'selected' : ''}>双侧</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>开始时间</label>
-                    <input type="datetime-local" id="editFeedingTime" value="${r.start_time ? r.start_time.slice(0, 16) : ''}">
-                </div>
-                <div class="form-group">
-                    <label>备注</label>
-                    <input type="text" id="editFeedingNote" value="${escapeHtml(r.note || '')}" placeholder="可选">
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-cancel" onclick="hideModal('recordModal')">取消</button>
-                    <button type="submit" class="btn btn-primary">保存</button>
-                </div>
-            </form>
-        `;
+        document.getElementById('recordModalBody').innerHTML = feedingFormHtml(r);
         showModal('recordModal');
-        document.getElementById('editFeedingForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            saveFeedingEdit(id);
-        });
-    });
-}
-
-function saveFeedingEdit(id) {
-    if (!App.currentBaby) return;
-    const data = {
-        feeding_type: document.getElementById('editFeedingType').value,
-        amount: parseInt(document.getElementById('editFeedingAmount').value) || 0,
-        side: document.getElementById('editFeedingSide').value,
-        start_time: document.getElementById('editFeedingTime').value,
-        note: document.getElementById('editFeedingNote').value,
-    };
-    api(`/api/babies/${App.currentBaby}/feeding/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(data)
-    }).then(res => {
-        if (res.success) {
-            showToast.success('已更新');
-            hideModal('recordModal');
-            loadFeedingPage();
-            loadTimeline();
-            loadDashboard();
-        } else {
-            showToast.error(res.message || '更新失败');
-        }
+        bindRecordFormEvents('feeding');
     });
 }
 
@@ -4750,6 +4892,9 @@ function loadNotificationConfig() {
         setVal('notifyDndEnd', cfg.dnd_end_time);
         setCheck('notifyFeedingEnabled', cfg.feeding_reminder_enabled);
         setVal('notifyFeedingInterval', cfg.feeding_reminder_interval);
+        if (cfg.feeding_reminder_interval) {
+            localStorage.setItem('feedingReminderHours', String(cfg.feeding_reminder_interval));
+        }
         setCheck('notifyDiaperEnabled', cfg.diaper_reminder_enabled);
         setVal('notifyDiaperInterval', cfg.diaper_reminder_interval);
         setCheck('notifyMedEnabled', cfg.medication_reminder_enabled);
@@ -4775,6 +4920,9 @@ function saveNotificationConfig() {
         medication_reminder_enabled: document.getElementById('notifyMedEnabled')?.checked || false,
         vaccine_reminder_enabled: document.getElementById('notifyVaccineEnabled')?.checked || false,
     };
+
+    // 喂奶页顶部的提醒条也用这个间隔，存一份到本地免得每次去服务端取
+    localStorage.setItem('feedingReminderHours', String(data.feeding_reminder_interval));
 
     api('/api/notifications/config', {
         method: 'POST',

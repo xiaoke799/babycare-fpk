@@ -184,9 +184,15 @@
                     <h3 class="section-title">喂奶记录</h3>
                     <button class="btn btn-primary btn-sm" id="addFeedingBtnPage">＋ 添加喂奶</button>
                 </div>
+                <!-- 距上次喂奶提醒 -->
+                <div class="feeding-reminder" id="feedingReminder" style="display:none">
+                    <div class="feeding-reminder-text" id="feedingReminderText"></div>
+                    <button class="feeding-reminder-btn" id="feedingReminderBtn">记一次</button>
+                </div>
                 <div class="record-stats-bar" id="feedingStatsBar">
                     <div class="stat-chip">今日 <strong id="feedingTodayCount">0</strong> 次</div>
-                    <div class="stat-chip">总量 <strong id="feedingTodayAmount">0</strong> ml</div>
+                    <div class="stat-chip">瓶喂 <strong id="feedingTodayAmount">0</strong> ml</div>
+                    <div class="stat-chip">亲喂 <strong id="feedingTodayBreast">0</strong> 分</div>
                     <div class="stat-chip">上次 <strong id="feedingLastTime">--</strong></div>
                 </div>
                 <!-- 快捷操作 -->
@@ -195,6 +201,13 @@
                     <button class="quick-btn" data-type="bottle" data-amount="60">60ml</button>
                     <button class="quick-btn" data-type="bottle" data-amount="90">90ml</button>
                     <button class="quick-btn" data-type="bottle" data-amount="120">120ml</button>
+                </div>
+                <!-- 日期筛选 -->
+                <div class="care-tabs" id="feedingRangeTabs">
+                    <button class="tab-btn active" data-range="1">今日</button>
+                    <button class="tab-btn" data-range="3">近3天</button>
+                    <button class="tab-btn" data-range="7">近7天</button>
+                    <button class="tab-btn" data-range="0">全部</button>
                 </div>
                 <div class="care-list" id="feedingList">
                     <p class="empty-tip">暂无喂奶记录</p>

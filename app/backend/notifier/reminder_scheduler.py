@@ -16,6 +16,19 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 
 
+def _parse_dt(value):
+    """解析库里的时间字符串。兼容 'YYYY-MM-DD HH:MM:SS' 与 'YYYY-MM-DDTHH:MM'"""
+    if not value:
+        return None
+    text = str(value).replace("T", " ").strip()[:19]
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
 class ReminderScheduler:
     """定时提醒调度器"""
 
@@ -99,22 +112,32 @@ class ReminderScheduler:
     def _check_feeding_reminder(self, now: datetime):
         """检查喂奶提醒"""
         interval_hours = self.config.get("feeding_reminder_interval", 3)
-        interval_minutes = int(interval_hours * 60)
+        interval_minutes = int(float(interval_hours) * 60)
 
         try:
             db = self.db_getter()
             # 获取所有宝宝
             babies = db.execute("SELECT id, name FROM babies WHERE active = 1").fetchall()
             for baby in babies:
-                # 获取最后一次喂奶记录
+                # 获取最后一次喂奶记录。
+                # 表名是 feeding_records（不是 feedings），且要按 start_time 而不是
+                # created_at：补录一条昨晚的记录时 created_at 是「现在」，提醒永远不会响。
                 last_feeding = db.execute(
-                    "SELECT MAX(created_at) as last_time FROM feedings WHERE baby_id = ?",
+                    "SELECT MAX(replace(start_time, 'T', ' ')) as last_time "
+                    "FROM feeding_records WHERE baby_id = ?",
                     (baby["id"],),
                 ).fetchone()
 
                 if last_feeding and last_feeding["last_time"]:
-                    last_time = datetime.fromisoformat(last_feeding["last_time"])
+                    last_time = _parse_dt(last_feeding["last_time"])
+                    if last_time is None:
+                        continue
                     elapsed = (now - last_time).total_seconds() / 60  # 分钟
+
+                    # 记成了未来的时间（手抖填错）就跳过：不然 MAX() 一直取到它，
+                    # 这条宝宝永远「刚喂过」，提醒彻底哑掉
+                    if elapsed < 0:
+                        continue
 
                     if elapsed >= interval_minutes:
                         key = f"feeding_{baby['id']}"
@@ -131,20 +154,26 @@ class ReminderScheduler:
     def _check_diaper_reminder(self, now: datetime):
         """检查换尿布提醒"""
         interval_hours = self.config.get("diaper_reminder_interval", 2)
-        interval_minutes = int(interval_hours * 60)
+        interval_minutes = int(float(interval_hours) * 60)
 
         try:
             db = self.db_getter()
             babies = db.execute("SELECT id, name FROM babies WHERE active = 1").fetchall()
             for baby in babies:
+                # 表名是 diaper_records（不是 diaper_changes），时间列是 change_time
                 last_diaper = db.execute(
-                    "SELECT MAX(created_at) as last_time FROM diaper_changes WHERE baby_id = ?",
+                    "SELECT MAX(replace(change_time, 'T', ' ')) as last_time "
+                    "FROM diaper_records WHERE baby_id = ?",
                     (baby["id"],),
                 ).fetchone()
 
                 if last_diaper and last_diaper["last_time"]:
-                    last_time = datetime.fromisoformat(last_diaper["last_time"])
+                    last_time = _parse_dt(last_diaper["last_time"])
+                    if last_time is None:
+                        continue
                     elapsed = (now - last_time).total_seconds() / 60
+                    if elapsed < 0:  # 同上：未来时间不参与提醒判定
+                        continue
 
                     if elapsed >= interval_minutes:
                         key = f"diaper_{baby['id']}"

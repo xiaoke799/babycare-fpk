@@ -38,6 +38,7 @@ from validators import (
     validate_text_length,
     validate_weight,
     VALID_FEEDING_TYPES,
+    VALID_FEEDING_SIDES,
     VALID_DIAPER_TYPES,
     DURATION_MAX,
     NOTE_MAX_LENGTH,
@@ -60,7 +61,7 @@ DIAPER_TYPE_LIST = sorted(VALID_DIAPER_TYPES)
 # 取值范围对齐前端下拉框（app.js 的 diaperColor / skin_condition / side 选项）
 VALID_DIAPER_COLORS = {"black", "brown", "green", "yellow", "other"}
 VALID_SKIN_CONDITIONS = {"normal", "slight_red", "rash", "severe_rash"}
-VALID_FEEDING_SIDES = {"left", "right", "both"}
+# VALID_FEEDING_SIDES 来自 validators（喂奶路由与 AI 工具共用同一份枚举）
 DIAPER_COLOR_LIST = sorted(VALID_DIAPER_COLORS)
 SKIN_CONDITION_LIST = sorted(VALID_SKIN_CONDITIONS)
 FEEDING_SIDE_LIST = sorted(VALID_FEEDING_SIDES)
