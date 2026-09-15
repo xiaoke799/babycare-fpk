@@ -55,11 +55,32 @@ def _validate_category(category, valid_set, label):
     return category, None
 
 
+def _group_key(item):
+    """比价分组键：同品类 + 同单位。
+
+    只有这两个都一样，单价才具备可比性：
+    纸尿裤的 ¥/片 与湿巾的 ¥/片 单位字面相同但不能互相比较（品类不同），
+    湿巾的 ¥/片 与 ¥/包 也不能比较（单位不同）。
+    """
+    return (item.get("category") or "other", (item.get("unit") or "件").strip() or "件")
+
+
 # ==================== 用品比价 ====================
 
 @bp.route("/api/product-prices", methods=["GET"])
 def list_product_prices():
-    """获取用品价格列表（支持品类/规格/品牌筛选），按单价升序返回（最划算在前）"""
+    """获取用品价格列表（支持品类/规格/品牌筛选）。
+
+    关键：**排序与「最划算」判定都限定在「同品类 + 同单位」内**。
+    不同品类（湿巾 ¥0.05/片 vs 纸尿裤 ¥1.2/片）、不同单位（¥/罐 vs ¥/g）
+    的单价比不出任何结论——旧版把全库按单价升序排，结果永远是最便宜的那个品类垫底置顶，
+    "最划算"徽章也乱标。所以这里按品类聚拢、组内比价，并把比较结果算好给前端用：
+
+    - best_unit_price：同品类同单位内的最低单价（标杆）
+    - peer_count：同一标杆下有几条可比记录（<2 说明这组没有可比对象）
+    - is_best：仅当组内 ≥2 条可比记录且自己是最低价时才为 True
+    - vs_best_pct：比标杆贵多少百分比（0 表示就是最低价）
+    """
     db = get_db()
     category = request.args.get("category", "").strip()
     spec = request.args.get("spec", "").strip()
@@ -88,8 +109,34 @@ def list_product_prices():
         item["unit_price"] = round(price / size, 4) if size > 0 and price > 0 else None
         data.append(item)
 
-    # 有单价的按单价升序排前面（同品类内才真正可比），无单价的按时间排后面
-    data.sort(key=lambda x: (x["unit_price"] is None, x["unit_price"] or 0))
+    # 同品类 + 同单位 -> 一组，组内取最低单价当标杆
+    groups = {}
+    for item in data:
+        if item["unit_price"] is None:
+            continue
+        groups.setdefault(_group_key(item), []).append(item["unit_price"])
+
+    for item in data:
+        peers = groups.get(_group_key(item)) or []
+        best = min(peers) if peers else None
+        item["best_unit_price"] = round(best, 4) if best is not None else None
+        item["peer_count"] = len(peers)
+        item["is_best"] = bool(best is not None and len(peers) >= 2 and item["unit_price"] == best)
+        # 差价只在「真的比较过」（组内 ≥2 条）时给值；单条成组时给 None 而不是 0，
+        # 免得下游把 0 误读成"它就是最低价"
+        if len(peers) >= 2 and best and best > 0 and item["unit_price"] is not None:
+            item["vs_best_pct"] = round((item["unit_price"] - best) / best * 100, 1)
+        else:
+            item["vs_best_pct"] = None
+
+    # 按品类（沿用 VALID_CATEGORIES 的顺序）聚拢，组内按单位 + 单价升序，无单价沉底
+    cat_order = {k: i for i, k in enumerate(VALID_CATEGORIES)}
+    data.sort(key=lambda x: (
+        cat_order.get(x["category"], len(cat_order)),
+        x.get("unit") or "",
+        x["unit_price"] is None,
+        x["unit_price"] or 0,
+    ))
     return jsonify({"success": True, "data": data})
 
 
@@ -155,6 +202,12 @@ def update_product_price(record_id):
     if price <= 0:
         return jsonify({"success": False, "message": "请填写正确的价格"}), 400
 
+    # 与 POST 保持同一套校验：旧版 PUT 漏了包装量校验，
+    # 编辑时能把包装量改成负数（负数包装量算不出单价，记录会静默失去比价能力）
+    package_size = _to_float(data.get("package_size"))
+    if package_size < 0:
+        return jsonify({"success": False, "message": "包装量不能为负数"}), 400
+
     db = get_db()
     cur = db.execute(
         """UPDATE product_prices
@@ -167,7 +220,7 @@ def update_product_price(record_id):
             brand,
             str(data.get("series") or "").strip()[:50],
             str(data.get("spec") or "").strip()[:30],
-            _to_float(data.get("package_size")),
+            package_size,
             str(data.get("unit") or "件").strip()[:6],
             round(price, 2),
             str(data.get("purchase_channel") or "").strip()[:50],
@@ -184,10 +237,12 @@ def update_product_price(record_id):
 
 @bp.route("/api/product-prices/<int:record_id>", methods=["DELETE"])
 def delete_product_price(record_id):
-    """删除用品价格记录"""
+    """删除用品价格记录（不存在的 id 返回 404，避免前端"已删除"但其实没删）"""
     db = get_db()
-    db.execute("DELETE FROM product_prices WHERE id = ?", (record_id,))
+    cur = db.execute("DELETE FROM product_prices WHERE id = ?", (record_id,))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({"success": False, "message": "记录不存在"}), 404
     return jsonify({"success": True})
 
 
@@ -270,7 +325,7 @@ def update_expense(record_id):
         return jsonify({"success": False, "message": "日期格式应为 YYYY-MM-DD"}), 400
 
     db = get_db()
-    db.execute(
+    cur = db.execute(
         """UPDATE expense_records
            SET category=?, amount=?, item_name=?, purchase_channel=?, expense_date=?, note=?
            WHERE id=?""",
@@ -285,15 +340,19 @@ def update_expense(record_id):
         ),
     )
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({"success": False, "message": "记录不存在"}), 404
     return jsonify({"success": True, "message": "已更新"})
 
 
 @bp.route("/api/expenses/<int:record_id>", methods=["DELETE"])
 def delete_expense(record_id):
-    """删除支出记录"""
+    """删除支出记录（不存在的 id 返回 404）"""
     db = get_db()
-    db.execute("DELETE FROM expense_records WHERE id = ?", (record_id,))
+    cur = db.execute("DELETE FROM expense_records WHERE id = ?", (record_id,))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({"success": False, "message": "记录不存在"}), 404
     return jsonify({"success": True})
 
 

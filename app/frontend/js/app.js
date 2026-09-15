@@ -15920,6 +15920,7 @@ const shoppingState = {
     brand: '',
     ledgerMonth: null,    // 记账当前月 YYYY-MM，null=当月
     editingPriceId: null, // 正在编辑的价格记录 id
+    records: [],          // 当前比价列表缓存（编辑时直接取，不必再拉全量）
 };
 
 function initShoppingPage() {
@@ -15978,7 +15979,10 @@ function loadProductPrices() {
     if (shoppingState.brand) url += `brand=${encodeURIComponent(shoppingState.brand)}&`;
 
     api(url).then(res => {
-        if (res.success) renderProductRank(res.data || []);
+        if (res.success) {
+            shoppingState.records = res.data || [];
+            renderProductRank(shoppingState.records);
+        }
     });
 }
 
@@ -15990,36 +15994,67 @@ function renderProductRank(records) {
         return;
     }
 
-    // 找到有单价记录中的最低价，用于"最划算"标记
-    const priced = records.filter(r => r.unit_price != null);
-    const bestId = priced.length ? priced[0].id : null;
+    // 按品类分组：单价只在「同品类 + 同单位」内可比。
+    // 旧版把全库按单价升序排、跨品类标"最划算"，湿巾 ¥0.05/片 会压过纸尿裤 ¥1.2/片，
+    // 标出来的冠军跟用户当前想买的品类毫无关系。
+    const groups = new Map();
+    records.forEach(r => {
+        const key = r.category || 'other';
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(r);
+    });
 
-    container.innerHTML = records.map((r, idx) => {
-        const cat = SHOP_CATEGORIES[r.category] || { label: r.category || '其他' };
-        const isBest = r.id === bestId;
+    container.innerHTML = Array.from(groups.entries()).map(([catKey, items]) => {
+        const cat = SHOP_CATEGORIES[catKey] || { label: catKey };
+        // 组内至少有两条同单位记录，才存在真正能比的价
+        const comparable = items.some(i => (i.peer_count || 0) >= 2);
+        const sub = items.length + ' 条' + (comparable ? '' : ' · 暂无同规格可比');
         return `
-        <div class="diaper-price-item-card ${isBest ? 'price-best' : ''}">
-            ${isBest ? '<span class="price-best-badge">🏆 最划算</span>' : ''}
-            <div class="diaper-price-item-header">
-                <span class="diaper-price-brand">${escapeHtml(r.brand)}${r.series ? ' ' + escapeHtml(r.series) : ''}</span>
-                <span class="diaper-price-unit">${r.unit_price != null ? `¥${r.unit_price.toFixed(2)}/${escapeHtml(r.unit || '件')}` : '单价待填'}</span>
+        <div class="price-group">
+            <div class="price-group-head">
+                <span class="price-group-name">${escapeHtml(cat.label)}</span>
+                <span class="price-group-count">${sub}</span>
             </div>
-            <div class="diaper-price-details">
-                <span class="diaper-price-detail">${cat.label}</span>
-                ${r.spec ? `<span class="diaper-price-detail">${escapeHtml(r.spec)}</span>` : ''}
-                ${r.package_size > 0 ? `<span class="diaper-price-detail">${r.package_size}${escapeHtml(r.unit || '')}/包</span>` : ''}
-                <span class="diaper-price-detail">¥${escapeHtml(String(r.price))}</span>
-                ${r.purchase_channel ? `<span class="diaper-price-detail">${escapeHtml(r.purchase_channel)}</span>` : ''}
-                ${r.purchase_date ? `<span class="diaper-price-detail">${escapeHtml(r.purchase_date)}</span>` : ''}
-            </div>
-            ${r.note ? `<div class="diaper-price-note">${escapeHtml(r.note)}</div>` : ''}
-            <div class="diaper-price-actions">
-                <button class="price-action-btn" data-price-action="quick" data-brand="${escapeHtml(r.brand)}" data-price="${r.price}" data-cat="${escapeHtml(r.category || 'other')}">记一笔</button>
-                <button class="price-action-btn" onclick="editPriceRecord(${r.id})">编辑</button>
-                <button class="price-action-btn price-action-del" onclick="deletePriceRecord(${r.id})">删除</button>
-            </div>
+            ${items.map(renderPriceCard).join('')}
         </div>`;
     }).join('');
+}
+
+function renderPriceCard(r) {
+    const isBest = !!r.is_best;
+    const unit = escapeHtml(r.unit || '件');
+    const unitPriceText = r.unit_price != null ? `¥${r.unit_price.toFixed(2)}/${unit}` : '单价待填';
+
+    // 差价提示只在组内真有可比对象时给：单独一条记录谈不上"贵了/便宜了"
+    let delta = '';
+    if (r.unit_price != null && (r.peer_count || 0) >= 2 && r.vs_best_pct != null) {
+        delta = r.vs_best_pct <= 0
+            ? '<span class="price-delta is-low">同规格最低</span>'
+            : `<span class="price-delta">比同规格最低贵 ${r.vs_best_pct}%</span>`;
+    }
+
+    return `
+    <div class="diaper-price-item-card ${isBest ? 'price-best' : ''}">
+        ${isBest ? '<span class="price-best-badge">🏆 最划算</span>' : ''}
+        <div class="diaper-price-item-header">
+            <span class="diaper-price-brand">${escapeHtml(r.brand)}${r.series ? ' ' + escapeHtml(r.series) : ''}</span>
+            <span class="diaper-price-unit">${unitPriceText}</span>
+        </div>
+        <div class="diaper-price-details">
+            ${r.spec ? `<span class="diaper-price-detail">${escapeHtml(r.spec)}</span>` : ''}
+            ${r.package_size > 0 ? `<span class="diaper-price-detail">${r.package_size}${unit}/包</span>` : ''}
+            <span class="diaper-price-detail">¥${escapeHtml(String(r.price))}</span>
+            ${r.purchase_channel ? `<span class="diaper-price-detail">${escapeHtml(r.purchase_channel)}</span>` : ''}
+            ${r.purchase_date ? `<span class="diaper-price-detail">${escapeHtml(r.purchase_date)}</span>` : ''}
+        </div>
+        ${delta}
+        ${r.note ? `<div class="diaper-price-note">${escapeHtml(r.note)}</div>` : ''}
+        <div class="diaper-price-actions">
+            <button class="price-action-btn" data-price-action="quick" data-brand="${escapeHtml(r.brand)}" data-price="${r.price}" data-cat="${escapeHtml(r.category || 'other')}">记一笔</button>
+            <button class="price-action-btn" onclick="editPriceRecord(${r.id})">编辑</button>
+            <button class="price-action-btn price-action-del" onclick="deletePriceRecord(${r.id})">删除</button>
+        </div>
+    </div>`;
 }
 
 function specInputHint(category) {
@@ -16147,9 +16182,13 @@ function submitPriceRecord() {
 }
 
 function editPriceRecord(id) {
-    api(`/api/product-prices?`).then(res => {
+    // 优先用当前列表缓存，省掉一次"为了编辑一条而拉全量"的请求
+    const cached = (shoppingState.records || []).find(r => r.id === id);
+    if (cached) { showPriceModal(cached); return; }
+    api('/api/product-prices').then(res => {
         const record = (res.data || []).find(r => r.id === id);
         if (record) showPriceModal(record);
+        else showToast('记录不存在，可能已被删除');
     });
 }
 
@@ -16223,6 +16262,30 @@ function loadLedger() {
 
 function renderLedgerSummary(summary) {
     document.getElementById('ledgerMonthTotal').textContent = `¥${(summary.month_total || 0).toFixed(2)}`;
+
+    // 环比上月：趋势数组最后一格就是当前查看的月份，倒数第二格是上月
+    const trendAll = summary.trend || [];
+    const deltaEl = document.getElementById('ledgerMonthDelta');
+    if (deltaEl) {
+        const prev = trendAll.length >= 2 ? trendAll[trendAll.length - 2].total : 0;
+        const cur = trendAll.length ? trendAll[trendAll.length - 1].total : 0;
+        if (!prev) {
+            deltaEl.textContent = cur > 0 ? '上月无记录' : '';
+            deltaEl.className = 'ledger-delta';
+        } else {
+            const pct = Math.round((cur - prev) / prev * 100);
+            if (pct === 0) {
+                deltaEl.textContent = `与上月持平（¥${prev.toFixed(2)}）`;
+                deltaEl.className = 'ledger-delta';
+            } else if (pct > 0) {
+                deltaEl.textContent = `比上月多花 ${pct}%（上月 ¥${prev.toFixed(2)}）`;
+                deltaEl.className = 'ledger-delta is-up';
+            } else {
+                deltaEl.textContent = `比上月少花 ${Math.abs(pct)}%（上月 ¥${prev.toFixed(2)}）`;
+                deltaEl.className = 'ledger-delta is-down';
+            }
+        }
+    }
 
     // 分类占比条（带颜色）
     const catsEl = document.getElementById('ledgerCatBars');

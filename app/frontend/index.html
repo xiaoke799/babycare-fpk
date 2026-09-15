@@ -2059,7 +2059,7 @@
     <div id="shoppingComparePane">
         <div class="diaper-price-info-card">
             <div class="diaper-price-info-title">比价小贴士</div>
-            <p>单价 = 价格 ÷ 包装量。同一品类同规格才能直接对比，划走最划算的会置顶标出。支持纸尿裤、奶粉、湿巾、辅食等多种育儿用品。</p>
+            <p>单价 = 价格 ÷ 包装量。列表按品类分组，只有<strong>同品类 + 同单位</strong>的单价放在一起比较才有意义；组内最便宜的标🏆 最划算，其余显示比最低价贵多少。支持纸尿裤、奶粉、湿巾、辅食等多种育儿用品。</p>
         </div>
         <div class="shopping-cat-chips" id="shoppingCatChips">
             <button class="cat-chip active" data-cat="">全部</button>
@@ -2093,6 +2093,7 @@
                 <span class="ledger-total-label">本月支出</span>
                 <span class="ledger-total-value" id="ledgerMonthTotal">¥0.00</span>
             </div>
+            <div class="ledger-delta-row"><span class="ledger-delta" id="ledgerMonthDelta"></span></div>
             <div class="ledger-cats" id="ledgerCatBars"></div>
         </div>
         <div class="ledger-trend-card">
