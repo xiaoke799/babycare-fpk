@@ -154,9 +154,21 @@ def _format_age(birthday_str):
     return f"{years}岁{months}个月"
 
 
-GENDER_LABEL = {"male": "男宝", "female": "女宝", "男": "男宝", "女": "女宝"}
+# 性别标签：库里真实存的是 boy / girl / other（前端新增宝宝下拉、babies.py INSERT
+# 用的都是这三个值），其余写法是历史数据兼容——键必须包含 boy/girl/other，
+# 否则首页档案卡会直接显示英文 "boy" / "girl" / "other"。
+GENDER_LABEL = {
+    "boy": "男宝",
+    "girl": "女宝",
+    "other": "其他",
+    "male": "男宝",
+    "female": "女宝",
+    "男": "男宝",
+    "女": "女宝",
+}
 FEEDING_TYPE_LABEL = {"breast": "母乳", "bottle": "奶瓶", "solid": "辅食"}
 DIAPER_TYPE_LABEL = {"wet": "尿湿", "dirty": "大便", "both": "大小便", "dry": "干爽"}
+DIAPER_COLOR_LABEL = {"black": "黑色", "brown": "棕色", "green": "绿色", "yellow": "黄色", "other": "其他"}
 SIDE_LABEL = {"left": "左侧", "right": "右侧", "both": "双侧"}
 
 
@@ -273,7 +285,7 @@ def _get_recent_records(db, baby_id, limit=6):
         t = _parse_time_str(r["change_time"])
         summary = DIAPER_TYPE_LABEL.get(r["diaper_type"], r["diaper_type"] or "更换尿布")
         if r["color"]:
-            summary += f" · {r['color']}"
+            summary += f" · {DIAPER_COLOR_LABEL.get(r['color'], r['color'])}"
         records.append({
             "type": "diaper",
             "type_label": "尿布",
