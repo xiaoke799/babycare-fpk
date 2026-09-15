@@ -4695,6 +4695,55 @@ function loadClinicSummary() {
             milestoneHtml = '<p style="color:var(--text-light);font-size:12px;">暂无里程碑记录</p>';
         }
 
+        // ---- 医生常问的四项：过敏史 / 近期体温 / 用药史 / 疫苗接种 ----
+        const EMPTY_TIP = '<p style="color:var(--text-light);font-size:12px;">';
+
+        const ALLERGEN_TYPE = { food: '食物', drug: '药物', environmental: '环境', other: '其他' };
+        const ALLERGEN_SEVERITY = { mild: '轻度', moderate: '中度', severe: '重度', anaphylaxis: '过敏性休克' };
+        const allergies = data.allergies || [];
+        const allergyHtml = allergies.length ? allergies.map(a => {
+            const heavy = (a.severity_level === 'severe' || a.severity_level === 'anaphylaxis');
+            return `<div class="clinic-milestone-item">
+                <b>${escapeHtml(a.allergen_name || '')}</b>
+                <span class="clinic-tag${heavy ? ' clinic-tag-danger' : ''}">${escapeHtml(ALLERGEN_TYPE[a.allergen_type] || a.allergen_type || '')} · ${escapeHtml(ALLERGEN_SEVERITY[a.severity_level] || a.severity_level || '')}</span>
+                ${a.reaction_detail ? `<div class="clinic-sub">${escapeHtml(a.reaction_detail)}</div>` : ''}
+            </div>`;
+        }).join('') : EMPTY_TIP + '暂无已知过敏史</p>';
+
+        const TEMP_METHOD = { ear: '耳温', armpit: '腋温', oral: '口温', rectal: '肛温' };
+        const temps = data.recent_temperatures || [];
+        const tempHtml = temps.length ? temps.map(t =>
+            `<div class="clinic-milestone-item">
+                <b${t.is_fever ? ' class="clinic-danger"' : ''}>${escapeHtml(String(t.temperature))}°C</b>
+                ${t.is_fever ? '<span class="clinic-tag clinic-tag-danger">发热</span>' : ''}
+                <div class="clinic-sub">${escapeHtml(formatDateTime(t.measure_time))} · ${escapeHtml(TEMP_METHOD[t.measure_method] || t.measure_method || '')}${t.note ? ' · ' + escapeHtml(t.note) : ''}</div>
+            </div>`
+        ).join('') : EMPTY_TIP + '近期无体温记录</p>';
+
+        const meds = data.recent_medications || [];
+        const medHtml = meds.length ? meds.map(m =>
+            `<div class="clinic-milestone-item">
+                <b>${escapeHtml(m.medication_name || '')}</b>
+                ${m.dosage ? `<span class="clinic-tag clinic-tag-muted">${escapeHtml(String(m.dosage))}${escapeHtml(m.dosage_unit || '')}</span>` : ''}
+                <div class="clinic-sub">${escapeHtml(formatDateTime(m.measure_time))}${m.note ? ' · ' + escapeHtml(m.note) : ''}</div>
+            </div>`
+        ).join('') : EMPTY_TIP + '近期无用药记录</p>';
+
+        const VAC_STATUS = { completed: '已接种', pending: '待接种', skipped: '已跳过', delayed: '已延期' };
+        const vacs = data.vaccinations || [];
+        const vacHtml = vacs.length ? vacs.map(v => {
+            const dateText = v.actual_date ? `接种 ${v.actual_date}` : (v.scheduled_date ? `计划 ${v.scheduled_date}` : '');
+            let reaction = '';
+            if (v.has_reaction) {
+                reaction = v.reaction_detail ? ` · 反应：${v.reaction_detail}` : ' · 有不良反应';
+            }
+            return `<div class="clinic-milestone-item">
+                <b>${escapeHtml(v.vaccine_name || '')} 第${v.dose_number || 1}剂</b>
+                <span class="clinic-tag${v.status === 'completed' ? '' : ' clinic-tag-muted'}">${escapeHtml(VAC_STATUS[v.status] || v.status || '')}</span>
+                <div class="clinic-sub">${escapeHtml(dateText)}${escapeHtml(reaction)}</div>
+            </div>`;
+        }).join('') : EMPTY_TIP + '暂无疫苗记录</p>';
+
         container.innerHTML = `
             <div class="clinic-card">
                 <div class="clinic-card-title"> 宝宝基本信息</div>
@@ -4734,6 +4783,26 @@ function loadClinicSummary() {
                     </thead>
                     <tbody>${growthRows}</tbody>
                 </table>` : '<p style="color:var(--text-light);font-size:12px;">暂无成长记录</p>'}
+            </div>
+
+            <div class="clinic-card">
+                <div class="clinic-card-title"> 过敏史</div>
+                <div class="clinic-milestone-list">${allergyHtml}</div>
+            </div>
+
+            <div class="clinic-card">
+                <div class="clinic-card-title"> 近期体温</div>
+                <div class="clinic-milestone-list">${tempHtml}</div>
+            </div>
+
+            <div class="clinic-card">
+                <div class="clinic-card-title"> 用药史</div>
+                <div class="clinic-milestone-list">${medHtml}</div>
+            </div>
+
+            <div class="clinic-card">
+                <div class="clinic-card-title"> 疫苗接种</div>
+                <div class="clinic-milestone-list">${vacHtml}</div>
             </div>
 
             <div class="clinic-card">

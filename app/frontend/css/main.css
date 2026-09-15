@@ -1795,11 +1795,44 @@ body {
 .clinic-milestone-item {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;   /* 过敏/体温/用药/疫苗条目带副文本，需要换行 */
     gap: 6px;
     font-size: 12px;
     padding: 6px 8px;
     background: var(--bg-color);
     border-radius: 6px;
+}
+
+/* 看诊摘要：条目标签与副文本 */
+.clinic-sub {
+    flex: 0 0 100%;
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.clinic-tag {
+    flex: 0 0 auto;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: 11px;
+    background: rgba(76, 175, 132, 0.14);
+    color: #3D8F6C;
+}
+
+.clinic-tag-danger {
+    background: rgba(255, 122, 122, 0.16);
+    color: #D64545;
+    font-weight: 600;
+}
+
+.clinic-tag-muted {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--text-secondary);
+}
+
+.clinic-danger {
+    color: #D64545;
 }
 
 .clinic-action {

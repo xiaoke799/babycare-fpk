@@ -9,11 +9,21 @@
 
 import datetime
 import json
+import sqlite3
 from flask import Blueprint, request, jsonify
 
 from utils import get_db, row_to_dict, rows_to_list, json_body
 
 bp = Blueprint("health", __name__)
+
+
+def _safe_query(db, sql, params=()):
+    """查历史库可能缺表（vaccine_details / medication_records 都是后加的），
+    缺表不能让整个看诊摘要 500——医生面前打不开报告才是真尴尬。"""
+    try:
+        return [dict(r) for r in db.execute(sql, params).fetchall()]
+    except sqlite3.Error:
+        return []
 
 
 # ==================== API: 看诊摘要 ====================
@@ -59,6 +69,80 @@ def get_clinic_summary(baby_id):
         (baby_id,)
     ).fetchall()
 
+    # ---- 医生常问的四项：近期体温、用药史、过敏史、疫苗接种 ----
+    # 时间列可能是 'YYYY-MM-DD HH:MM:SS' 也可能是带 T 的 datetime-local 格式，
+    # 排序统一 replace 成空格，否则两类数据混着排会乱序。
+    recent_temperatures = _safe_query(
+        db,
+        'SELECT temperature, measure_time, measure_method, is_fever, note '
+        'FROM temperature_records WHERE baby_id = ? '
+        'ORDER BY replace(measure_time, \'T\', \' \') DESC LIMIT 10',
+        (baby_id,),
+    )
+
+    recent_medications = _safe_query(
+        db,
+        'SELECT medication_name, dosage, dosage_unit, measure_time, note '
+        'FROM medication_records WHERE baby_id = ? '
+        'ORDER BY replace(measure_time, \'T\', \' \') DESC LIMIT 10',
+        (baby_id,),
+    )
+
+    # 过敏史：在效的（active）排最前，其次观察中（monitoring）
+    allergies = _safe_query(
+        db,
+        'SELECT allergen_type, allergen_name, reaction_detail, severity_level, '
+        'first_occurrence_date, status FROM allergy_history WHERE baby_id = ? '
+        'ORDER BY CASE status WHEN \'active\' THEN 0 WHEN \'monitoring\' THEN 1 ELSE 2 END, id DESC '
+        'LIMIT 10',
+        (baby_id,),
+    )
+
+    # 疫苗：vaccine_details 字段全（含批号、不良反应），vaccines 是早期表。
+    # 两个表都可能只有一边有数据，按「疫苗名 + 剂次」去重合并，details 优先。
+    vaccinations = []
+    seen_vaccine = set()
+    for r in _safe_query(
+        db,
+        'SELECT vaccine_name, dose_number, scheduled_date, actual_date, status, '
+        'has_reaction, reaction_detail FROM vaccine_details WHERE baby_id = ? '
+        'ORDER BY COALESCE(actual_date, scheduled_date) DESC LIMIT 30',
+        (baby_id,),
+    ):
+        key = (r.get('vaccine_name'), r.get('dose_number'))
+        seen_vaccine.add(key)
+        vaccinations.append({
+            'vaccine_name': r.get('vaccine_name'),
+            'dose_number': r.get('dose_number'),
+            'scheduled_date': r.get('scheduled_date'),
+            'actual_date': r.get('actual_date'),
+            'status': r.get('status'),
+            'has_reaction': r.get('has_reaction'),
+            'reaction_detail': r.get('reaction_detail') or '',
+        })
+    for r in _safe_query(
+        db,
+        'SELECT vaccine_name, dose_number, scheduled_date, actual_date, status '
+        'FROM vaccines WHERE baby_id = ? '
+        'ORDER BY COALESCE(actual_date, scheduled_date) DESC LIMIT 30',
+        (baby_id,),
+    ):
+        key = (r.get('vaccine_name'), r.get('dose_number'))
+        if key in seen_vaccine:
+            continue
+        vaccinations.append({
+            'vaccine_name': r.get('vaccine_name'),
+            'dose_number': r.get('dose_number'),
+            'scheduled_date': r.get('scheduled_date'),
+            'actual_date': r.get('actual_date'),
+            'status': r.get('status'),
+            'has_reaction': 0,
+            'reaction_detail': '',
+        })
+    vaccinations.sort(
+        key=lambda x: (x.get('actual_date') or x.get('scheduled_date') or ''), reverse=True)
+    vaccinations = vaccinations[:8]
+
     summary = {
         'baby': row_to_dict(baby),
         'age_days': age_days,
@@ -66,7 +150,11 @@ def get_clinic_summary(baby_id):
         'week_feeding_count': feeding_count,
         'week_sleep_total_minutes': sleep_total,
         'week_diaper_count': diaper_count,
-        'recent_milestones': rows_to_list(milestones)
+        'recent_milestones': rows_to_list(milestones),
+        'recent_temperatures': recent_temperatures,
+        'recent_medications': recent_medications,
+        'allergies': allergies,
+        'vaccinations': vaccinations,
     }
 
     return jsonify({'success': True, 'data': summary})
