@@ -161,16 +161,27 @@ SIDE_LABEL = {"left": "左侧", "right": "右侧", "both": "双侧"}
 
 
 def _format_baby_profile(baby_row, latest_growth_row):
-    """格式化宝宝档案卡（供首页显示）"""
+    """格式化宝宝档案卡（供首页显示）
+
+    注意：本项目的连接都设了 row_factory = sqlite3.Row（utils.get_db），
+    Row 对象**没有 .get()**。直接对 Row 调 .get() 会抛 AttributeError，
+    被 get_dashboard() 的 except 吞掉后整个首页接口返回 500，
+    前端 loadDashboard 里 `if (!res.success) return` 直接退出 →
+    首页永远停在占位（宝宝 / -- · -- · -- / 0 / 0m / 暂无记录）。
+    所以这里必须先 dict(row) 再取字段。
+    """
     if not baby_row:
         return None
+    baby_row = dict(baby_row)
+    if latest_growth_row is not None:
+        latest_growth_row = dict(latest_growth_row)
     return {
         "id": baby_row["id"],
-        "name": baby_row["name"] or "宝宝",
-        "age": _format_age(baby_row["birthday"]),
+        "name": baby_row.get("name") or "宝宝",
+        "age": _format_age(baby_row.get("birthday")),
         "gender": GENDER_LABEL.get(baby_row.get("gender"), baby_row.get("gender") or ""),
-        "weight": latest_growth_row["weight"] if latest_growth_row else None,
-        "birthday": baby_row["birthday"],
+        "weight": latest_growth_row.get("weight") if latest_growth_row else None,
+        "birthday": baby_row.get("birthday"),
     }
 
 
