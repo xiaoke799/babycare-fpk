@@ -229,6 +229,10 @@ async function authSubmit() {
     }
 }
 
+// 退出登录。设置页的「账号安全」卡片已移除，当前**没有 UI 入口**：
+// 该卡片文案与实际认证方式不符（本应用不设独立密码，认证由 fnOS 网关完成），
+// 且网关模式下这里退不掉（清掉的是应用本地 session，刷新后网关头仍使其保持登录）。
+// 函数保留供本地开发模式（BABYCARE_DEV_AUTH=1）调试使用。
 async function authLogout() {
     try { await fetch(window.GATEWAY_PREFIX + '/api/auth/logout', { method: 'POST' }); } catch (e) {}
     location.reload();
