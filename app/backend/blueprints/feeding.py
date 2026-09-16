@@ -18,7 +18,7 @@ from flask import Blueprint, request, jsonify
 from utils import get_db, json_body
 from validators import (
     validate_amount, validate_duration, validate_enum,
-    validate_text_length, validate_datetime, validate_seconds,
+    validate_text_length, validate_datetime, validate_seconds, parse_datetime,
     VALID_FEEDING_TYPES, VALID_FEEDING_SIDES, NOTE_MAX_LENGTH,
 )
 

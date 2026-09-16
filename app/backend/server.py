@@ -1150,6 +1150,18 @@ FEEDING_CLEANUP_SQL = (
     "UPDATE pumping_records SET side = NULL WHERE side = ''",
 )
 
+# 睡眠历史数据清洗语句（幂等，可反复执行）。
+SLEEP_CLEANUP_SQL = (
+    "UPDATE sleep_records SET start_time = replace(start_time, 'T', ' ') WHERE start_time LIKE '%T%'",
+    "UPDATE sleep_records SET end_time = replace(end_time, 'T', ' ') WHERE end_time LIKE '%T%'",
+    "UPDATE sleep_records SET sleep_quality = NULL WHERE sleep_quality = ''",
+    # is_nap 没判定的，按入睡钟点补：6:00–18:00 算白天小憩
+    "UPDATE sleep_records SET is_nap = "
+    "  CASE WHEN CAST(substr(start_time, 12, 2) AS INTEGER) >= 6"
+    "       AND CAST(substr(start_time, 12, 2) AS INTEGER) < 18 THEN 1 ELSE 0 END "
+    "  WHERE is_nap IS NULL",
+)
+
 
 def _normalize_record_timestamps():
     """幂等数据清洗：历史记录里带 'T' 的时间统一成空格分隔，顺带清掉脏值。
@@ -1162,7 +1174,7 @@ def _normalize_record_timestamps():
     conn = sqlite3.connect(DB_PATH)
     try:
         changed = 0
-        for sql in FEEDING_CLEANUP_SQL:
+        for sql in FEEDING_CLEANUP_SQL + SLEEP_CLEANUP_SQL:
             try:
                 changed += conn.execute(sql).rowcount or 0
             except sqlite3.Error:
@@ -1170,7 +1182,50 @@ def _normalize_record_timestamps():
                 continue
         conn.commit()
         if changed:
-            app.logger.warning("清洗历史喂奶/吸奶记录：%d 行", changed)
+            app.logger.warning("清洗历史喂奶/吸奶/睡眠记录：%d 行", changed)
+    finally:
+        conn.close()
+
+
+def _repair_sleep_durations():
+    """修复历史睡眠记录的负数 / 缺失时长。
+
+    老版本直接 end-start 相减，夜里 22:00 睡到次日 06:00 会算出 -960 分钟，
+    把「今日总睡眠」拉成负数。这里对 duration_minutes < 0 的记录按跨天重算；
+    起止时间齐全但时长为 NULL 的也一并补上。幂等，可反复执行。
+    """
+    import datetime as _dt
+
+    def _minutes(start, end):
+        try:
+            s = _dt.datetime.strptime(start[:19], "%Y-%m-%d %H:%M:%S")
+            e = _dt.datetime.strptime(end[:19], "%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            return None
+        if e <= s:
+            e += _dt.timedelta(days=1)
+        return int((e - s).total_seconds() // 60)
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """SELECT id, start_time, end_time, duration_minutes FROM sleep_records
+               WHERE end_time IS NOT NULL AND end_time != ''
+                 AND (duration_minutes IS NULL OR duration_minutes < 0)"""
+        ).fetchall()
+        fixed = 0
+        for r in rows:
+            minutes = _minutes(r["start_time"], r["end_time"])
+            if minutes is None or minutes < 0:
+                continue
+            conn.execute("UPDATE sleep_records SET duration_minutes = ? WHERE id = ?", (minutes, r["id"]))
+            fixed += 1
+        conn.commit()
+        if fixed:
+            app.logger.warning("修复历史睡眠时长：%d 条", fixed)
+    except sqlite3.Error:
+        pass
     finally:
         conn.close()
 
@@ -1207,8 +1262,9 @@ def _run_migrations():
     _ensure_column('pumping_records', 'left_duration INTEGER DEFAULT NULL')
     _ensure_column('pumping_records', 'right_duration INTEGER DEFAULT NULL')
     _ensure_column('pumping_records', 'side TEXT DEFAULT NULL')
-    # 历史数据清洗（时间格式 / 0ml / 空哺乳侧），幂等，可反复执行
+    # 历史数据清洗（时间格式 / 0ml / 空哺乳侧 / 睡眠时长），幂等，可反复执行
     _normalize_record_timestamps()
+    _repair_sleep_durations()
     # 健康记录（发烧/就医/用药）页需要体温、症状、用药三列。
     # 该表是「体检记录」和「健康记录」两个页面共用的，新装库由 CREATE TABLE 带上，
     # 历史库靠这里每次启动兜底补列——缺列会让新增健康记录的 INSERT 直接 500。
@@ -1392,6 +1448,17 @@ def _do_init() -> None:
     except Exception as e:
         app.logger.warning("自动备份调度器启动失败: %s", e)
 
+    # 初始化推送通知模块（含提醒调度器）。放在这里而不是模块导入时：
+    # 此刻数据库已建表、推送配置也读得到；导入时调用会因名称未定义而静默失败。
+    try:
+        _init_notifier()
+        if _notifier is None:
+            app.logger.warning("推送通知模块未初始化（详见上方日志）")
+        else:
+            app.logger.info("推送通知模块已初始化")
+    except Exception as e:
+        app.logger.warning("推送通知模块初始化异常: %s", e)
+
     _init_done = True
 
 
@@ -1448,17 +1515,6 @@ def _json_int(data, key, default=None, minimum=None, maximum=None):
     except (TypeError, ValueError):
         return None, (jsonify({'success': False, 'message': f'字段 {key} 必须为整数'}), 400)
     if minimum is not None and value < minimum:
-    # 初始化推送通知模块（含提醒调度器）。放在这里而不是模块导入时：
-    # 此刻数据库已建表、推送配置也读得到；导入时调用会因名称未定义而静默失败。
-    try:
-        _init_notifier()
-        if _notifier is None:
-            app.logger.warning("推送通知模块未初始化（详见上方日志）")
-        else:
-            app.logger.info("推送通知模块已初始化")
-    except Exception as e:
-        app.logger.warning("推送通知模块初始化异常: %s", e)
-
         return None, (jsonify({'success': False, 'message': f'字段 {key} 不能小于 {minimum}'}), 400)
     if maximum is not None and value > maximum:
         return None, (jsonify({'success': False, 'message': f'字段 {key} 不能大于 {maximum}'}), 400)

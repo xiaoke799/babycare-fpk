@@ -133,8 +133,13 @@ def validate_duration(value, field_name="时长"):
 
 
 def validate_enum(value, valid_set, field_name="类型"):
-    """验证枚举值"""
-    if value is None:
+    """验证枚举值。
+
+    空串按「没填」处理，返回 None 而不是报错：前端下拉的「请选择/未评」项 value 就是 ''，
+    （比如睡眠质量的"未评"），当成非法值会让整条记录保存失败。必填字段在路由里另有
+    `if not value: 400` 兜底，不会因此放过空值。
+    """
+    if value is None or (isinstance(value, str) and value.strip() == ""):
         return True, None, None
     if str(value).lower() not in valid_set:
         return False, None, f"{field_name}无效，有效值：{', '.join(sorted(valid_set))}"
@@ -200,6 +205,23 @@ def validate_datetime(value, field_name="时间", default_now=False):
         dt = dt.replace(hour=12, minute=0, second=0)
 
     return True, dt.strftime("%Y-%m-%d %H:%M:%S"), None
+
+
+def parse_datetime(value):
+    """宽松解析库里的时间字符串 → datetime，解析不了返回 None。
+
+    兼容 'YYYY-MM-DD HH:MM:SS'、'... HH:MM'（无秒）以及带 T 的 datetime-local 格式。
+    统计、提醒调度、摘要到处都要解析，统一在这里，别各写一份。
+    """
+    if not value:
+        return None
+    text = str(value).replace("T", " ").strip()[:19]
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
 
 
 def validate_seconds(value, field_name="时长"):

@@ -1067,6 +1067,16 @@ function formatDurationCN(seconds) {
     return rest ? `${m}分${rest}秒` : `${m}分`;
 }
 
+/** 分钟 → 「8小时30分」/「45分钟」。睡眠时长用这个（formatDurationCN 是秒口径，别混） */
+function formatMinutesCN(mins) {
+    const m = Math.round(Number(mins) || 0);
+    if (m <= 0) return '';
+    const h = Math.floor(m / 60);
+    const rest = m % 60;
+    if (!h) return `${rest}分钟`;
+    return rest ? `${h}小时${rest}分` : `${h}小时`;
+}
+
 /** 分钟 → 「2小时10分」/「45分钟」 */
 function formatAgoCN(minutes) {
     const m = Number(minutes);
@@ -1250,7 +1260,6 @@ const NAV_HUBS = [
             { page: 'feeding', label: '喂奶', icon: 'icon-bottle' },
             { page: 'pumping', label: '吸奶', icon: 'icon-pumping' },
             { page: 'sleep-record', label: '睡眠记录', icon: 'icon-moon' },
-            { page: 'sleep-analysis', label: '睡眠分析', icon: 'icon-wave' },
             { page: 'diaper-record', label: '换尿布', icon: 'icon-diaper' },
             { page: 'temperature', label: '体温', icon: 'icon-thermometer' },
             { page: 'med-reminder', label: '用药提醒', icon: 'icon-bell' },
@@ -1272,6 +1281,7 @@ const NAV_HUBS = [
         hub: 'growth', label: '成长', icon: 'icon-chart', page: 'growth-hub',
         items: [
             { page: 'growth', label: '成长曲线', icon: 'icon-chart' },
+            { page: 'sleep-analysis', label: '睡眠分析', icon: 'icon-wave' },
             { page: 'milestones', label: '里程碑', icon: 'icon-trophy' },
             { page: 'firsts', label: '第一次', icon: 'icon-star' },
             { page: 'bmi', label: 'BMI', icon: 'icon-scale' },
@@ -1386,6 +1396,21 @@ function switchPage(page) {
     const prevPage = App.currentPage;
     App.currentPage = page;
 
+    // 「睡眠分析」这类页面已经合并成成长页的 Tab，没有独立 section。
+    // 先切到宿主页面再激活对应 Tab，否则 #page-sleep-analysis 不存在会白屏。
+    const hostPage = GROWTH_TAB_PAGES[page];
+    if (hostPage) {
+        switchPage(hostPage);
+        activateGrowthTab(page);
+        // switchPage(宿主) 把 currentPage 改成了宿主，这里改回来，
+        // 保证底部导航、相关功能、切宝宝刷新都还认得 'sleep-analysis'
+        App.currentPage = page;
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        document.querySelectorAll('.nav-item[data-page="' + page + '"]').forEach(t => t.classList.add('active'));
+        renderRelatedLinks(page);
+        return;
+    }
+
     // 更新页面显示
     const pageEl = document.getElementById('page-' + page);
     if (!pageEl) { console.warn('[switchPage] 未找到页面:', page); return; }
@@ -1444,10 +1469,16 @@ function loadPageData(page) {
         case 'diaper-record':
             loadDiaperPage();
             break;
-        case 'sleep-analysis':
-            loadSleepAnalysis();
-            loadSleepPrediction();
+        case 'sleep-analysis': {
+            // canvas 在 display:none 时宽高是 0，画了也是空白，只在视图可见时才画。
+            // 首次进入由 activateGrowthTab 触发（先显示再画），这里负责后续刷新。
+            const view = document.getElementById('growthViewSleepAnalysis');
+            if (view && view.style.display !== 'none') {
+                loadSleepAnalysis();
+                loadSleepPrediction();
+            }
             break;
+        }
         case 'temperature':
             loadTemperaturePage();
             break;
@@ -1476,6 +1507,10 @@ function loadPageData(page) {
             initPattern();
             break;
         case 'growth':
+            // 直接进「成长曲线」时回到「记录」Tab，避免上次停在睡眠分析、
+            // 点进来却看到别的页。深链到睡眠分析时 currentPage 是 'sleep-analysis'，
+            // 不在这里重置，随后由 activateGrowthTab 切过去，顺序不受影响。
+            if (App.currentPage === 'growth') activateGrowthTab('records');
             loadGrowthPage();
             break;
         case 'milestones':
@@ -2490,116 +2525,167 @@ function loadPumpingPage() {
 }
 
 // ==================== 睡眠记录页面 ====================
+/** 睡眠列表的日期筛选：1=今日, 3/7=近N天, 0=全部 */
+let sleepRange = 1;
+
 function loadSleepPage() {
     if (!App.currentBaby) return;
     const container = document.getElementById('sleepList');
     if (!container) return;
 
-    // 获取睡眠列表
-    api(`/api/babies/${App.currentBaby}/sleep`).then(res => {
+    const params = new URLSearchParams();
+    if (sleepRange > 0) {
+        const start = new Date();
+        start.setDate(start.getDate() - (sleepRange - 1));
+        params.set('start', formatDate(start));
+    }
+    params.set('limit', '200');
+
+    api(`/api/babies/${App.currentBaby}/sleep?${params.toString()}`).then(res => {
         if (!res.success) return;
-
-        // 更新统计栏
-        const today = getToday();
-        const todayRecords = (res.data || []).filter(r => r.start_time && r.start_time.startsWith(today));
-        const todayDuration = todayRecords.reduce((sum, r) => sum + (r.duration_minutes || 0), 0);
-        const todayNight = todayRecords.filter(r => !r.is_nap).reduce((sum, r) => sum + (r.duration_minutes || 0), 0);
-        const todayNap = todayRecords.filter(r => r.is_nap).reduce((sum, r) => sum + (r.duration_minutes || 0), 0);
-
-        const countEl = document.getElementById('sleepTodayCount');
-        const durationEl = document.getElementById('sleepTodayDuration');
-        const nightEl = document.getElementById('sleepTodayNight');
-        const napEl = document.getElementById('sleepTodayNap');
-        const lastEl = document.getElementById('sleepLastTime');
-        if (countEl) countEl.textContent = todayRecords.length;
-        if (durationEl) durationEl.textContent = (todayDuration / 60).toFixed(1);
-        if (nightEl) nightEl.textContent = (todayNight / 60).toFixed(1);
-        if (napEl) napEl.textContent = todayNap;
-
-        // 计算距离上次睡眠时间
-        if (lastEl && res.data && res.data.length > 0) {
-            const lastRecord = res.data[0];
-            if (lastRecord.start_time) {
-                const lastTime = new Date(lastRecord.start_time.replace(' ', 'T'));
-                const now = new Date();
-                const diffMs = now - lastTime;
-                const diffMin = Math.floor(diffMs / 60000);
-                if (diffMin < 60) {
-                    lastEl.textContent = `${diffMin}分钟前`;
-                } else if (diffMin < 1440) {
-                    lastEl.textContent = `${Math.floor(diffMin / 60)}小时前`;
-                } else {
-                    lastEl.textContent = `${Math.floor(diffMin / 1440)}天前`;
-                }
-            }
-        } else if (lastEl) {
-            lastEl.textContent = '--';
-        }
-
-        if (!res.data || res.data.length === 0) {
-            container.innerHTML = '<p class="empty-tip">暂无睡眠记录<br><small>点击上方按钮或快捷按钮添加记录</small></p>';
-            return;
-        }
-        container.innerHTML = res.data.map(renderSleepItems).join('');
+        renderSleepList(res.data || []);
     });
 
-    // 获取本周概览
+    loadSleepStats();
+    loadSleepWeeklySummary();
+    loadSleepReference();
+    bindSleepPageControls();
+}
+
+/** 顶部统计栏：今日次数 / 总时长 / 夜间 / 小憩 / 距上次（走 /stats，前端不再全量自己算） */
+function loadSleepStats() {
+    api(`/api/babies/${App.currentBaby}/sleep/stats`).then(res => {
+        if (!res.success) return;
+        const d = res.data || {};
+        const t = d.today || {};
+        setText('sleepTodayCount', t.count || 0);
+        setText('sleepTodayDuration', ((t.total_minutes || 0) / 60).toFixed(1));
+        setText('sleepTodayNight', ((t.night_minutes || 0) / 60).toFixed(1));
+        setText('sleepTodayNap', Math.round(t.nap_minutes || 0));
+
+        const lastEl = document.getElementById('sleepLastTime');
+        if (lastEl) {
+            const mins = d.minutes_since_last;
+            // 负数说明记了未来的时间，显示成 '--' 而不是「-3小时前」
+            lastEl.textContent = (mins == null || mins < 0) ? '--' : formatAgoCN(mins);
+        }
+    });
+}
+
+/** 本周概览（平均睡眠 / 入睡时间 / 次数 / 质量评分） */
+function loadSleepWeeklySummary() {
     api(`/api/babies/${App.currentBaby}/sleep-analysis?days=7`).then(res => {
         if (!res.success) return;
-        const data = res.data;
+        const data = res.data || {};
         const summaryEl = document.getElementById('weeklySummaryStats');
-        if (summaryEl) {
-            const avgDuration = data.averages.avg_duration;
-            const avgBedtime = data.avg_bedtime || '--';
-            const totalSessions = data.averages.total_sessions || 0;
-            // 计算质量评分
-            const qualityDist = data.quality_distribution || {};
-            const totalQuality = (qualityDist.good || 0) + (qualityDist.normal || 0) + (qualityDist.poor || 0);
-            let qualityScore = '--';
-            if (totalQuality > 0) {
-                const score = ((qualityDist.good || 0) * 100 + (qualityDist.normal || 0) * 70 + (qualityDist.poor || 0) * 40) / totalQuality;
-                qualityScore = Math.round(score) + '分';
-            }
-            summaryEl.innerHTML = `
-                <div class="weekly-stat-item"><span class="weekly-stat-label">平均睡眠</span><strong>${formatMinutes(avgDuration)}</strong></div>
-                <div class="weekly-stat-item"><span class="weekly-stat-label">入睡时间</span><strong>${avgBedtime}</strong></div>
-                <div class="weekly-stat-item"><span class="weekly-stat-label">睡眠次数</span><strong>${totalSessions}次</strong></div>
-                <div class="weekly-stat-item"><span class="weekly-stat-label">质量评分</span><strong>${qualityScore}</strong></div>
-            `;
+        if (!summaryEl) return;
+
+        const avg = data.averages || {};
+        const avgDuration = avg.avg_duration || 0;
+        const avgBedtime = data.avg_bedtime || '--';
+        const totalSessions = avg.total_sessions || 0;
+        const qualityDist = data.quality_distribution || {};
+        const totalQuality = (qualityDist.good || 0) + (qualityDist.normal || 0) + (qualityDist.poor || 0);
+        let qualityScore = '--';
+        if (totalQuality > 0) {
+            const score = ((qualityDist.good || 0) * 100 + (qualityDist.normal || 0) * 70 + (qualityDist.poor || 0) * 40) / totalQuality;
+            qualityScore = Math.round(score) + '分';
         }
+        summaryEl.innerHTML = `
+            <div class="weekly-stat-item"><span class="weekly-stat-label">平均睡眠</span><strong>${formatMinutes(avgDuration)}</strong></div>
+            <div class="weekly-stat-item"><span class="weekly-stat-label">入睡时间</span><strong>${escapeHtml(String(avgBedtime))}</strong></div>
+            <div class="weekly-stat-item"><span class="weekly-stat-label">睡眠次数</span><strong>${totalSessions}次</strong></div>
+            <div class="weekly-stat-item"><span class="weekly-stat-label">质量评分</span><strong>${qualityScore}</strong></div>
+        `;
+    });
+}
+
+/** 列表按天分组，每天带一行小计（今日/昨日/日期） */
+function renderSleepList(records) {
+    const container = document.getElementById('sleepList');
+    if (!container) return;
+
+    if (!records.length) {
+        container.innerHTML = '<p class="empty-tip">暂无睡眠记录<br><small>点击上方按钮或快捷按钮添加记录</small></p>';
+        return;
+    }
+
+    const groups = new Map();
+    records.forEach(r => {
+        const day = (r.start_time || '').slice(0, 10) || '未知日期';
+        if (!groups.has(day)) groups.set(day, []);
+        groups.get(day).push(r);
     });
 
-    // 加载月龄睡眠参考
-    loadSleepReference();
+    const today = getToday();
+    const yesterday = formatDate(new Date(Date.now() - 86400000));
+    let html = '';
+    groups.forEach((items, day) => {
+        const title = day === today ? '今天' : (day === yesterday ? '昨天' : day);
+        const total = items.reduce((s, r) => s + (Number(r.duration_minutes) || 0), 0);
+        const nap = items.filter(r => r.is_nap === 1).reduce((s, r) => s + (Number(r.duration_minutes) || 0), 0);
+        let sum = `${items.length} 次`;
+        if (total) sum += ` · 共 ${formatMinutesCN(total)}`;
+        if (nap) sum += ` · 小憩 ${formatMinutesCN(nap)}`;
 
-    // 绑定添加按钮事件
+        html += `<div class="care-day-group">
+            <div class="care-day-header">
+                <span class="care-day-title">${escapeHtml(title)}</span>
+                <span class="care-day-sum">${sum}</span>
+            </div>
+            ${items.map(renderSleepItems).join('')}
+        </div>`;
+    });
+    container.innerHTML = html;
+}
+
+/** 页面上的按钮只绑一次（loadSleepPage 会被反复调用） */
+function bindSleepPageControls() {
     const btn = document.getElementById('addSleepBtnPage');
     if (btn && !btn._bound) {
         btn._bound = true;
         btn.addEventListener('click', () => showRecordModal('sleep'));
     }
 
-    // 绑定计时器按钮事件
     const timerBtn = document.getElementById('sleepTimerBtn');
     if (timerBtn && !timerBtn._bound) {
         timerBtn._bound = true;
         timerBtn.addEventListener('click', toggleSleepTimer);
     }
 
-    // 绑定计时器控制按钮
-    document.getElementById('sleepTimerStopBtn')?.addEventListener('click', stopSleepTimer);
-    document.getElementById('sleepTimerCancelBtn')?.addEventListener('click', cancelSleepTimer);
+    // 这两个也必须只绑一次：loadSleepPage 每次进页面都会跑，
+    // 重复绑会让「结束睡眠」点一次触发两遍，写出两条记录
+    const stopBtn = document.getElementById('sleepTimerStopBtn');
+    if (stopBtn && !stopBtn._bound) {
+        stopBtn._bound = true;
+        stopBtn.addEventListener('click', stopSleepTimer);
+    }
+    const cancelBtn = document.getElementById('sleepTimerCancelBtn');
+    if (cancelBtn && !cancelBtn._bound) {
+        cancelBtn._bound = true;
+        cancelBtn.addEventListener('click', cancelSleepTimer);
+    }
 
-    // 绑定快捷操作按钮
     const quickActions = document.getElementById('sleepQuickActions');
     if (quickActions && !quickActions._bound) {
         quickActions._bound = true;
         quickActions.addEventListener('click', (e) => {
             const btn = e.target.closest('.quick-btn');
             if (!btn) return;
-            const duration = parseInt(btn.dataset.duration) || 0;
-            const isNap = parseInt(btn.dataset.nap) || 0;
-            quickAddSleep(duration, isNap);
+            quickAddSleep(parseInt(btn.dataset.duration) || 0, parseInt(btn.dataset.nap) || 0);
+        });
+    }
+
+    const tabs = document.getElementById('sleepRangeTabs');
+    if (tabs && !tabs._bound) {
+        tabs._bound = true;
+        tabs.addEventListener('click', (e) => {
+            const btn = e.target.closest('.tab-btn');
+            if (!btn) return;
+            tabs.querySelectorAll('.tab-btn').forEach(x => x.classList.remove('active'));
+            btn.classList.add('active');
+            sleepRange = parseInt(btn.dataset.range) || 0;
+            loadSleepPage();
         });
     }
 }
@@ -3152,18 +3238,18 @@ function savePumpingEdit(id) {
 function renderSleepItems(r) {
     const qualityMap = { good: '好', normal: '一般', poor: '差' };
     const napText = r.is_nap === 1 ? '小憩' : '夜间';
+    const dur = formatMinutesCN(r.duration_minutes);
     return `
         <div class="care-item">
             <button class="care-delete" onclick="deleteRecord('sleep', ${r.id})">✕</button>
             <button class="care-edit" onclick="editSleep(${r.id})">✎</button>
             <div class="care-item-header">
-                <span class="care-type"> ${napText}</span>
+                <span class="care-type">${napText}${dur ? ' · ' + dur : ''}</span>
                 <span class="care-time">${formatDateTime(r.start_time)}</span>
             </div>
             <div class="care-detail">
                 ${r.end_time ? `至 ${formatDateTime(r.end_time)}` : '进行中'}
-                ${r.duration_minutes ? ` (${escapeHtml(String(r.duration_minutes))}分钟)` : ''}
-                ${r.sleep_quality ? ` 质量: ${qualityMap[r.sleep_quality]}` : ''}
+                ${r.sleep_quality ? ` 质量: ${escapeHtml(qualityMap[r.sleep_quality] || r.sleep_quality)}` : ''}
                 ${r.note ? ` ${escapeHtml(r.note)}` : ''}
             </div>
         </div>
@@ -3221,8 +3307,11 @@ function saveSleepEdit(id) {
     const data = {
         is_nap: document.getElementById('editSleepNap').value === '1' ? 1 : 0,
         start_time: document.getElementById('editSleepStart').value,
-        end_time: document.getElementById('editSleepEnd').value,
-        sleep_quality: document.getElementById('editSleepQuality').value,
+        end_time: document.getElementById('editSleepEnd').value || null,
+        // 传 null 让后端按新的起止时间重算（含跨夜），避免改了结束时间时长还停在旧值
+        duration_minutes: null,
+        // 「未评」要发 null 而不是空串，空串会被当成无效枚举值
+        sleep_quality: document.getElementById('editSleepQuality').value || null,
         note: document.getElementById('editSleepNote').value,
     };
     api(`/api/babies/${App.currentBaby}/sleep/${id}`, {
@@ -4148,35 +4237,57 @@ function getTimelineDetail(event) {
 
 // ==================== WHO 生长曲线图 ====================
 
+/** 成长页 Tab → 视图容器 id。新增 Tab 只改这里一处。 */
+const GROWTH_TAB_VIEWS = {
+    'records': 'growthViewRecords',
+    'who-chart': 'growthViewWhoChart',
+    'velocity': 'growthViewVelocity',
+    'correlation': 'growthViewCorrelation',
+    'sleep-analysis': 'growthViewSleepAnalysis',
+};
+
+/**
+ * 已并入成长页 Tab 的页面：page id → 宿主页面。
+ * 「睡眠分析」原本是独立页面，报表类统一收进成长，
+ * 但底部导航/相关功能仍可能按 'sleep-analysis' 跳，这里做一次转换，
+ * 否则 switchPage 找不到 #page-sleep-analysis 会直接白屏。
+ */
+const GROWTH_TAB_PAGES = { 'sleep-analysis': 'growth' };
+
+/** 切到成长页的某个 Tab。视图先显示再加载数据——
+ *  canvas 在 display:none 时宽高是 0，先显示才能画出图。 */
+function activateGrowthTab(tab) {
+    const btn = document.querySelector('.growth-tab-btn[data-growth-tab="' + tab + '"]');
+    if (btn) {
+        btn.click();
+        return true;
+    }
+    return false;
+}
+
 function initGrowthTabs() {
     document.querySelectorAll('.growth-tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.growth-tab-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             const tab = btn.dataset.growthTab;
-            if (tab === 'records') {
-                document.getElementById('growthViewRecords').style.display = 'block';
-                document.getElementById('growthViewWhoChart').style.display = 'none';
-                document.getElementById('growthViewVelocity').style.display = 'none';
-                document.getElementById('growthViewCorrelation').style.display = 'none';
-            } else if (tab === 'who-chart') {
-                document.getElementById('growthViewRecords').style.display = 'none';
-                document.getElementById('growthViewWhoChart').style.display = 'block';
-                document.getElementById('growthViewVelocity').style.display = 'none';
-                document.getElementById('growthViewCorrelation').style.display = 'none';
-                loadWhoChart();
-            } else if (tab === 'velocity') {
-                document.getElementById('growthViewRecords').style.display = 'none';
-                document.getElementById('growthViewWhoChart').style.display = 'none';
-                document.getElementById('growthViewVelocity').style.display = 'block';
-                document.getElementById('growthViewCorrelation').style.display = 'none';
-                loadGrowthVelocity();
-            } else if (tab === 'correlation') {
-                document.getElementById('growthViewRecords').style.display = 'none';
-                document.getElementById('growthViewWhoChart').style.display = 'none';
-                document.getElementById('growthViewVelocity').style.display = 'none';
-                document.getElementById('growthViewCorrelation').style.display = 'block';
-                loadCorrelationData();
+
+            Object.entries(GROWTH_TAB_VIEWS).forEach(([name, id]) => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = (name === tab) ? 'block' : 'none';
+            });
+
+            // 顶部「身高/体重/BMI/头围」是成长专属，睡眠分析 Tab 下藏起来
+            const summary = document.getElementById('growthSummary');
+            if (summary) summary.style.display = (tab === 'sleep-analysis') ? 'none' : '';
+
+            // 进入 Tab 时再拉数据：canvas 已可见，不会画成 0 宽高
+            if (tab === 'who-chart') loadWhoChart();
+            else if (tab === 'velocity') loadGrowthVelocity();
+            else if (tab === 'correlation') loadCorrelationData();
+            else if (tab === 'sleep-analysis') {
+                loadSleepAnalysis();
+                loadSleepPrediction();
             }
         });
     });

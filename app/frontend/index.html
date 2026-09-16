@@ -272,6 +272,13 @@
                     <button class="quick-btn" data-duration="90" data-nap="1">😴 小憩1.5时</button>
                     <button class="quick-btn" data-duration="0" data-nap="0">🌙 夜间睡眠</button>
                 </div>
+                <!-- 日期筛选 -->
+                <div class="care-tabs" id="sleepRangeTabs">
+                    <button class="tab-btn active" data-range="1">今日</button>
+                    <button class="tab-btn" data-range="3">近3天</button>
+                    <button class="tab-btn" data-range="7">近7天</button>
+                    <button class="tab-btn" data-range="0">全部</button>
+                </div>
                 <!-- 本周概览 -->
                 <div class="sleep-weekly-summary" id="sleepWeeklySummary">
                     <div class="weekly-summary-title">📊 本周概览</div>
@@ -348,38 +355,6 @@
                 </div>
             </section>
 
-            <!-- 睡眠分析页面 -->
-            <section class="page" id="page-sleep-analysis">
-                <div class="sleep-analysis-header">
-                    <h3 class="section-title">睡眠分析</h3>
-                    <div class="sleep-analysis-range">
-                        <select id="sleepAnalysisRange">
-                            <option value="7" selected>近7天</option>
-                            <option value="14">近14天</option>
-                            <option value="30">近30天</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="sleep-analysis-stats" id="sleepAnalysisStats"></div>
-                <div class="sleep-prediction-card" id="sleepPredictionCard">
-                    <div class="prediction-header">
-                        <span class="prediction-icon"></span>
-                        <span class="prediction-title">睡眠分析</span>
-                    </div>
-                    <div class="prediction-content" id="sleepPredictionContent">
-                        <p class="prediction-loading">分析中...</p>
-                    </div>
-                </div>
-                <div class="sleep-pattern-card" id="sleepPatternCard">
-                    <h4>24小时睡眠分布</h4>
-                    <canvas id="sleepPatternCanvas" width="700" height="200"></canvas>
-                </div>
-                <div class="sleep-analysis-chart">
-                    <canvas id="sleepAnalysisCanvas" width="700" height="300"></canvas>
-                </div>
-                <div class="sleep-analysis-detail" id="sleepAnalysisDetail"></div>
-            </section>
-
             <!-- 体温记录页面 -->
             <section class="page" id="page-temperature">
                 <div class="temperature-header">
@@ -421,6 +396,7 @@
                     <button class="growth-tab-btn" data-growth-tab="who-chart">WHO曲线</button>
                     <button class="growth-tab-btn" data-growth-tab="velocity">生长速度</button>
                     <button class="growth-tab-btn" data-growth-tab="correlation">记录关联</button>
+                    <button class="growth-tab-btn" data-growth-tab="sleep-analysis">睡眠分析</button>
                 </div>
                 <div class="growth-summary" id="growthSummary">
                     <div class="growth-item">
@@ -503,6 +479,37 @@
                         </div>
                         <div class="correlation-insights" id="correlationInsights"></div>
                     </div>
+                </div>
+                <!-- 睡眠分析视图（原独立页面，报表类已并入成长） -->
+                <div class="growth-view" id="growthViewSleepAnalysis" style="display:none">
+                    <div class="sleep-analysis-header">
+                        <h3 class="section-title">睡眠分析</h3>
+                        <div class="sleep-analysis-range">
+                            <select id="sleepAnalysisRange">
+                                <option value="7" selected>近7天</option>
+                                <option value="14">近14天</option>
+                                <option value="30">近30天</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="sleep-analysis-stats" id="sleepAnalysisStats"></div>
+                    <div class="sleep-prediction-card" id="sleepPredictionCard">
+                        <div class="prediction-header">
+                            <span class="prediction-icon"></span>
+                            <span class="prediction-title">睡眠分析</span>
+                        </div>
+                        <div class="prediction-content" id="sleepPredictionContent">
+                            <p class="prediction-loading">分析中...</p>
+                        </div>
+                    </div>
+                    <div class="sleep-pattern-card" id="sleepPatternCard">
+                        <h4>24小时睡眠分布</h4>
+                        <canvas id="sleepPatternCanvas" width="700" height="200"></canvas>
+                    </div>
+                    <div class="sleep-analysis-chart">
+                        <canvas id="sleepAnalysisCanvas" width="700" height="300"></canvas>
+                    </div>
+                    <div class="sleep-analysis-detail" id="sleepAnalysisDetail"></div>
                 </div>
             </section>
 
