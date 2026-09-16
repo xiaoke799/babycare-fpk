@@ -325,7 +325,12 @@ def health_record_create(baby_id):
             heart_result, lung_result, abdomen_result, skin_result,
             bone_result, hearing_result, vision_result, blood_result,
             urine_result, other_exam, diagnosis, advice, next_visit_date, note)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?,  -- baby_id, record_date, record_type, title, hospital, doctor
+                   ?, ?, ?, ?,        -- height, weight, head_circumference, bmi
+                   ?, ?, ?, ?,        -- heart_result, lung_result, abdomen_result, skin_result
+                   ?, ?, ?, ?,        -- bone_result, hearing_result, vision_result, blood_result
+                   ?, ?, ?, ?,        -- urine_result, other_exam, diagnosis, advice
+                   ?, ?)              -- next_visit_date, note""",
         (baby_id, data['record_date'], data.get('record_type', 'routine'),
          data['title'], data.get('hospital', ''), data.get('doctor', ''),
          data.get('height'), data.get('weight'), data.get('head_circumference'),
