@@ -553,7 +553,10 @@ function initMascot() {
         const h = Math.floor(m / 60), r = m % 60;
         return h ? (r ? h + 'h' + r + 'm' : h + 'h') : r + 'm';
     }
-    // 睡眠时长参考区间（按月龄，与「今日睡眠」卡片口径一致）
+    // 睡眠时长参考区间（按月龄，与「今日睡眠」卡片口径一致）。
+    // 注意：这是「宽区间」，用于首页/对话卡片给个大致范围；
+    // 睡眠分析页的「睡眠目标」用的是后端 ai_engine.SLEEP_GUIDELINES 的具体建议值 + ±2 小时容差，
+    // 两边语义不同（区间 vs 单值），但建议值都落在这些区间内 —— 改这边要确认没把后端值甩到区间外。
     function sleepRefHours(age) { return age <= 4 ? '12-16h' : age <= 12 ? '11-14h' : '10-13h'; }
     // 生长项与上次测量对比：显示成 "7.20 kg（+0.30）"
     function growthCompare(cur, prev, unit, digits) {
@@ -7833,7 +7836,18 @@ function deleteGrowthMilestone(id, event) {
 // ==================== 睡眠分析 ====================
 
 function initSleepAnalysis() {
-    document.getElementById('sleepAnalysisRange').addEventListener('change', loadSleepAnalysis);
+    const range = document.getElementById('sleepAnalysisRange');
+    if (range) range.addEventListener('change', loadSleepAnalysis);
+
+    // 转屏 / 改窗口大小后画布宽度会变，得按新宽度重画，否则图被拉扁或留白。
+    // 只在睡眠分析视图可见时才重画（别的页面画了也看不见，白费一次请求）。
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+        const view = document.getElementById('growthViewSleepAnalysis');
+        if (!view || view.style.display === 'none') return;
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => loadSleepAnalysis(), 300);
+    });
 }
 
 function loadSleepAnalysis() {
@@ -7871,6 +7885,8 @@ function loadSleepAnalysis() {
                 <span class="sleep-stat-label">平均入睡时间</span>
             </div>
         `;
+
+        renderSleepGoal(data.reference);
 
         // 睡眠质量分布
         const quality = data.quality_distribution || { good: 0, normal: 0, poor: 0 };
@@ -7931,7 +7947,9 @@ function loadSleepAnalysis() {
             const napPct = total > 0 ? (nap / total * 100) : 0;
             const dateParts = d.date.split('-');
             const label = `${parseInt(dateParts[1])}/${parseInt(dateParts[2])}`;
-            const qualityLabel = d.avg_quality ? { good: '好', normal: '一般', poor: '差' }[Math.round(d.avg_quality)] || '' : '';
+            // 质量标签由后端算好（analytics.SLEEP_QUALITY_LABELS），前端不再自己映射，
+            // 免得前后端两处对照表改一边漏一边
+            const qualityLabel = d.quality_label || '';
 
             return `
                 <div class="sleep-daily-item">
@@ -7955,12 +7973,110 @@ function loadSleepAnalysis() {
     });
 }
 
+/**
+ * 让 canvas 按父容器宽度自适应，并按设备像素比放大。
+ *
+ * 原先两张图都写死 width=700，手机上超出屏宽会被切掉右半边；
+ * 但只改 style.width 会让画布被拉伸得模糊。这里同时做两件事：
+ * ① 把画布真实像素设为 CSS 宽度 × dpr（高清）；
+ * ② setTransform 缩放后，绘图代码继续用 CSS 像素算坐标，不用每个 x/y 都乘 dpr。
+ *
+ * 返回 {ctx, W, H}，W/H 是 CSS 像素，可直接拿去算坐标。
+ */
+function fitCanvas(canvas, cssHeight) {
+    if (!canvas) return null;
+    const parent = canvas.parentElement;
+    // clientWidth 含 padding，直接用会让画布比内容区宽、把卡片撑破，这里减掉
+    let cssW = 0;
+    if (parent) {
+        const st = window.getComputedStyle(parent);
+        cssW = parent.clientWidth
+            - (parseFloat(st.paddingLeft) || 0)
+            - (parseFloat(st.paddingRight) || 0);
+    }
+    // 父容器还没布局出来时（视图刚显示、宽度为 0）退回一个最小可用宽度
+    if (!cssW) cssW = canvas.clientWidth || 700;
+    cssW = Math.max(260, Math.min(cssW, 1200));
+
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssHeight * dpr);
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssHeight + 'px';
+
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, W: cssW, H: cssHeight };
+}
+
+/** 睡眠目标对比卡：按月龄建议时长看近 N 天达不达标。
+ *  建议值与「达标/偏少/偏多」的判定都由后端给（analytics._build_sleep_reference，
+ *  复用 ai_engine.SLEEP_GUIDELINES 那套），前端只负责画，不自己判。 */
+function renderSleepGoal(ref) {
+    const card = document.getElementById('sleepGoalCard');
+    if (!card) return;
+
+    // 没有生日算不出月龄、或这段时间压根没记录，就不显示这张卡
+    if (!ref || !ref.suggested_hours || ref.status === 'none') {
+        card.style.display = 'none';
+        return;
+    }
+    card.style.display = '';
+
+    const badge = document.getElementById('sleepGoalBadge');
+    const band = document.getElementById('sleepGoalBand');
+    const fill = document.getElementById('sleepGoalFill');
+    const mark = document.getElementById('sleepGoalMark');
+    const text = document.getElementById('sleepGoalText');
+    if (!badge || !band || !fill || !mark || !text) return;
+
+    const suggested = ref.suggested_hours;
+    const actual = ref.actual_hours || 0;
+    // 刻度最大值：取「建议值 ×1.6」和「实际值」里大的那个，保证两者都画得下
+    const scaleMax = Math.max(suggested * 1.6, actual * 1.1, 1);
+    const pct = v => Math.max(0, Math.min(100, (v / scaleMax) * 100));
+
+    const STATUS = {
+        ok: { label: '达标', cls: 'ok' },
+        low: { label: '偏少', cls: 'low' },
+        high: { label: '偏多', cls: 'high' },
+    };
+    const st = STATUS[ref.status] || STATUS.ok;
+    badge.textContent = st.label;
+    badge.className = 'sleep-goal-badge ' + st.cls;
+
+    // 达标区间：建议值 ±2 小时（与后端 SLEEP_TOLERANCE_HOURS 一致）
+    band.style.left = pct(suggested - 2) + '%';
+    band.style.width = (pct(suggested + 2) - pct(suggested - 2)) + '%';
+    fill.style.width = pct(actual) + '%';
+    fill.className = 'sleep-goal-fill ' + st.cls;
+    mark.style.left = pct(suggested) + '%';
+
+    const diff = Math.abs(actual - suggested);
+    let tail;
+    if (ref.status === 'ok') {
+        tail = `在建议范围内（差 ${diff.toFixed(1)} 小时）`;
+    } else {
+        tail = `${ref.status === 'low' ? '比建议少' : '比建议多'} ${diff.toFixed(1)} 小时`;
+    }
+    const ageText = ref.age_months != null ? `${ref.age_months} 个月` : '当前月龄';
+    const extra = [];
+    if (ref.nap_times) extra.push(`白天小睡约 ${ref.nap_times} 次`);
+    if (ref.night_stretch) extra.push(`夜间连续约 ${escapeHtml(String(ref.night_stretch))}`);
+
+    text.innerHTML = `
+        <span class="sleep-goal-main">近 ${ref.days || 7} 天日均 <strong>${actual.toFixed(1)}</strong> 小时 ·
+        建议 ${suggested} 小时 · ${tail}</span>
+        <span class="sleep-goal-sub">${escapeHtml(ageText)}参考${extra.length ? ' · ' + extra.join(' · ') : ''}</span>
+    `;
+}
+
 function drawSleepPatternChart(patternData) {
     const canvas = document.getElementById('sleepPatternCanvas');
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const W = canvas.width;
-    const H = canvas.height;
+    const fit = fitCanvas(canvas, 200);
+    if (!fit) return;
+    const { ctx, W, H } = fit;
 
     ctx.clearRect(0, 0, W, H);
 
@@ -8002,6 +8118,8 @@ function drawSleepPatternChart(patternData) {
     // 绘制柱状图
     const barWidth = Math.min(chartW / 24 * 0.7, 20);
     const gap = chartW / 24;
+    // 窄屏放不下 24 个小时刻度，隔 6 小时标一次，不然数字糊成一片
+    const hourStep = W < 380 ? 6 : 3;
 
     patternData.forEach((d, i) => {
         const x = padding.left + gap * i + (gap - barWidth) / 2;
@@ -8024,8 +8142,8 @@ function drawSleepPatternChart(patternData) {
             ctx.fillRect(x, yBase - nightH - napH, barWidth, napH);
         }
 
-        // X轴标签（每3小时显示一次）
-        if (i % 3 === 0) {
+        // X轴标签
+        if (i % hourStep === 0) {
             ctx.fillStyle = '#636e72';
             ctx.font = '9px sans-serif';
             ctx.textAlign = 'center';
@@ -8059,9 +8177,10 @@ function formatMinutes(mins) {
 
 function drawSleepChart(dailyData) {
     const canvas = document.getElementById('sleepAnalysisCanvas');
-    const ctx = canvas.getContext('2d');
-    const W = canvas.width;
-    const H = canvas.height;
+    if (!canvas) return;
+    const fit = fitCanvas(canvas, 300);
+    if (!fit) return;
+    const { ctx, W, H } = fit;
 
     ctx.clearRect(0, 0, W, H);
 
@@ -8103,6 +8222,8 @@ function drawSleepChart(dailyData) {
     // 绘制柱状图
     const barWidth = Math.min(chartW / dailyData.length * 0.6, 40);
     const gap = chartW / dailyData.length;
+    // 每个日期标签约占 34px，据此算隔几天标一次（至少每天标）
+    const dateStep = Math.max(1, Math.ceil(dailyData.length / Math.max(1, Math.floor(chartW / 34))));
 
     dailyData.forEach((d, i) => {
         const x = padding.left + gap * i + (gap - barWidth) / 2;
@@ -8134,13 +8255,15 @@ function drawSleepChart(dailyData) {
             ctx.fillRect(x, yBase - nightH - napH, barWidth, napH);
         }
 
-        // X轴标签
-        const dateParts = d.date.split('-');
-        const label = `${parseInt(dateParts[1])}/${parseInt(dateParts[2])}`;
-        ctx.fillStyle = '#636e72';
-        ctx.font = '10px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(label, x + barWidth / 2, H - padding.bottom + 16);
+        // X轴标签：30 天数据在窄屏上会标不下，按宽度算出隔几天标一次
+        if (i % dateStep === 0) {
+            const dateParts = d.date.split('-');
+            const label = `${parseInt(dateParts[1])}/${parseInt(dateParts[2])}`;
+            ctx.fillStyle = '#636e72';
+            ctx.font = '10px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(label, x + barWidth / 2, H - padding.bottom + 16);
+        }
     });
 
     // 图例

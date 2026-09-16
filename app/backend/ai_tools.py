@@ -842,11 +842,15 @@ def _run_create_sleep_record(args: Dict[str, Any], db: sqlite3.Connection, baby_
     if not ok:
         return {"success": False, "error": err}
 
-    # 没给时长就用起止时间算；跨夜也能算对（此前被 max(0,...) 抹成 0）
+    # 没给时长就用起止时间算；跨夜也能算对（此前被 max(0,...) 抹成 0）。
+    # 注意：这里不要因为 end_time < start_time 就报错——跨夜是正常场景，
+    # _sleep_minutes 会按「次日」处理，22:00 → 06:00 算 480 分钟。
     if duration is None and end_time:
         duration = _sleep_minutes(start_time, end_time)
-    if end_time and end_time < start_time and duration is None:
-        return {"success": False, "error": f"醒来时间（{end_time}）早于入睡时间（{start_time}），跨夜睡眠请显式给 duration_minutes。"}
+        if duration is None:
+            # 起止时间都在却算不出来，只可能是时间格式解析失败，别静默写成 NULL
+            return {"success": False,
+                    "error": f"无法根据入睡/醒来时间计算时长，请检查时间格式（{start_time} → {end_time}）"}
 
     quality = args.get("quality")
     if quality in (None, ""):

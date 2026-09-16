@@ -3314,6 +3314,92 @@ body {
     margin-bottom: 16px;
 }
 
+/* ============ 睡眠目标对比卡 ============ */
+.sleep-goal-card {
+    background: var(--card-bg);
+    border-radius: var(--radius-md, 14px);
+    padding: 14px 16px;
+    margin-bottom: 16px;
+}
+
+.sleep-goal-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.sleep-goal-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-color);
+}
+
+.sleep-goal-badge {
+    font-size: 12px;
+    padding: 3px 12px;
+    border-radius: 12px;
+}
+
+.sleep-goal-badge.ok { background: #e6f7ef; color: #0f8a55; }
+.sleep-goal-badge.low { background: #fff3e6; color: #c2691a; }
+.sleep-goal-badge.high { background: #eaf1fd; color: #2f6fd0; }
+
+/* 轨道：浅底 + 达标区间浅带 + 实际值实心条 + 建议值刻度线 */
+.sleep-goal-track {
+    position: relative;
+    height: 14px;
+    background: #f1f2f6;
+    border-radius: 7px;
+    overflow: hidden;
+}
+
+.sleep-goal-band {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: #d6f0e2;
+}
+
+.sleep-goal-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    border-radius: 7px;
+    transition: width .3s ease;
+}
+
+.sleep-goal-fill.ok { background: #1fb87a; }
+.sleep-goal-fill.low { background: #f0932b; }
+.sleep-goal-fill.high { background: #4a89dc; }
+
+.sleep-goal-mark {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #6c5ce7;
+}
+
+.sleep-goal-text {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--text-secondary, #8a8a8a);
+    line-height: 1.7;
+}
+
+.sleep-goal-main strong {
+    font-size: 14px;
+    color: var(--text-color);
+}
+
+.sleep-goal-sub {
+    display: block;
+    font-size: 11px;
+    opacity: .85;
+}
+
 .sleep-stat-card {
     background: var(--card-bg);
     border-radius: var(--radius-sm);

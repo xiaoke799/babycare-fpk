@@ -7,14 +7,23 @@
 """
 
 import datetime
+import sqlite3
 from flask import Blueprint, request, jsonify
 
 from utils import get_db, row_to_dict, rows_to_list, _get_int_arg
 from logger import get_logger
 import growth_utils
+# 睡眠达标判定复用 ai_engine 的一套口径（SLEEP_GUIDELINES + ±2 小时容差），
+# 不在这里另立第二份参考值 —— 否则「睡眠分析」和「AI 睡眠洞察」会给出互相打架的结论。
+from ai_engine import SLEEP_GUIDELINES, get_age_months
 
 bp = Blueprint("analytics", __name__)
 logger = get_logger("analytics")
+
+# 睡眠质量分数 → 中文标签。与上面 SQL 里的 CASE 映射一一对应（好=3 一般=2 差=1），
+# 改一处必须改另一处。分数是 AVG 出来的，可能是小数，用 round 归到最近档。
+SLEEP_QUALITY_LABELS = {3: "好", 2: "一般", 1: "差"}
+
 
 
 def _parse_datetime(value):
@@ -673,6 +682,52 @@ def get_who_reference():
     return jsonify({"success": True, "data": rows_to_list(rows)})
 
 
+# 达标判定容差（小时）：日均与建议值相差不超过 2 小时都算正常。
+# 与 ai_engine.analyze_sleep 的判定完全一致，改这里要同步改那边。
+SLEEP_TOLERANCE_HOURS = 2
+
+
+def _build_sleep_reference(db, baby_id, total_minutes, days):
+    """按宝宝月龄算出「建议睡多久」和达标情况。
+
+    建议值取自 ai_engine.SLEEP_GUIDELINES（表只到 12 月龄，更大的宝宝沿用 12 月档），
+    判定用 ±2 小时容差。没有生日（算不出月龄）时返回 None，前端就不显示这张卡。
+    """
+    try:
+        baby = db.execute("SELECT birthday FROM babies WHERE id = ?", (baby_id,)).fetchone()
+    except sqlite3.Error:
+        # 历史库可能没有 birthday 列。达标卡片只是锦上添花，
+        # 不能因为它把整个睡眠分析接口拖成 500。
+        logger.warning("查询宝宝生日失败，跳过睡眠达标参考")
+        return None
+    if not baby or not baby["birthday"]:
+        return None
+
+    age_months = get_age_months(baby["birthday"])
+    guide = SLEEP_GUIDELINES.get(min(age_months, 12), SLEEP_GUIDELINES[12])
+    suggested_hours = guide[0]
+
+    actual_hours = round((total_minutes or 0) / days / 60, 1) if days else 0.0
+    if not total_minutes:
+        status = "none"      # 这段时间压根没记录，谈不上达标
+    elif actual_hours < suggested_hours - SLEEP_TOLERANCE_HOURS:
+        status = "low"
+    elif actual_hours > suggested_hours + SLEEP_TOLERANCE_HOURS:
+        status = "high"
+    else:
+        status = "ok"
+
+    return {
+        "age_months": age_months,
+        "suggested_hours": suggested_hours,
+        "actual_hours": actual_hours,
+        "status": status,
+        "days": days,
+        "nap_times": guide[1],          # 白天小睡建议次数
+        "night_stretch": guide[2],      # 夜间连续睡眠建议
+    }
+
+
 @bp.route("/api/babies/<int:baby_id>/sleep-analysis", methods=["GET"])
 def get_sleep_analysis(baby_id):
     """获取睡眠深度分析"""
@@ -687,12 +742,17 @@ def get_sleep_analysis(baby_id):
     start_date = (today - datetime.timedelta(days=days - 1)).strftime("%Y-%m-%d")
 
     # 每日睡眠统计
+    # 注意 sleep_quality 是文本（good/normal/poor），不能直接 AVG：
+    # SQLite 对非数字文本一律按 0 参与聚合，AVG(sleep_quality) 恒等于 0，
+    # 前端再拿 0 去查标签表就永远查不到 —— 「睡眠质量」一直显示不出来。
     rows = db.execute(
         """SELECT date(start_time) as date, SUM(duration_minutes) as total,
                   SUM(CASE WHEN is_nap = 1 THEN duration_minutes ELSE 0 END) as nap_total,
                   SUM(CASE WHEN is_nap = 0 THEN duration_minutes ELSE 0 END) as night_total,
                   COUNT(*) as sessions,
-                  AVG(sleep_quality) as avg_quality
+                  AVG(CASE sleep_quality WHEN 'good' THEN 3
+                                         WHEN 'normal' THEN 2
+                                         WHEN 'poor' THEN 1 END) as quality_score
            FROM sleep_records
            WHERE baby_id = ? AND date(start_time) >= ?
            GROUP BY date(start_time)
@@ -754,10 +814,24 @@ def get_sleep_analysis(baby_id):
         bt_min = int(bedtime_stats["avg_bedtime_minutes"])
         avg_bedtime_str = f"{bt_min // 60:02d}:{bt_min % 60:02d}"
 
+    # 质量分数（1-3）翻成中文标签。映射只在这一处维护，前端直接用 label，
+    # 免得前后端各存一份分数→文字的对照表、改了一边忘另一边。
+    daily = rows_to_list(rows)
+    for d in daily:
+        score = d.get("quality_score")
+        # 别用 round()：Python 是「银行家舍入」，2.5 会舍成 2（偶数），
+        # 跟「四舍五入」的直觉不符。这里显式取最近的一档。
+        d["quality_label"] = (
+            SLEEP_QUALITY_LABELS.get(int(score + 0.5), "") if score is not None else ""
+        )
+
+    reference = _build_sleep_reference(db, baby_id, stats["sum_total"] or 0, days)
+
     return jsonify({
         "success": True,
         "data": {
-            "daily": rows_to_list(rows),
+            "daily": daily,
+            "reference": reference,
             "averages": {
                 "avg_duration": round(stats["avg_duration"] or 0, 1),
                 "avg_nap": round(stats["avg_nap"] or 0, 1),
