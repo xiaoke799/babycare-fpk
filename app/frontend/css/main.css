@@ -11984,6 +11984,69 @@ input:checked + .toggle-slider:before {
     color: var(--text-secondary);
 }
 
+/* 身体数据：最新一次身高/体重/BMI/头围 */
+.home-body {
+    padding: 0 16px 8px;
+}
+
+.home-body-card {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    padding: 14px 8px;
+    text-align: center;
+    background: var(--card-bg);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow);
+}
+
+.home-body-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.home-body-value {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--text-primary);
+    line-height: 1.1;
+}
+
+.home-body-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.home-body-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.home-body-date {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.home-body-record-btn {
+    flex-shrink: 0;
+    padding: 6px 16px;
+    font-size: 12px;
+    color: #fff;
+    background: var(--primary-color);
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+/* 窄屏四项挤不下就折成两行 */
+@media (max-width: 360px) {
+    .home-body-card { grid-template-columns: repeat(2, 1fr); }
+}
+
 /* 最近记录 */
 .home-recent {
     padding: 0 16px 24px;

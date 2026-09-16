@@ -1264,6 +1264,8 @@ const NAV_HUBS = [
             { page: 'pumping', label: '吸奶', icon: 'icon-pumping' },
             { page: 'sleep-record', label: '睡眠记录', icon: 'icon-moon' },
             { page: 'diaper-record', label: '换尿布', icon: 'icon-diaper' },
+            // 身高体重：记录页这边负责「录数值」，成长页那边的「成长曲线」负责看报表
+            { page: 'growth', label: '身高体重', icon: 'icon-scale' },
             // 体温 / 用药提醒 / 疫苗 / 过敏测试已并入「健康档案」的 Tab，不再单列入口
             { page: 'solidfood', label: '辅食', icon: 'icon-bowl' },
             { page: 'tummytime', label: '趴睡训练', icon: 'icon-activity' },
@@ -1738,9 +1740,30 @@ function loadDashboard() {
         setText('homeSleepTime', formatHomeDuration(sleep.total_minutes));
         setText('homeDiaperCount', diaper.count != null ? diaper.count : 0);
 
+        // 身体数据：显示最新一次测量值。
+        // 后端 dashboard 早就返回了 latest_growth，前端一直没用它，
+        // 所以首页看着像「没有身高体重」，其实数据一直在。
+        renderHomeBodyData(data.latest_growth);
+
         // 最近记录
         renderHomeRecent(data.recent_records || []);
     });
+}
+
+/**
+ * 首页「身体数据」卡：最新一次身高等测量值。
+ * 注意这是「最近一次测量」不是「今日数据」，所以单独一块、不写「今日」。
+ */
+function renderHomeBodyData(growth) {
+    const g = growth || {};
+    const has = g.height != null || g.weight != null;
+    setText('homeLatestHeight', g.height != null ? g.height : '--');
+    setText('homeLatestWeight', g.weight != null ? g.weight : '--');
+    setText('homeLatestBmi', g.bmi != null ? g.bmi : '--');
+    setText('homeLatestHead', g.head_circumference != null ? g.head_circumference : '--');
+    setText('homeBodyDate', has
+        ? (g.record_date ? '测量于 ' + g.record_date : '已有测量记录')
+        : '还没有测量记录，点右边「记一次」');
 }
 
 function renderFeedingTrend(trendData) {
@@ -1775,6 +1798,15 @@ function initQuickActions() {
             const action = btn.dataset.action;
             showRecordModal(action);
         });
+    });
+
+    // 首页身体数据卡上的「记一次」：直接开成长记录录入框
+    document.getElementById('homeBodyRecordBtn')?.addEventListener('click', () => {
+        if (!App.currentBaby) {
+            showToast.warning('请先添加宝宝');
+            return;
+        }
+        showRecordModal('growth');
     });
 }
 
