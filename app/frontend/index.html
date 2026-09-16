@@ -2406,8 +2406,19 @@
                         <input type="date" id="photoDate" required>
                     </div>
                     <div class="form-group">
+                        <label for="photoCategory">分类</label>
+                        <select id="photoCategory">
+                            <option value="">未分类</option>
+                            <option value="monthly">月度记录</option>
+                            <option value="milestone">里程碑</option>
+                            <option value="comparison">成长对比</option>
+                            <option value="daily">日常</option>
+                            <option value="other">其他</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label for="photoDesc">描述</label>
-                        <input type="text" id="photoDesc" placeholder="给照片加个描述吧">
+                        <input type="text" id="photoDesc" placeholder="给照片加个描述吧" maxlength="200">
                     </div>
                     <div class="form-actions">
                         <button type="button" class="btn btn-cancel" id="cancelPhotoForm">取消</button>
@@ -2429,13 +2440,25 @@
                 <img id="photoViewImage" src="" alt="照片">
                 <div class="photo-view-info" id="photoViewInfo"></div>
                 <div class="photo-edit-desc">
-                    <label>照片描述</label>
+                    <label>照片信息</label>
                     <div class="photo-desc-edit-row">
-                        <input type="text" id="editPhotoDesc" placeholder="添加照片描述...">
-                        <button class="btn btn-primary btn-sm" onclick="savePhotoDesc()">保存</button>
+                        <input type="date" id="editPhotoDate" title="拍摄日期">
+                        <select id="editPhotoCategory" title="分类">
+                            <option value="">未分类</option>
+                            <option value="monthly">月度记录</option>
+                            <option value="milestone">里程碑</option>
+                            <option value="comparison">成长对比</option>
+                            <option value="daily">日常</option>
+                            <option value="other">其他</option>
+                        </select>
+                    </div>
+                    <div class="photo-desc-edit-row">
+                        <input type="text" id="editPhotoDesc" placeholder="添加照片描述..." maxlength="200">
+                        <button class="btn btn-primary btn-sm" onclick="savePhotoDetails()">保存</button>
                     </div>
                 </div>
                 <div class="photo-view-actions">
+                    <button class="btn btn-outline btn-sm" id="setCoverBtn">设为封面</button>
                     <button class="btn btn-danger btn-sm" id="deletePhotoBtn">删除</button>
                 </div>
             </div>

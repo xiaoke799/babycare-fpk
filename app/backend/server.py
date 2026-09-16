@@ -1233,6 +1233,9 @@ def _repair_sleep_durations():
 def _run_migrations():
     """集中登记所有增量迁移（新装库由 CREATE TABLE 覆盖，此处兜底历史库）"""
     _ensure_column('babies', 'due_date TEXT')
+    # 相册分类：此前 photos 表没有分类列，前端「按类型筛选」只能靠描述里的关键词瞎猜
+    # （描述里得正好出现「里程碑」才筛得出来），等于没有分类。这里补上真正的分类列。
+    _ensure_column('photos', "category TEXT DEFAULT ''")
     # milestones.is_first 每次启动都兜底补列，不依赖版本化迁移。
     # 原因：gunicorn 开了 2 个 worker，两个进程会各自跑 migrations.run_migrations()，
     # 并发时其中一个可能因锁冲突失败。列若没建出来，INSERT 会报

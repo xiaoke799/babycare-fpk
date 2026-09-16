@@ -909,6 +909,40 @@ body {
     white-space: nowrap;
 }
 
+/* 封面照片：高亮 + 角标（.photo-item 默认没有定位，角标会相对祖先跑偏） */
+.photo-item {
+    position: relative;
+}
+
+.photo-item.is-cover {
+    border: 1.5px solid var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(255, 173, 122, 0.16);
+}
+
+.photo-cover-badge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    padding: 2px 8px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+/* 加载更多按钮：横跨整个网格居中 */
+.photos-load-more {
+    grid-column: 1 / -1;
+    justify-self: center;
+    margin: 4px 0 8px;
+}
+
+/* 查看弹窗里「日期/分类」行与「描述」行之间留点间距 */
+.photo-desc-edit-row + .photo-desc-edit-row {
+    margin-top: 8px;
+}
+
 /* ==================== 成长对比 ==================== */
 .comparison-container {
     padding: 20px;

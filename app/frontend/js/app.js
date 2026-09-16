@@ -7004,6 +7004,7 @@ function initPhotoModal() {
         formData.append('photo', fileInput.files[0]);
         formData.append('photo_date', document.getElementById('photoDate').value);
         formData.append('description', document.getElementById('photoDesc').value);
+        formData.append('category', document.getElementById('photoCategory')?.value || '');
 
         // 显示加载状态，防止重复提交
         const form = document.getElementById('photoForm');
@@ -7047,122 +7048,177 @@ function initPhotoModal() {
             if (res.success) {
                 showToast.success('已删除');
                 hideModal('photoViewModal');
-                loadPhotosPage();
+                loadPhotosPage(true);
             }
         });
     });
+
+    // 设为封面（后端会把该宝宝其它照片的封面标记清掉，保证封面唯一）
+    const setCoverBtn = document.getElementById('setCoverBtn');
+    if (setCoverBtn) {
+        setCoverBtn.addEventListener('click', function() {
+            const photoId = this.dataset.photoId;
+            if (!photoId) return;
+            api(`/api/photos/${photoId}`, {
+                method: 'PUT',
+                body: JSON.stringify({ is_cover: true })
+            }).then(res => {
+                if (res.success) {
+                    showToast.success('已设为封面');
+                    hideModal('photoViewModal');
+                    loadPhotosPage(true);
+                } else {
+                    showToast.error(res.message || '设置失败');
+                }
+            });
+        });
+    }
 }
 
-function loadPhotosPage() {
+// 相册分页状态（照片多于一页时靠它做「加载更多」）
+const photoPageState = { limit: 60, offset: 0, items: [], hasMore: false, totalFiltered: 0 };
+
+function loadPhotosPage(reset = true) {
     if (!App.currentBaby) return;
 
-    api(`/api/babies/${App.currentBaby}/photos`).then(res => {
+    const grid = document.getElementById('photosGrid');
+    const categoryFilter = document.getElementById('photoCategoryFilter');
+    const category = (categoryFilter && categoryFilter.value) || '';
+
+    if (reset) {
+        photoPageState.offset = 0;
+        photoPageState.items = [];
+        photoPageState.hasMore = false;
+        if (grid) grid.innerHTML = '<p class="empty-tip">加载中…</p>';
+    }
+
+    // 分类筛选交给后端按真实分类字段过滤。
+    // 此前是拿「描述里有没有关键词」瞎猜（描述里得正好出现「里程碑」才筛得到）。
+    let url = `/api/babies/${App.currentBaby}/photos?limit=${photoPageState.limit}&offset=${photoPageState.offset}`;
+    if (category) url += `&category=${encodeURIComponent(category)}`;
+
+    api(url).then(res => {
         if (!res.success) return;
-        let photos = res.data;
-        const grid = document.getElementById('photosGrid');
-        const statsContainer = document.getElementById('photosStats');
+        const batch = res.data || [];
+        photoPageState.items = photoPageState.items.concat(batch);
+        photoPageState.offset = photoPageState.items.length;
+        photoPageState.hasMore = !!res.has_more;
+        photoPageState.totalFiltered = res.total != null ? res.total : photoPageState.items.length;
 
-        // 更新统计信息
-        if (statsContainer) {
-            const totalPhotos = photos.length;
-            const thisMonth = photos.filter(p => {
-                const d = new Date(p.photo_date);
-                const now = new Date();
-                return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-            }).length;
-            statsContainer.innerHTML = `
-                <div class="photos-stat-item">
-                    <div class="photos-stat-value">${totalPhotos}</div>
-                    <div class="photos-stat-label">总照片</div>
-                </div>
-                <div class="photos-stat-item">
-                    <div class="photos-stat-value">${thisMonth}</div>
-                    <div class="photos-stat-label">本月新增</div>
-                </div>
-                <div class="photos-stat-item">
-                    <div class="photos-stat-value">${photos.length > 0 ? photos[0].photo_date : '-'}</div>
-                    <div class="photos-stat-label">最新日期</div>
-                </div>
-            `;
-        }
-
-        if (photos.length === 0) {
-            grid.innerHTML = '<p class="empty-tip">暂无照片，点击上方按钮上传</p>';
-            return;
-        }
-
-        // 分类筛选
-        const categoryFilter = document.getElementById('photoCategoryFilter');
-        if (categoryFilter && categoryFilter.value) {
-            const categoryMap = {
-                'monthly': ['月度', '月龄', 'monthly'],
-                'milestone': ['里程碑', '里程碑', 'milestone', '第一次', 'first'],
-                'comparison': ['对比', '成长', 'comparison'],
-                'daily': ['日常', '生活', 'daily']
-            };
-            const keywords = categoryMap[categoryFilter.value] || [];
-            photos = photos.filter(p => {
-                const desc = (p.description || '').toLowerCase();
-                return keywords.some(k => desc.includes(k.toLowerCase()));
-            });
-        }
-
-        // 排序
-        const sortFilter = document.getElementById('photoSortFilter');
-        if (sortFilter) {
-            if (sortFilter.value === 'date_asc') {
-                photos.sort((a, b) => new Date(a.photo_date) - new Date(b.photo_date));
-            } else {
-                photos.sort((a, b) => new Date(b.photo_date) - new Date(a.photo_date));
-            }
-        }
-
-        if (photos.length === 0) {
-            grid.innerHTML = '<p class="empty-tip">没有符合条件的照片</p>';
-            return;
-        }
-
-        grid.innerHTML = photos.map(p => `
-            <div class="photo-item" data-photo-id="${p.id}">
-                <img src="${App.apiBase}/api/photos/thumbnail/${p.id}" alt="${escapeHtml(p.description || '照片')}" loading="lazy">
-                <div class="photo-date">${escapeHtml(p.photo_date)}</div>
-                ${p.description ? `<div class="photo-desc">${escapeHtml(p.description)}</div>` : ''}
-            </div>
-        `).join('');
-
-        // 点击照片查看大图
-        grid.querySelectorAll('.photo-item').forEach(item => {
-            item.addEventListener('click', () => {
-                const photoId = item.dataset.photoId;
-                const photo = photos.find(p => p.id == photoId);
-                if (!photo) return;
-
-                document.getElementById('photoViewImage').src = `${App.apiBase}/api/photos/file/${photoId}`;
-                document.getElementById('photoViewTitle').textContent = photo.photo_date;
-                document.getElementById('photoViewInfo').textContent = photo.description || '';
-                document.getElementById('editPhotoDesc').value = photo.description || '';
-                document.getElementById('editPhotoDesc').dataset.photoId = photoId;
-                document.getElementById('deletePhotoBtn').dataset.photoId = photoId;
-                showModal('photoViewModal');
-            });
-        });
+        renderPhotosStats(res.stats || {});
+        renderPhotosGrid();
     });
 }
 
-function savePhotoDesc() {
+function renderPhotosStats(stats) {
+    const container = document.getElementById('photosStats');
+    if (!container) return;
+    // 统计用后端给的全量口径：前端只有分页数据，自己数会在照片超过一页后算错
+    container.innerHTML = `
+        <div class="photos-stat-item">
+            <div class="photos-stat-value">${stats.total || 0}</div>
+            <div class="photos-stat-label">总照片</div>
+        </div>
+        <div class="photos-stat-item">
+            <div class="photos-stat-value">${stats.this_month || 0}</div>
+            <div class="photos-stat-label">本月新增</div>
+        </div>
+        <div class="photos-stat-item">
+            <div class="photos-stat-value">${escapeHtml(stats.latest_date || '-')}</div>
+            <div class="photos-stat-label">最新日期</div>
+        </div>
+    `;
+}
+
+const PHOTO_CAT_LABELS = {
+    monthly: '月度记录', milestone: '里程碑', comparison: '成长对比',
+    daily: '日常', other: '其他'
+};
+
+function renderPhotosGrid() {
+    const grid = document.getElementById('photosGrid');
+    if (!grid) return;
+    const photos = photoPageState.items.slice();
+
+    const sortFilter = document.getElementById('photoSortFilter');
+    if (sortFilter && sortFilter.value === 'date_asc') {
+        photos.sort((a, b) => new Date(a.photo_date) - new Date(b.photo_date));
+    } else {
+        photos.sort((a, b) => new Date(b.photo_date) - new Date(a.photo_date));
+    }
+
+    if (photos.length === 0) {
+        grid.innerHTML = '<p class="empty-tip">没有符合条件的照片</p>';
+        return;
+    }
+
+    grid.innerHTML = photos.map(p => `
+        <div class="photo-item ${p.is_cover ? 'is-cover' : ''}" data-photo-id="${p.id}">
+            <img src="${App.apiBase}/api/photos/thumbnail/${p.id}" alt="${escapeHtml(p.description || '照片')}" loading="lazy">
+            ${p.is_cover ? '<span class="photo-cover-badge">封面</span>' : ''}
+            <div class="photo-date">${escapeHtml(p.photo_date)}${p.category && PHOTO_CAT_LABELS[p.category] ? ' · ' + PHOTO_CAT_LABELS[p.category] : ''}</div>
+            ${p.description ? `<div class="photo-desc">${escapeHtml(p.description)}</div>` : ''}
+        </div>
+    `).join('') + (photoPageState.hasMore
+        ? `<button type="button" class="btn btn-outline btn-sm photos-load-more" id="photosLoadMore">加载更多（还有 ${Math.max(0, photoPageState.totalFiltered - photos.length)} 张）</button>`
+        : '');
+
+    // 点击照片查看大图
+    grid.querySelectorAll('.photo-item').forEach(item => {
+        item.addEventListener('click', () => openPhotoView(item.dataset.photoId));
+    });
+    const moreBtn = document.getElementById('photosLoadMore');
+    if (moreBtn) {
+        moreBtn.addEventListener('click', () => loadPhotosPage(false));
+    }
+}
+
+function openPhotoView(photoId) {
+    const photo = photoPageState.items.find(p => String(p.id) === String(photoId));
+    if (!photo) return;
+
+    document.getElementById('photoViewImage').src = `${App.apiBase}/api/photos/file/${photo.id}`;
+    document.getElementById('photoViewTitle').textContent = photo.photo_date;
+    document.getElementById('photoViewInfo').textContent = photo.description || '';
+    document.getElementById('editPhotoDesc').value = photo.description || '';
+    document.getElementById('editPhotoDesc').dataset.photoId = photo.id;
+    const dateEl = document.getElementById('editPhotoDate');
+    if (dateEl) dateEl.value = photo.photo_date || '';
+    const catEl = document.getElementById('editPhotoCategory');
+    if (catEl) catEl.value = photo.category || '';
+    document.getElementById('deletePhotoBtn').dataset.photoId = photo.id;
+
+    const coverBtn = document.getElementById('setCoverBtn');
+    if (coverBtn) {
+        coverBtn.dataset.photoId = photo.id;
+        coverBtn.textContent = photo.is_cover ? '已是封面' : '设为封面';
+        coverBtn.disabled = !!photo.is_cover;
+    }
+    showModal('photoViewModal');
+}
+
+function savePhotoDetails() {
     const descEl = document.getElementById('editPhotoDesc');
     const photoId = descEl.dataset.photoId;
     if (!photoId) return;
-    
+
+    // 描述、日期、分类一起保存（早期只能改描述，拍错日期的照片永远排在错的位置）
+    const payload = { description: descEl.value };
+    const dateEl = document.getElementById('editPhotoDate');
+    if (dateEl && dateEl.value) payload.photo_date = dateEl.value;
+    const catEl = document.getElementById('editPhotoCategory');
+    if (catEl) payload.category = catEl.value;
+
     api(`/api/photos/${photoId}`, {
         method: 'PUT',
-        body: JSON.stringify({ description: descEl.value })
+        body: JSON.stringify(payload)
     }).then(res => {
         if (res.success) {
-            showToast.success('描述已更新');
-            loadPhotosPage();
+            showToast.success('已保存');
+            hideModal('photoViewModal');
+            loadPhotosPage(true);
         } else {
-            showToast.error('更新失败');
+            showToast.error(res.message || '保存失败');
         }
     });
 }
