@@ -203,9 +203,11 @@ def get_vaccine_list(baby_id):
 def get_vaccine_status(baby_id):
     """获取疫苗接种完成状态（合并用户记录和标准计划）"""
     db = get_db()
-    baby = db.execute('SELECT * FROM babies WHERE id = ?', (baby_id,)).fetchone()
-    if not baby:
+    baby_row = db.execute('SELECT * FROM babies WHERE id = ?', (baby_id,)).fetchone()
+    if not baby_row:
         return jsonify({'success': False, 'message': '宝宝不存在'}), 404
+    # sqlite3.Row 没有 .get()，后面算月龄要按字段取值，这里先转成 dict
+    baby = dict(baby_row)
 
     today = datetime.date.today()
     today_str = today.strftime('%Y-%m-%d')
@@ -392,9 +394,11 @@ def export_vaccines(baby_id):
     """导出疫苗记录（CSV 或 JSON 格式）"""
     fmt = request.args.get('format', 'csv')
     db = get_db()
-    baby = db.execute('SELECT * FROM babies WHERE id = ?', (baby_id,)).fetchone()
-    if not baby:
+    baby_row = db.execute('SELECT * FROM babies WHERE id = ?', (baby_id,)).fetchone()
+    if not baby_row:
         return jsonify({'success': False, 'message': '宝宝不存在'}), 404
+    # 同上：Row 没有 .get()，下面要取 baby.get('name')
+    baby = dict(baby_row)
 
     records = db.execute(
         '''SELECT vaccine_name, vaccine_type, dose_number, scheduled_date, actual_date,
@@ -515,7 +519,7 @@ def vaccine_detail_list(baby_id):
         params.append(status_filter)
     query += ' ORDER BY scheduled_date ASC'
     rows = db.execute(query, params).fetchall()
-    return jsonify({'success': True, 'vaccines': rows_to_list(rows)})
+    return jsonify({'success': True, 'data': rows_to_list(rows), 'vaccines': rows_to_list(rows)})
 
 
 @bp.route('/api/health/vaccines/detail/<int:vaccine_id>', methods=['PUT'])

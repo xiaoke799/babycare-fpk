@@ -301,7 +301,7 @@ def health_records_list(baby_id):
             ).fetchall()
             r['indicators'] = rows_to_list(indicators)
 
-        return jsonify({'success': True, 'records': records})
+        return jsonify({'success': True, 'data': records, 'records': records})
     except Exception as e:
         import logging
         logging.getLogger(__name__).error("health_records_list error: %s", e)
@@ -430,8 +430,13 @@ def health_record_update(record_id):
 def health_record_delete(record_id):
     """删除体检记录（级联删除关联指标）"""
     db = get_db()
+    # 先删主记录并确认它真的存在：删不到就返回 404，
+    # 不能假成功——前端会以为删掉了、列表却还在，这种不一致最难排查。
+    cur = db.execute('DELETE FROM health_records WHERE id = ?', (record_id,))
+    if cur.rowcount == 0:
+        db.rollback()
+        return jsonify({'success': False, 'message': '记录不存在'}), 404
     db.execute('DELETE FROM health_indicators WHERE record_id = ?', (record_id,))
-    db.execute('DELETE FROM health_records WHERE id = ?', (record_id,))
     db.commit()
     return jsonify({'success': True, 'message': '记录已删除'})
 
@@ -478,7 +483,7 @@ def health_indicators_list(baby_id):
         params.append(name_filter)
     query += ' ORDER BY record_date DESC, indicator_name'
     rows = db.execute(query, params).fetchall()
-    return jsonify({'success': True, 'indicators': rows_to_list(rows)})
+    return jsonify({'success': True, 'data': rows_to_list(rows), 'indicators': rows_to_list(rows)})
 
 
 # ==================== 健康提醒 ====================
@@ -494,7 +499,7 @@ def health_reminders_list(baby_id):
         query += ' AND is_completed = 0'
     query += ' ORDER BY due_date ASC'
     rows = db.execute(query, params).fetchall()
-    return jsonify({'success': True, 'reminders': rows_to_list(rows)})
+    return jsonify({'success': True, 'data': rows_to_list(rows), 'reminders': rows_to_list(rows)})
 
 
 @bp.route('/api/health/reminders/<int:baby_id>', methods=['POST'])
@@ -552,7 +557,10 @@ def health_reminder_update(reminder_id):
 def health_reminder_delete(reminder_id):
     """删除健康提醒"""
     db = get_db()
-    db.execute('DELETE FROM health_reminders WHERE id = ?', (reminder_id,))
+    cur = db.execute('DELETE FROM health_reminders WHERE id = ?', (reminder_id,))
+    if cur.rowcount == 0:
+        db.rollback()
+        return jsonify({'success': False, 'message': '提醒不存在'}), 404
     db.commit()
     return jsonify({'success': True, 'message': '提醒已删除'})
 
@@ -575,7 +583,7 @@ def milestones_list(baby_id):
         params.append(status)
     query += ' ORDER BY category, expected_age_months ASC'
     rows = db.execute(query, params).fetchall()
-    return jsonify({'success': True, 'milestones': rows_to_list(rows)})
+    return jsonify({'success': True, 'data': rows_to_list(rows), 'milestones': rows_to_list(rows)})
 
 
 @bp.route('/api/health/milestones/<int:baby_id>', methods=['POST'])
@@ -629,7 +637,10 @@ def milestone_update(milestone_id):
 def milestone_delete(milestone_id):
     """删除发育里程碑"""
     db = get_db()
-    db.execute('DELETE FROM milestone_details WHERE id = ?', (milestone_id,))
+    cur = db.execute('DELETE FROM milestone_details WHERE id = ?', (milestone_id,))
+    if cur.rowcount == 0:
+        db.rollback()
+        return jsonify({'success': False, 'message': '里程碑不存在'}), 404
     db.commit()
     return jsonify({'success': True, 'message': '里程碑已删除'})
 
@@ -727,7 +738,7 @@ def screenings_list(baby_id):
         params.append(stype)
     query += ' ORDER BY screening_date DESC'
     rows = db.execute(query, params).fetchall()
-    return jsonify({'success': True, 'screenings': rows_to_list(rows)})
+    return jsonify({'success': True, 'data': rows_to_list(rows), 'screenings': rows_to_list(rows)})
 
 
 @bp.route('/api/health/screenings/<int:baby_id>', methods=['POST'])
@@ -788,7 +799,10 @@ def screening_update(screening_id):
 def screening_delete(screening_id):
     """删除筛查记录"""
     db = get_db()
-    db.execute('DELETE FROM screenings WHERE id = ?', (screening_id,))
+    cur = db.execute('DELETE FROM screenings WHERE id = ?', (screening_id,))
+    if cur.rowcount == 0:
+        db.rollback()
+        return jsonify({'success': False, 'message': '筛查记录不存在'}), 404
     db.commit()
     return jsonify({'success': True, 'message': '筛查记录已删除'})
 
@@ -811,7 +825,7 @@ def allergies_list(baby_id):
         params.append(status)
     query += ' ORDER BY severity_level DESC, allergen_name'
     rows = db.execute(query, params).fetchall()
-    return jsonify({'success': True, 'allergies': rows_to_list(rows)})
+    return jsonify({'success': True, 'data': rows_to_list(rows), 'allergies': rows_to_list(rows)})
 
 
 @bp.route('/api/health/allergies/<int:baby_id>', methods=['POST'])
@@ -868,7 +882,10 @@ def allergy_update(allergy_id):
 def allergy_delete(allergy_id):
     """删除过敏记录"""
     db = get_db()
-    db.execute('DELETE FROM allergy_history WHERE id = ?', (allergy_id,))
+    cur = db.execute('DELETE FROM allergy_history WHERE id = ?', (allergy_id,))
+    if cur.rowcount == 0:
+        db.rollback()
+        return jsonify({'success': False, 'message': '过敏记录不存在'}), 404
     db.commit()
     return jsonify({'success': True, 'message': '过敏记录已删除'})
 
@@ -883,7 +900,7 @@ def feeding_summary_list(baby_id):
         'SELECT * FROM feeding_summary WHERE baby_id = ? ORDER BY record_month DESC',
         (baby_id,)
     ).fetchall()
-    return jsonify({'success': True, 'feeding_summary': rows_to_list(rows)})
+    return jsonify({'success': True, 'data': rows_to_list(rows), 'feeding_summary': rows_to_list(rows)})
 
 
 @bp.route('/api/health/feeding_summary/<int:baby_id>', methods=['POST'])
@@ -938,7 +955,10 @@ def feeding_summary_update(summary_id):
 def feeding_summary_delete(summary_id):
     """删除喂养摘要"""
     db = get_db()
-    db.execute('DELETE FROM feeding_summary WHERE id = ?', (summary_id,))
+    cur = db.execute('DELETE FROM feeding_summary WHERE id = ?', (summary_id,))
+    if cur.rowcount == 0:
+        db.rollback()
+        return jsonify({'success': False, 'message': '喂养摘要不存在'}), 404
     db.commit()
     return jsonify({'success': True, 'message': '喂养摘要已删除'})
 
@@ -1147,7 +1167,7 @@ def vaccine_schedule_init(baby_id):
 @bp.route('/api/health/vaccine/paid', methods=['GET'])
 def vaccine_paid_list():
     """获取常见自费疫苗推荐列表"""
-    return jsonify({'success': True, 'vaccines': PAID_VACCINES})
+    return jsonify({'success': True, 'data': PAID_VACCINES, 'vaccines': PAID_VACCINES})
 
 
 # ==================== 生长曲线增强（含百分位） ====================
