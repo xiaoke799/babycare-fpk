@@ -7527,6 +7527,10 @@ function loadVaccineStats() {
 // ==================== 分享卡片 ====================
 
 function initShareCard() {
+    // 分享卡片的入口按钮 shareCardBtn 在 index.html 里并不存在（功能没落地，
+    // 弹窗写好了但没放进页面）。不做这个判断的话第一行就抛 TypeError，
+    // 后面「关闭 / 刷新 / 下载」三个按钮的绑定会跟着一起失效。
+    if (!document.getElementById('shareCardBtn')) return;
     document.getElementById('shareCardBtn').addEventListener('click', () => {
         if (!App.currentBaby) {
             showToast.warning('请先添加宝宝');
@@ -8302,6 +8306,9 @@ let batchRecordType = 'feeding';
 let batchRecords = [];
 
 function initBatchRecord() {
+    // 批量记录的入口按钮 batchRecordBtn 在 index.html 里不存在（弹窗写了但没入口）。
+    // 不判断的话第一行抛错，后面关闭/取消/类型切换的绑定全部失效。
+    if (!document.getElementById('batchRecordBtn')) return;
     document.getElementById('batchRecordBtn').addEventListener('click', openBatchModal);
     document.getElementById('closeBatchRecordModal').addEventListener('click', () => hideModal('batchRecordModal'));
     document.getElementById('cancelBatchForm').addEventListener('click', () => hideModal('batchRecordModal'));

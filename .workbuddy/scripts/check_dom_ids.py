@@ -50,11 +50,23 @@ def git_show(path):
     return out.stdout.decode('utf-8', 'replace')
 
 
+def guarded_by_sentinel(src, ident):
+    """函数开头写 `if (!document.getElementById('x')) return;` 也算保护。
+
+    只认 `?.` 会把这种写法误报成风险，而它其实比 `?.` 更彻底（直接跳过整个函数）。
+    """
+    return re.search(
+        r"if\s*\(\s*!\s*document\.getElementById\(\s*['\"]" + re.escape(ident)
+        + r"['\"]\s*\)\s*\)\s*return", src) is not None
+
+
 def main():
     js, html = read(JS), read(HTML)
     used, have = js_ids(js), html_ids(html)
     # 只关心「没加 ?. 保护、节点缺失就抛 TypeError」的引用
     risky = js_ids(js, safe_only=True)
+    # 用变量接住再 if 判断（如 const b = getElementById('x'); if (b) ...）也算保护
+    risky = {i for i in risky if not guarded_by_sentinel(js, i)}
     missing_now = sorted(risky - have)
 
     old_js = git_show('app/frontend/js/app.js')
