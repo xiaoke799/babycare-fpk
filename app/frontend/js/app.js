@@ -11484,6 +11484,24 @@ function ensureAudioContext() {
     return audioCtx;
 }
 
+// 音效偏好（音量/定时时长）本地记忆：哄睡多半是半夜摸黑操作，
+// 每次进页面都回到默认的 50% / 30 分钟很折腾
+const SOUND_PREF_KEY = 'babycare_sound_prefs';
+
+function loadSoundPrefs() {
+    try {
+        return JSON.parse(localStorage.getItem(SOUND_PREF_KEY) || '{}') || {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function saveSoundPrefs(patch) {
+    try {
+        localStorage.setItem(SOUND_PREF_KEY, JSON.stringify(Object.assign(loadSoundPrefs(), patch)));
+    } catch (e) { /* 隐私模式下 localStorage 可能不可用，忽略 */ }
+}
+
 function initSoundsPage() {
     // 绑定音效卡片点击
     document.querySelectorAll('.sound-card').forEach(card => {
@@ -11492,6 +11510,18 @@ function initSoundsPage() {
             handleSoundPlay(soundType, this);
         });
     });
+
+    // 恢复上次的音量与定时设置
+    const prefs = loadSoundPrefs();
+    const volEl = document.getElementById('playerVolume');
+    if (volEl && prefs.volume != null) {
+        volEl.value = prefs.volume;
+        if (masterGainNode && audioCtx) masterGainNode.gain.value = prefs.volume / 100;
+    }
+    const timerSelect = document.getElementById('soundsTimer');
+    if (timerSelect && prefs.timer != null) {
+        timerSelect.value = String(prefs.timer);
+    }
 
     // 绑定控制按钮
     document.getElementById('playerStop')?.addEventListener('click', stopSound);
@@ -11503,12 +11533,14 @@ function initSoundsPage() {
             masterGainNode.gain.cancelScheduledValues(now);
             masterGainNode.gain.setTargetAtTime(this.value / 100, now, 0.05);
         }
+        saveSoundPrefs({ volume: this.value });
     });
 
     // 定时器选择
     document.getElementById('soundsTimer')?.addEventListener('change', function() {
         soundsTimerSeconds = parseInt(this.value) * 60;
         updatePlayerTimer();
+        saveSoundPrefs({ timer: this.value });
     });
 }
 

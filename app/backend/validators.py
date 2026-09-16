@@ -207,6 +207,29 @@ def validate_datetime(value, field_name="时间", default_now=False):
     return True, dt.strftime("%Y-%m-%d %H:%M:%S"), None
 
 
+def validate_date(value, field_name="日期", default_today=False):
+    """归一化**纯日期**为 'YYYY-MM-DD'。返回 (ok, 值, 错误)。
+
+    与 validate_datetime 的区别：保留日期语义，不补 12:00:00。
+    出牙 / 辅食 / 囟门 / 飞跃期 这些表的日期列是 DATE 语义，若存成带时间的字符串，
+    `ORDER BY <日期> DESC` 与按日期筛选会出现"同一天的数据排不到一起"的怪现象，
+    前端按天分组也会错位。
+    """
+    if value in (None, ""):
+        if default_today:
+            return True, datetime.datetime.now().strftime("%Y-%m-%d"), None
+        return True, None, None
+
+    raw = str(value).strip()
+    text = raw.replace("T", " ").replace("/", "-").strip()
+    text = text.split(" ")[0]          # 也接受 'YYYY-MM-DD HH:MM:SS'，只取日期部分
+    try:
+        dt = datetime.datetime.strptime(text, "%Y-%m-%d")
+    except ValueError:
+        return False, None, f"{field_name}格式应为 YYYY-MM-DD"
+    return True, dt.strftime("%Y-%m-%d"), None
+
+
 def parse_datetime(value):
     """宽松解析库里的时间字符串 → datetime，解析不了返回 None。
 

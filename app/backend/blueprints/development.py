@@ -10,12 +10,22 @@ import datetime
 import json
 from flask import Blueprint, request, jsonify
 
-from utils import get_db, row_to_dict, rows_to_list
+from utils import get_db, row_to_dict, rows_to_list, json_body
 from logger import get_logger
+from validators import (validate_enum, validate_date, validate_text_length,
+                        NOTE_MAX_LENGTH, NAME_MAX_LENGTH)
 import growth_utils
 
 bp = Blueprint("development", __name__)
 logger = get_logger("development")
+
+# ---- 各记录模块的可选值（逐个与前端下拉的 option value 对齐过，别凭空猜）----
+VALID_TEETH_POSITIONS = {"upper", "lower"}
+VALID_TEETH_SIDES = {"left", "right", "center"}
+VALID_FOOD_CATEGORIES = {"vegetable", "fruit", "meat", "grain", "dairy", "other"}
+VALID_FOOD_REACTIONS = {"none", "mild", "severe"}
+VALID_FONTANELLE_STATUS = {"open", "closing", "closed"}
+LEAP_NUMBER_MIN, LEAP_NUMBER_MAX = 1, 10        # Wonder Weeks 共 10 次飞跃
 
 
 # ==================== API: 里程碑 ====================
@@ -151,19 +161,52 @@ def get_asq_screenings(baby_id):
 
 # ==================== API: 出牙记录 ====================
 
+def _validate_teething_payload(data):
+    """校验出牙记录公共字段，返回 (values, error_response)。
+
+    此前这个模块**没有任何校验**：日期可以填 "8月20号"、牙位可以填任意字符串，
+    都会原样入库；而 erupt_date 是 DATE 语义（列表按它排序、前端按天分组），
+    格式一乱整个时间线就错位。
+    """
+    ok, tooth_name, err = validate_text_length(data.get("tooth_name"), NAME_MAX_LENGTH, "牙齿名称")
+    if not ok:
+        return None, (jsonify({"success": False, "message": err}), 400)
+
+    ok, erupt_date, err = validate_date(data.get("erupt_date"), "萌出日期")
+    if not ok:
+        return None, (jsonify({"success": False, "message": err}), 400)
+
+    ok, position, err = validate_enum(data.get("position"), VALID_TEETH_POSITIONS, "牙位（上/下颌）")
+    if not ok:
+        return None, (jsonify({"success": False, "message": err}), 400)
+
+    ok, side, err = validate_enum(data.get("side"), VALID_TEETH_SIDES, "左右位置")
+    if not ok:
+        return None, (jsonify({"success": False, "message": err}), 400)
+
+    ok, note, err = validate_text_length(data.get("note"), NOTE_MAX_LENGTH, "备注")
+    if not ok:
+        return None, (jsonify({"success": False, "message": err}), 400)
+
+    return (tooth_name, erupt_date, position or "", side or "", note or ""), None
+
+
 @bp.route("/api/babies/<int:baby_id>/teething", methods=["POST"])
 def add_teething_record(baby_id):
     """添加出牙记录"""
-    data = request.get_json()
-    if not data or not data.get("tooth_name") or not data.get("erupt_date"):
+    data = json_body()
+    if not data.get("tooth_name") or not data.get("erupt_date"):
         return jsonify({"success": False, "message": "请填写牙齿名称和萌出日期"}), 400
+
+    values, err_resp = _validate_teething_payload(data)
+    if err_resp:
+        return err_resp
 
     db = get_db()
     db.execute(
         """INSERT INTO teething_records (baby_id, tooth_name, erupt_date, position, side, note)
            VALUES (?, ?, ?, ?, ?, ?)""",
-        (baby_id, data["tooth_name"], data["erupt_date"],
-         data.get("position", ""), data.get("side", ""), data.get("note", "")),
+        (baby_id,) + tuple(values),
     )
     db.commit()
     return jsonify({"success": True, "message": "出牙记录已添加"})
@@ -185,18 +228,20 @@ def get_teething_record(baby_id, record_id):
 @bp.route("/api/babies/<int:baby_id>/teething/<int:record_id>", methods=["PUT"])
 def update_teething_record(baby_id, record_id):
     """更新出牙记录"""
-    data = request.get_json()
-    if not data or not data.get("tooth_name") or not data.get("erupt_date"):
+    data = json_body()
+    if not data.get("tooth_name") or not data.get("erupt_date"):
         return jsonify({"success": False, "message": "请填写牙齿名称和萌出日期"}), 400
+
+    values, err_resp = _validate_teething_payload(data)
+    if err_resp:
+        return err_resp
 
     db = get_db()
     cur = db.execute(
         """UPDATE teething_records
            SET tooth_name = ?, erupt_date = ?, position = ?, side = ?, note = ?
            WHERE id = ? AND baby_id = ?""",
-        (data["tooth_name"], data["erupt_date"],
-         data.get("position", ""), data.get("side", ""), data.get("note", ""),
-         record_id, baby_id),
+        tuple(values) + (record_id, baby_id),
     )
     if cur.rowcount == 0:
         return jsonify({"success": False, "message": "记录不存在"}), 404
@@ -206,10 +251,12 @@ def update_teething_record(baby_id, record_id):
 
 @bp.route("/api/teething/<int:record_id>", methods=["DELETE"])
 def delete_teething_record(record_id):
-    """删除出牙记录"""
+    """删除出牙记录（不存在的 id 返回 404）"""
     db = get_db()
-    db.execute("DELETE FROM teething_records WHERE id = ?", (record_id,))
+    cur = db.execute("DELETE FROM teething_records WHERE id = ?", (record_id,))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({"success": False, "message": "记录不存在"}), 404
     return jsonify({"success": True, "message": "已删除"})
 
 
@@ -305,21 +352,62 @@ def list_solid_food_records(baby_id):
     return jsonify({"success": True, "data": [dict(r) for r in rows]})
 
 
+def _validate_solid_food_payload(data):
+    """校验辅食记录公共字段，返回 (values, error_response)。
+
+    分类与过敏反应以前完全不校验：填错分类会让筛选（前端按 food_category 过滤）
+    查不到这条，过敏反应写错则可能把"严重反应"漏判成普通值 —— 这两项是排查
+    食物过敏的关键字段，值必须收敛到白名单。
+    """
+    ok, food_name, err = validate_text_length(data.get("food_name"), NAME_MAX_LENGTH, "食物名称")
+    if not ok:
+        return None, (jsonify({"success": False, "message": err}), 400)
+
+    ok, first_try_date, err = validate_date(data.get("first_try_date"), "首次尝试日期")
+    if not ok:
+        return None, (jsonify({"success": False, "message": err}), 400)
+
+    ok, food_category, err = validate_enum(data.get("food_category"), VALID_FOOD_CATEGORIES, "食物分类")
+    if not ok:
+        return None, (jsonify({"success": False, "message": err}), 400)
+
+    ok, reaction, err = validate_enum(data.get("reaction"), VALID_FOOD_REACTIONS, "过敏反应")
+    if not ok:
+        return None, (jsonify({"success": False, "message": err}), 400)
+
+    ok, note, err = validate_text_length(data.get("note"), NOTE_MAX_LENGTH, "备注")
+    if not ok:
+        return None, (jsonify({"success": False, "message": err}), 400)
+
+    return (
+        food_name,
+        food_category or "vegetable",
+        first_try_date,
+        str(data.get("amount") or "")[:50],
+        reaction or "none",
+        str(data.get("reaction_detail") or "")[:200],
+        1 if data.get("is_favorite") else 0,
+        note or "",
+    ), None
+
+
 @bp.route("/api/babies/<int:baby_id>/solid-food", methods=["POST"])
 def add_solid_food_record(baby_id):
     """添加辅食记录"""
-    data = request.get_json()
-    if not data or not data.get("food_name") or not data.get("first_try_date"):
+    data = json_body()
+    if not data.get("food_name") or not data.get("first_try_date"):
         return jsonify({"success": False, "message": "请填写食物名称和首次尝试日期"}), 400
+
+    values, err_resp = _validate_solid_food_payload(data)
+    if err_resp:
+        return err_resp
 
     db = get_db()
     db.execute(
         """INSERT INTO solid_food_records (baby_id, food_name, food_category,
            first_try_date, amount, reaction, reaction_detail, is_favorite, note)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (baby_id, data["food_name"], data.get("food_category", "vegetable"),
-         data["first_try_date"], data.get("amount", ""), data.get("reaction", "none"),
-         data.get("reaction_detail", ""), data.get("is_favorite", 0), data.get("note", ""))
+        (baby_id,) + tuple(values)
     )
     db.commit()
     return jsonify({"success": True, "message": "辅食记录已添加"})
@@ -327,10 +415,12 @@ def add_solid_food_record(baby_id):
 
 @bp.route("/api/solid-food/<int:record_id>", methods=["DELETE"])
 def delete_solid_food_record(record_id):
-    """删除辅食记录"""
+    """删除辅食记录（不存在的 id 返回 404）"""
     db = get_db()
-    db.execute("DELETE FROM solid_food_records WHERE id = ?", (record_id,))
+    cur = db.execute("DELETE FROM solid_food_records WHERE id = ?", (record_id,))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({"success": False, "message": "记录不存在"}), 404
     return jsonify({"success": True, "message": "已删除"})
 
 
@@ -350,9 +440,13 @@ def get_solid_food_record(baby_id, record_id):
 @bp.route("/api/babies/<int:baby_id>/solid-food/<int:record_id>", methods=["PUT"])
 def update_solid_food_record(baby_id, record_id):
     """更新辅食记录"""
-    data = request.get_json()
-    if not data or not data.get("food_name") or not data.get("first_try_date"):
+    data = json_body()
+    if not data.get("food_name") or not data.get("first_try_date"):
         return jsonify({"success": False, "message": "请填写食物名称和首次尝试日期"}), 400
+
+    values, err_resp = _validate_solid_food_payload(data)
+    if err_resp:
+        return err_resp
 
     db = get_db()
     cur = db.execute(
@@ -360,11 +454,7 @@ def update_solid_food_record(baby_id, record_id):
            SET food_name = ?, food_category = ?, first_try_date = ?,
                amount = ?, reaction = ?, reaction_detail = ?, is_favorite = ?, note = ?
            WHERE id = ? AND baby_id = ?""",
-        (data["food_name"], data.get("food_category", "vegetable"),
-         data["first_try_date"], data.get("amount", ""),
-         data.get("reaction", "none"), data.get("reaction_detail", ""),
-         data.get("is_favorite", 0), data.get("note", ""),
-         record_id, baby_id),
+        tuple(values) + (record_id, baby_id),
     )
     if cur.rowcount == 0:
         return jsonify({"success": False, "message": "记录不存在"}), 404
@@ -402,10 +492,12 @@ def get_solid_food_stats(baby_id):
 
 @bp.route("/api/leaps/<int:record_id>", methods=["DELETE"])
 def delete_leap_record(record_id):
-    """删除飞跃期记录"""
+    """删除飞跃期记录（不存在的 id 返回 404）"""
     db = get_db()
-    db.execute("DELETE FROM leap_records WHERE id = ?", (record_id,))
+    cur = db.execute("DELETE FROM leap_records WHERE id = ?", (record_id,))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({"success": False, "message": "记录不存在"}), 404
     return jsonify({"success": True, "message": "已删除"})
 
 
@@ -423,15 +515,42 @@ def get_leap_records(baby_id):
 @bp.route("/api/babies/<int:baby_id>/leaps", methods=["POST"])
 def add_leap_record(baby_id):
     """添加飞跃期记录"""
-    data = request.get_json()
-    if not data or not data.get("leap_number") or not data.get("start_date"):
+    data = json_body()
+    if not data.get("leap_number") or not data.get("start_date"):
         return jsonify({"success": False, "message": "请填写飞跃期数和开始日期"}), 400
+
+    # 飞跃期数限定在 Wonder Weeks 的 1~10：早期不校验，填 99 也能入库，
+    # 前端「第 N 次飞跃」和预测表就对不上了
+    try:
+        leap_number = int(data["leap_number"])
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "message": "飞跃期数需要是数字"}), 400
+    if not (LEAP_NUMBER_MIN <= leap_number <= LEAP_NUMBER_MAX):
+        return jsonify({"success": False,
+                        "message": "飞跃期数需在 %d~%d 之间" % (LEAP_NUMBER_MIN, LEAP_NUMBER_MAX)}), 400
+
+    ok, start_date, err = validate_date(data.get("start_date"), "开始日期")
+    if not ok:
+        return jsonify({"success": False, "message": err}), 400
+
+    end_date = None
+    if data.get("end_date"):
+        ok, end_date, err = validate_date(data.get("end_date"), "结束日期")
+        if not ok:
+            return jsonify({"success": False, "message": err}), 400
+        if end_date < start_date:
+            return jsonify({"success": False, "message": "结束日期不能早于开始日期"}), 400
+
+    ok, note, err = validate_text_length(data.get("note"), NOTE_MAX_LENGTH, "备注")
+    if not ok:
+        return jsonify({"success": False, "message": err}), 400
+
     db = get_db()
     db.execute(
         """INSERT INTO leap_records (baby_id, leap_number, start_date, end_date, is_completed, note)
            VALUES (?, ?, ?, ?, ?, ?)""",
-        (baby_id, data["leap_number"], data["start_date"],
-         data.get("end_date"), 1 if data.get("is_completed") else 0, data.get("note", ""))
+        (baby_id, leap_number, start_date, end_date,
+         1 if data.get("is_completed") else 0, note or "")
     )
     db.commit()
     return jsonify({"success": True, "message": "记录已添加"})
@@ -464,18 +583,45 @@ def predict_leaps(baby_id):
 @bp.route("/api/babies/<int:baby_id>/fontanelle", methods=["POST"])
 def add_fontanelle_record(baby_id):
     """添加囟门检查记录"""
-    data = request.get_json()
-    if not data or not data.get("check_date"):
+    data = json_body()
+    if not data.get("check_date"):
         return jsonify({"success": False, "message": "请填写检查日期"}), 400
+
+    ok, check_date, err = validate_date(data.get("check_date"), "检查日期")
+    if not ok:
+        return jsonify({"success": False, "message": err}), 400
+
+    ok, anterior_status, err = validate_enum(data.get("anterior_status"), VALID_FONTANELLE_STATUS, "前囟状态")
+    if not ok:
+        return jsonify({"success": False, "message": err}), 400
+    ok, posterior_status, err = validate_enum(data.get("posterior_status"), VALID_FONTANELLE_STATUS, "后囟状态")
+    if not ok:
+        return jsonify({"success": False, "message": err}), 400
+
+    # 前囟大小（cm）：此前不校验，能存进 "很大" 或负数，
+    # 前端画的闭合趋势图就直接被一个脏点带偏
+    anterior_size = data.get("anterior_size")
+    if anterior_size not in (None, ""):
+        try:
+            anterior_size = float(anterior_size)
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "message": "前囟大小需要是数字（cm）"}), 400
+        if not (0 <= anterior_size <= 10):
+            return jsonify({"success": False, "message": "前囟大小应在 0~10cm 之间"}), 400
+    else:
+        anterior_size = None
+
+    ok, note, err = validate_text_length(data.get("note"), NOTE_MAX_LENGTH, "备注")
+    if not ok:
+        return jsonify({"success": False, "message": err}), 400
 
     db = get_db()
     db.execute(
         """INSERT INTO fontanelle_records (baby_id, check_date, anterior_size,
            anterior_status, posterior_status, note)
            VALUES (?, ?, ?, ?, ?, ?)""",
-        (baby_id, data["check_date"], data.get("anterior_size"),
-         data.get("anterior_status", "open"), data.get("posterior_status", "open"),
-         data.get("note", ""))
+        (baby_id, check_date, anterior_size,
+         anterior_status or "open", posterior_status or "open", note or "")
     )
     db.commit()
     return jsonify({"success": True, "message": "囟门记录已添加"})
@@ -483,10 +629,12 @@ def add_fontanelle_record(baby_id):
 
 @bp.route("/api/fontanelle/<int:record_id>", methods=["DELETE"])
 def delete_fontanelle_record(record_id):
-    """删除囟门记录"""
+    """删除囟门记录（不存在的 id 返回 404）"""
     db = get_db()
-    db.execute("DELETE FROM fontanelle_records WHERE id = ?", (record_id,))
+    cur = db.execute("DELETE FROM fontanelle_records WHERE id = ?", (record_id,))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({"success": False, "message": "记录不存在"}), 404
     return jsonify({"success": True, "message": "已删除"})
 
 

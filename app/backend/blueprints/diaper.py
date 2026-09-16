@@ -9,46 +9,70 @@
 import datetime
 from flask import Blueprint, request, jsonify
 
-from utils import get_db
+from utils import get_db, json_body
 from blueprints.analytics import _parse_datetime
-from validators import validate_enum, validate_text_length, VALID_DIAPER_TYPES, NOTE_MAX_LENGTH
+from validators import (validate_enum, validate_text_length, validate_datetime,
+                        VALID_DIAPER_TYPES, NOTE_MAX_LENGTH)
 
 bp = Blueprint("diaper", __name__)
 
 VALID_SKIN_CONDITIONS = ["normal", "slight_red", "rash", "severe_rash"]
+# 便便颜色（与前端下拉、AI 工具的白名单保持一致）
+VALID_DIAPER_COLORS = {"black", "brown", "green", "yellow", "other"}
+
+
+def _validate_diaper_payload(data):
+    """校验并归一化换尿布记录的公共字段，返回 (values, error_response)。
+
+    抽出来是因为 POST 与 PUT 的校验完全一样，早期是各写一遍（改一处漏一处的重灾区）。
+    """
+    ok, diaper_type, err = validate_enum(data["diaper_type"], VALID_DIAPER_TYPES, "尿布类型")
+    if not ok:
+        return None, (jsonify({"success": False, "message": err}), 400)
+
+    skin_condition = data.get("skin_condition")
+    if skin_condition:
+        ok, skin_condition, err = validate_enum(skin_condition, VALID_SKIN_CONDITIONS, "皮肤状况")
+        if not ok:
+            return None, (jsonify({"success": False, "message": err}), 400)
+
+    # 便便颜色此前没校验，随手传个 "purple" 也会入库，前端只能显示成原文
+    color = data.get("color")
+    if color:
+        ok, color, err = validate_enum(color, VALID_DIAPER_COLORS, "便便颜色")
+        if not ok:
+            return None, (jsonify({"success": False, "message": err}), 400)
+
+    # 时间归一化：前端 datetime-local 给的是 '2026-09-16T08:00'，
+    # 与库里的 'YYYY-MM-DD HH:MM:SS' 混存会让按时间范围筛选与排序出问题
+    ok, change_time, err = validate_datetime(data.get("change_time"), "换尿布时间")
+    if not ok:
+        return None, (jsonify({"success": False, "message": err}), 400)
+
+    ok, note, err = validate_text_length(data.get("note"), NOTE_MAX_LENGTH, "备注")
+    if not ok:
+        return None, (jsonify({"success": False, "message": err}), 400)
+
+    return (change_time, diaper_type, color, skin_condition, data.get("brand"), note), None
 
 
 @bp.route("/api/babies/<int:baby_id>/diaper", methods=["POST"])
 def add_diaper_record(baby_id):
     """添加换尿布记录"""
-    data = request.get_json()
-    if not data or not data.get("change_time") or not data.get("diaper_type"):
+    data = json_body()
+    if not data.get("change_time") or not data.get("diaper_type"):
         return jsonify({"success": False, "message": "请填写时间和类型"}), 400
 
-    # 校验尿布类型枚举
-    ok, diaper_type, err = validate_enum(data["diaper_type"], VALID_DIAPER_TYPES, "尿布类型")
-    if not ok:
-        return jsonify({"success": False, "message": err}), 400
-
-    # 校验皮肤状况
-    skin_condition = data.get("skin_condition")
-    if skin_condition:
-        ok, skin_condition, err = validate_enum(skin_condition, VALID_SKIN_CONDITIONS, "皮肤状况")
-        if not ok:
-            return jsonify({"success": False, "message": err}), 400
-
-    # 校验文本长度
-    ok, note, err = validate_text_length(data.get("note"), NOTE_MAX_LENGTH, "备注")
-    if not ok:
-        return jsonify({"success": False, "message": err}), 400
+    values, err_resp = _validate_diaper_payload(data)
+    if err_resp:
+        return err_resp
 
     db = get_db()
     db.execute(
         """INSERT INTO diaper_records
            (baby_id, change_time, diaper_type, color, skin_condition, brand, note)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (baby_id, data["change_time"], diaper_type, data.get("color"),
-         skin_condition, data.get("brand"), note),
+        (baby_id,) + tuple(values),
     )
     db.commit()
     return jsonify({"success": True, "message": "记录已添加"})
@@ -68,9 +92,32 @@ def list_diaper_records(baby_id):
     if end:
         query += " AND change_time <= ?"
         params.append(end + " 23:59:59")
-    query += " ORDER BY change_time DESC LIMIT 100"
-    rows = db.execute(query, params).fetchall()
-    return jsonify({"success": True, "data": [dict(r) for r in rows]})
+    # 分页：早期死写 LIMIT 100 —— 换尿布一天好几次，一周多就把列表占满，
+    # 更早的记录在页面上直接"消失"，统计也跟着偏。现在默认取最近 500 条并返回 total，
+    # 需要更早的可传 limit/offset 翻页。
+    query += " ORDER BY change_time DESC"
+    total = db.execute(
+        "SELECT COUNT(*) FROM diaper_records WHERE baby_id = ?"
+        + (" AND change_time >= ?" if start else "")
+        + (" AND change_time <= ?" if end else ""),
+        params,
+    ).fetchone()[0]
+    try:
+        limit = int(request.args.get("limit", 500))
+    except (TypeError, ValueError):
+        limit = 500
+    limit = max(1, min(limit, 2000))
+    offset = max(0, request.args.get("offset", type=int) or 0)
+    query += " LIMIT ? OFFSET ?"
+    rows = db.execute(query, params + [limit, offset]).fetchall()
+    return jsonify({
+        "success": True,
+        "data": [dict(r) for r in rows],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + len(rows) < total,
+    })
 
 
 @bp.route("/api/babies/<int:baby_id>/diapers", methods=["GET"])
@@ -81,10 +128,12 @@ def list_diaper_records_plural(baby_id):
 
 @bp.route("/api/diaper/<int:record_id>", methods=["DELETE"])
 def delete_diaper_record(record_id):
-    """删除换尿布记录"""
+    """删除换尿布记录（不存在的 id 返回 404，不再「提示已删除但什么都没删」）"""
     db = get_db()
-    db.execute("DELETE FROM diaper_records WHERE id = ?", (record_id,))
+    cur = db.execute("DELETE FROM diaper_records WHERE id = ?", (record_id,))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({"success": False, "message": "记录不存在"}), 404
     return jsonify({"success": True, "message": "已删除"})
 
 
@@ -104,34 +153,20 @@ def get_diaper_record(baby_id, record_id):
 @bp.route("/api/babies/<int:baby_id>/diaper/<int:record_id>", methods=["PUT"])
 def update_diaper_record(baby_id, record_id):
     """更新换尿布记录"""
-    data = request.get_json()
-    if not data or not data.get("change_time") or not data.get("diaper_type"):
+    data = json_body()
+    if not data.get("change_time") or not data.get("diaper_type"):
         return jsonify({"success": False, "message": "请填写时间和类型"}), 400
 
-    # 校验尿布类型枚举
-    ok, diaper_type, err = validate_enum(data["diaper_type"], VALID_DIAPER_TYPES, "尿布类型")
-    if not ok:
-        return jsonify({"success": False, "message": err}), 400
-
-    # 校验皮肤状况
-    skin_condition = data.get("skin_condition")
-    if skin_condition:
-        ok, skin_condition, err = validate_enum(skin_condition, VALID_SKIN_CONDITIONS, "皮肤状况")
-        if not ok:
-            return jsonify({"success": False, "message": err}), 400
-
-    # 校验文本长度
-    ok, note, err = validate_text_length(data.get("note"), NOTE_MAX_LENGTH, "备注")
-    if not ok:
-        return jsonify({"success": False, "message": err}), 400
+    values, err_resp = _validate_diaper_payload(data)
+    if err_resp:
+        return err_resp
 
     db = get_db()
     cur = db.execute(
         """UPDATE diaper_records
            SET change_time = ?, diaper_type = ?, color = ?, skin_condition = ?, brand = ?, note = ?
            WHERE id = ? AND baby_id = ?""",
-        (data["change_time"], diaper_type, data.get("color"),
-         skin_condition, data.get("brand"), note, record_id, baby_id),
+        tuple(values) + (record_id, baby_id),
     )
     if cur.rowcount == 0:
         return jsonify({"success": False, "message": "记录不存在"}), 404
