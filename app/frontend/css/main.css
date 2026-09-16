@@ -5995,19 +5995,6 @@ body {
 }
 
 /* ==================== 成长对比照片 ==================== */
-.growthphotos-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-}
-
-.growthphotos-timeline {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 12px;
-}
-
 .growth-photo-item {
     background: var(--card-bg);
     border-radius: var(--radius);

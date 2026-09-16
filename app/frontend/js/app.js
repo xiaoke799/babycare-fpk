@@ -1290,7 +1290,6 @@ const NAV_HUBS = [
             { page: 'bmi', label: 'BMI', icon: 'icon-scale' },
             { page: 'asq', label: '发育筛查', icon: 'icon-list' },
             { page: 'pattern', label: '作息节律', icon: 'icon-bar' },
-            { page: 'growthphotos', label: '成长对比', icon: 'icon-compare' },
             { page: 'reports', label: '阶段报告', icon: 'icon-doc' }
         ]
     },
@@ -1503,9 +1502,6 @@ function loadPageData(page) {
         case 'asq':
             loadAsqScreenings();
             break;
-        case 'growthphotos':
-            loadGrowthPhotos();
-            break;
         case 'pattern':
             initPattern();
             break;
@@ -1613,20 +1609,16 @@ const PAGE_LINKS = {
     vaccines:       ['health'],
     'diaper-price': ['diaper-record'],
     diary:          ['photos', 'firsts'],
-    photos:         ['diary', 'growthphotos'],
     leap:           ['milestones', 'sleep-record', 'tummytime'],
     fontanelle:     ['teeth', 'health', 'growth'],
     teeth:          ['fontanelle', 'milestones', 'health'],
     health:         ['temperature', 'med-reminder', 'vaccines', 'teeth', 'growth'],
     sounds:         ['sleep-record'],
 
-    growth:         ['bmi', 'growthphotos', 'reports', 'milestones'],
-    milestones:     ['firsts', 'leap', 'teeth', 'growthphotos'],
     firsts:         ['milestones', 'diary', 'photos'],
     bmi:            ['growth'],
     asq:            ['milestones', 'leap'],
     pattern:        ['feeding', 'sleep-record', 'diaper-record', 'reports'],
-    growthphotos:   ['growth', 'photos', 'milestones'],
     reports:        ['growth', 'feeding', 'sleep-record', 'diaper-record', 'pattern'],
 };
 
@@ -9960,227 +9952,6 @@ function deleteFontanelle(id) {
     });
 }
 
-// ==================== 成长对比照片 ====================
-
-function initGrowthPhotosPage() {
-    const addBtn = document.getElementById('addGrowthPhotoBtn');
-    if (addBtn) {
-        addBtn.addEventListener('click', showGrowthPhotoModal);
-    }
-    document.getElementById('gpClearCompare')?.addEventListener('click', clearGrowthPhotoSelection);
-    loadGrowthPhotos();
-}
-
-function loadGrowthPhotos() {
-    if (!App.currentBaby) return;
-    api(`/api/babies/${App.currentBaby}/growth-photos`).then(res => {
-        if (!res.success) return;
-        App.growthPhotos = res.data || [];
-        // 清掉已经被删掉的选择项
-        App.gpSelected = (App.gpSelected || []).filter(
-            id => App.growthPhotos.some(r => r.id === id)
-        );
-        renderGrowthPhotos();
-        renderGrowthPhotoCompare();
-    });
-}
-
-function renderGrowthPhotos() {
-    const container = document.getElementById('growthphotosTimeline');
-    if (!container) return;
-
-    if (!App.growthPhotos || App.growthPhotos.length === 0) {
-        container.innerHTML = '<p class="empty-tip">暂无对比照片</p>';
-        return;
-    }
-
-    const selected = App.gpSelected || [];
-    container.innerHTML = App.growthPhotos.map(r => `
-        <div class="growth-photo-item ${selected.includes(r.id) ? 'gp-selected' : ''}"
-             onclick="toggleGrowthPhotoSelection(${r.id})">
-            <button class="gp-delete" onclick="event.stopPropagation(); deleteGrowthPhoto(${r.id})">X</button>
-            <div class="gp-photo">
-                <img src="${escapeHtml(r.photo_path)}" alt="${escapeHtml(r.caption || '成长照片')}" onerror="this.src='/app/babycare-fpk/images/placeholder.svg'">
-            </div>
-            <div class="gp-info">
-                <span class="gp-date">${escapeHtml(r.photo_date)}</span>
-                ${r.age_months ? `<span class="gp-age">${escapeHtml(String(r.age_months))}月龄</span>` : ''}
-                ${r.caption ? `<span class="gp-caption">${escapeHtml(r.caption)}</span>` : ''}
-            </div>
-            <span class="gp-check">${selected.includes(r.id) ? '已选 ' + (selected.indexOf(r.id) + 1) : '选择'}</span>
-        </div>
-    `).join('');
-}
-
-function toggleGrowthPhotoSelection(id) {
-    const sel = App.gpSelected || (App.gpSelected = []);
-    const at = sel.indexOf(id);
-    if (at >= 0) {
-        sel.splice(at, 1);
-    } else {
-        sel.push(id);
-        // 最多保留两张，超出的挤掉最早选的那张
-        while (sel.length > 2) sel.shift();
-    }
-    renderGrowthPhotos();
-    renderGrowthPhotoCompare();
-}
-
-function clearGrowthPhotoSelection() {
-    App.gpSelected = [];
-    renderGrowthPhotos();
-    renderGrowthPhotoCompare();
-}
-
-function renderGrowthPhotoCompare() {
-    const panel = document.getElementById('gpComparePanel');
-    const hint = document.getElementById('gpCompareHint');
-    const bar = document.getElementById('gpCompareBar');
-    if (!panel) return;
-
-    const sel = App.gpSelected || [];
-    if (bar) bar.style.display = (App.growthPhotos && App.growthPhotos.length) ? '' : 'none';
-    if (hint) {
-        hint.textContent = sel.length === 0
-            ? '点击照片，选两张进行对比'
-            : `已选 ${sel.length} 张${sel.length < 2 ? '，再选一张' : ''}`;
-    }
-
-    if (sel.length < 2) {
-        panel.innerHTML = '';
-        return;
-    }
-
-    const a = App.growthPhotos.find(r => r.id === sel[0]);
-    const b = App.growthPhotos.find(r => r.id === sel[1]);
-    if (!a || !b) { panel.innerHTML = ''; return; }
-
-    // 按日期排序，早的放左边
-    const [first, second] = (a.photo_date <= b.photo_date) ? [a, b] : [b, a];
-
-    const gap = describePhotoGap(first, second);
-
-    panel.innerHTML = `
-        <div class="gp-compare-title">成长对比</div>
-        <div class="gp-compare-body">
-            <div class="gp-compare-side">
-                <img src="${escapeHtml(first.photo_path)}" alt="对比照1" onerror="this.src='/app/babycare-fpk/images/placeholder.svg'">
-                <div class="gp-compare-meta">
-                    <span class="gp-compare-date">${escapeHtml(first.photo_date)}</span>
-                    ${first.age_months ? `<span class="gp-compare-age">${escapeHtml(String(first.age_months))} 月龄</span>` : ''}
-                    ${first.caption ? `<span class="gp-compare-caption">${escapeHtml(first.caption)}</span>` : ''}
-                </div>
-            </div>
-            <div class="gp-compare-mid">
-                <span class="gp-compare-gap">${escapeHtml(gap)}</span>
-            </div>
-            <div class="gp-compare-side">
-                <img src="${escapeHtml(second.photo_path)}" alt="对比照2" onerror="this.src='/app/babycare-fpk/images/placeholder.svg'">
-                <div class="gp-compare-meta">
-                    <span class="gp-compare-date">${escapeHtml(second.photo_date)}</span>
-                    ${second.age_months ? `<span class="gp-compare-age">${escapeHtml(String(second.age_months))} 月龄</span>` : ''}
-                    ${second.caption ? `<span class="gp-compare-caption">${escapeHtml(second.caption)}</span>` : ''}
-                </div>
-            </div>
-        </div>
-    `;
-}
-
-// 两张照片相隔多久：优先用记录的月龄差，没有就算日期差
-function describePhotoGap(first, second) {
-    if (first.age_months && second.age_months) {
-        const dm = Number(second.age_months) - Number(first.age_months);
-        if (dm >= 0) return `相隔 ${dm} 个月`;
-    }
-    try {
-        const d1 = new Date(first.photo_date);
-        const d2 = new Date(second.photo_date);
-        const days = Math.round((d2 - d1) / 86400000);
-        if (!isNaN(days) && days >= 0) {
-            if (days < 31) return `相隔 ${days} 天`;
-            const months = Math.floor(days / 30.44);
-            const restDays = days - Math.round(months * 30.44);
-            return restDays > 0 ? `相隔 ${months} 个月 ${restDays} 天` : `相隔 ${months} 个月`;
-        }
-    } catch (e) { /* 日期解析失败就不显示间隔 */ }
-    return '';
-}
-
-function showGrowthPhotoModal() {
-    if (!App.currentBaby) return;
-    const html = `
-        <form id="growthPhotoForm">
-            <div class="form-group">
-                <label>照片日期</label>
-                <input type="date" id="gpDate" required>
-            </div>
-            <div class="form-group">
-                <label>照片路径/URL</label>
-                <input type="text" id="gpPath" placeholder="输入图片路径或URL" required>
-            </div>
-            <div class="form-group">
-                <label>月龄</label>
-                <input type="number" id="gpAge" placeholder="可选">
-            </div>
-            <div class="form-group">
-                <label>分类</label>
-                <select id="gpCategory">
-                    <option value="monthly">月度照片</option>
-                    <option value="milestone">里程碑</option>
-                    <option value="comparison">对比照</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>说明</label>
-                <input type="text" id="gpCaption" placeholder="可选">
-            </div>
-            <div class="form-actions">
-                <button type="button" class="btn btn-cancel" id="cancelGpForm">取消</button>
-                <button type="submit" class="btn btn-primary">保存</button>
-            </div>
-        </form>
-    `;
-    document.getElementById('gpModalBody').innerHTML = html;
-    showModal('gpModal');
-
-    const gpDateEl = document.getElementById('gpDate');
-    if (gpDateEl) gpDateEl.value = getToday();
-    document.getElementById('cancelGpForm')?.addEventListener('click', () => hideModal('gpModal'));
-    document.getElementById('growthPhotoForm')?.addEventListener('submit', function(e) {
-        e.preventDefault();
-        const data = {
-            baby_id: App.currentBaby,
-            photo_date: document.getElementById('gpDate')?.value || '',
-            photo_path: document.getElementById('gpPath')?.value || '',
-            age_months: document.getElementById('gpAge')?.value || null,
-            category: document.getElementById('gpCategory')?.value || '',
-            caption: document.getElementById('gpCaption')?.value || ''
-        };
-        api(`/api/babies/${App.currentBaby}/growth-photos`, {
-            method: 'POST',
-            body: JSON.stringify(data)
-        }).then(res => {
-            if (res.success) {
-                hideModal('gpModal');
-                showToast('照片记录已添加');
-                loadGrowthPhotos();
-            } else {
-                showToast.error(res.message || '添加失败');
-            }
-        });
-    });
-}
-
-function deleteGrowthPhoto(id) {
-    if (!confirm('确定删除这条照片记录？')) return;
-    api(`/api/growth-photos/${id}`, { method: 'DELETE' }).then(res => {
-        if (res.success) {
-            showToast.success('已删除');
-            loadGrowthPhotos();
-        }
-    });
-}
-
 function loadPatternData() {
     if (!App.currentBaby) return;
     api(`/api/babies/${App.currentBaby}/pattern/${currentPatternType}?days=7`).then(res => {
@@ -10649,7 +10420,6 @@ function mainInit() {
     safeCall(initSolidFoodPage, 'initSolidFoodPage');
     safeCall(initLeapPage, 'initLeapPage');
     safeCall(initFontanellePage, 'initFontanellePage');
-    safeCall(initGrowthPhotosPage, 'initGrowthPhotosPage');
     safeCall(initSoundsPage, 'initSoundsPage');
     safeCall(initBmiPage, 'initBmiPage');
     safeCall(initRecipesPage, 'initRecipesPage');
