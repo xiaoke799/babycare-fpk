@@ -22,7 +22,7 @@ import time
 from flask import Blueprint, request, jsonify, current_app
 
 from constants import DATA_DIR, DB_PATH
-from utils import get_db
+from utils import get_db, json_body
 from user_context import require_admin
 
 bp = Blueprint("storage", __name__)
@@ -42,6 +42,60 @@ _auto_backup_state = {
     "next_run": None,
     "running": False,
 }
+
+# 自动备份配置在 app_settings 里的键名（autobackup_ 前缀，与推送的 notify_ 区分开）
+_AUTO_BACKUP_SETTING_KEYS = {
+    "enabled": "autobackup_enabled",
+    "interval_hours": "autobackup_interval_hours",
+    "keep_count": "autobackup_keep_count",
+}
+
+
+def _load_auto_backup_config():
+    """从 app_settings 读回自动备份配置。
+
+    后台线程里不能用 Flask 的 g.db（无请求上下文），所以这里自建连接。
+
+    为什么必须持久化 + 反复读取：
+      ① 早期配置只活在进程内存里，重启就回到默认（enabled=False）——
+         自动备份静默停止，而用户以为它还开着；
+      ② gunicorn 多 worker 各持一份内存状态，备份循环却只跑在抢到文件锁的那个
+         worker 上：用户在前端点开的开关，真正干活的进程可能根本不知道。
+         所以循环每轮都重新读一次（每分钟 3 次轻量 SELECT，代价可忽略）。
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        rows = dict(conn.execute(
+            "SELECT key, value FROM app_settings WHERE key IN (?, ?, ?)",
+            tuple(_AUTO_BACKUP_SETTING_KEYS.values()),
+        ).fetchall())
+        conn.close()
+    except Exception as e:
+        try:
+            current_app.logger.warning("读取自动备份配置失败: %s", e)
+        except Exception:
+            pass
+        return
+
+    for field, key in _AUTO_BACKUP_SETTING_KEYS.items():
+        raw = rows.get(key)
+        if raw is None:
+            continue
+        try:
+            value = (str(raw).lower() in ("1", "true", "yes")) if field == "enabled" else int(raw)
+        except (TypeError, ValueError):
+            continue
+        _auto_backup_state[field] = value
+
+
+def _save_auto_backup_config():
+    """把自动备份配置写进 app_settings（在请求上下文内调用）"""
+    from utils import _set_app_setting
+    for field, key in _AUTO_BACKUP_SETTING_KEYS.items():
+        value = _auto_backup_state[field]
+        if isinstance(value, bool):
+            value = "1" if value else "0"
+        _set_app_setting(key, value)
 
 
 def _format_size(size):
@@ -94,6 +148,9 @@ def _auto_backup_loop():
         return  # 其它 worker 已在跑备份调度
     while True:
         time.sleep(60)
+        # 每轮都重新读一次库里的配置：多 worker 下，用户在前端改的开关可能落在
+        # 别的进程内存里，只有真正执行备份的这个进程也读得到才算数
+        _load_auto_backup_config()
         cfg = _auto_backup_state
         if not cfg["enabled"] or cfg["running"]:
             continue
@@ -129,10 +186,10 @@ def _run_auto_backup(now):
             import json as _json
             _json.dump(all_data, f, ensure_ascii=False, indent=2)
 
-        # 清理旧备份
+        # 清理旧备份：只清自动备份这一类，手动备份不受影响
         keep = max(1, int(_auto_backup_state.get("keep_count", 10)))
         from blueprints.backup import _cleanup_old_backups
-        _cleanup_old_backups(backup_dir, keep)
+        _cleanup_old_backups(backup_dir, keep, only_auto=True)
 
         cfg["last_run"] = now.strftime("%Y-%m-%d %H:%M:%S")
         cfg["last_run_dt"] = now
@@ -155,6 +212,7 @@ def _run_auto_backup(now):
 def _start_auto_backup_thread():
     """确保后台线程在应用启动时运行（由 server.py 调用）"""
     global _auto_backup_thread
+    _load_auto_backup_config()   # 先恢复持久化的配置，再起线程
     with _auto_backup_lock:
         if _auto_backup_thread is None or not _auto_backup_thread.is_alive():
             t = threading.Thread(target=_auto_backup_loop, daemon=True, name="auto-backup")
@@ -577,17 +635,31 @@ def get_auto_backup_config():
 @require_admin
 def set_auto_backup_config():
     """更新自动备份配置"""
-    data = request.get_json(silent=True) or {}
+    data = json_body()
     cfg = _auto_backup_state
+
+    # 数值项先解析校验：早期直接 int(data[...])，前端传个非数字就整条请求 500
+    new_interval = None
+    if "interval_hours" in data:
+        try:
+            new_interval = int(data["interval_hours"])
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "message": "间隔小时数需要是数字"}), 400
+
+    new_keep = None
+    if "keep_count" in data:
+        try:
+            new_keep = int(data["keep_count"])
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "message": "保留份数需要是数字"}), 400
+
     with _auto_backup_lock:
         if "enabled" in data:
             cfg["enabled"] = bool(data["enabled"])
-        if "interval_hours" in data:
-            v = int(data["interval_hours"])
-            cfg["interval_hours"] = max(1, min(v, 720))  # 1 小时 ~ 30 天
-        if "keep_count" in data:
-            v = int(data["keep_count"])
-            cfg["keep_count"] = max(1, min(v, 30))
+        if new_interval is not None:
+            cfg["interval_hours"] = max(1, min(new_interval, 720))  # 1 小时 ~ 30 天
+        if new_keep is not None:
+            cfg["keep_count"] = max(1, min(new_keep, 30))
         # 重新计算下次运行
         if cfg["enabled"] and cfg.get("last_run_dt"):
             cfg["next_run"] = (
@@ -597,7 +669,17 @@ def set_auto_backup_config():
             cfg["next_run"] = "下次检查时"
         else:
             cfg["next_run"] = None
-    return jsonify({"success": True, "message": "配置已更新", **{
+
+    # 持久化：只存内存的话重启即回默认值，多 worker 之间也互不可见
+    saved = True
+    try:
+        _save_auto_backup_config()
+    except Exception as e:
+        saved = False
+        current_app.logger.warning("保存自动备份配置失败: %s", e)
+
+    return jsonify({"success": True, "saved": saved, "message": "配置已更新" if saved else
+                    "配置已生效，但写入数据库失败（重启后会丢失）", **{
         "enabled": cfg["enabled"], "interval_hours": cfg["interval_hours"],
         "keep_count": cfg["keep_count"], "next_run": cfg["next_run"],
     }})

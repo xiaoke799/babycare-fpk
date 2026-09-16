@@ -121,47 +121,56 @@ _notifier = None
 _scheduler = None
 
 def _init_notifier():
-    """初始化推送通知模块"""
+    """初始化推送通知模块（幂等；由 _do_init() 在数据库就绪后调用）"""
     global _notifier, _scheduler
+    if _notifier is not None:
+        return  # 幂等：重复调用会多起一个提醒调度线程
     try:
         from notifier import UnifiedNotifier
         from notifier.reminder_scheduler import ReminderScheduler
         from notifier.multi_platform_notifier import MultiPlatformNotifier
 
-        # 从数据库加载配置
+        # 从数据库加载配置。
+        # 清单直接引用 notifications.CONFIG_KEYS —— 早前这里另抄了一份 keys 列表，
+        # 结果比写接口少一项（notify_timeout），于是「设置页能改、重启就丢」。
+        # 注意：不能用 utils._get_app_setting —— 它走 Flask 的 g.db，
+        # 而本函数在请求上下文之外执行（首次请求的初始化钩子里），拿不到连接，
+        # 会被静默吞掉变成「配置全部走默认值」。
         def load_notify_config():
+            from blueprints.notifications import CONFIG_KEYS
             cfg = {}
-            keys = [
-                "wechat_webhook_url", "dingtalk_webhook_url", "feishu_webhook_url",
-                "bark_url", "pushplus_token", "pushplus_topic", "title_prefix",
-                "dnd_enabled", "dnd_start_time", "dnd_end_time",
-                "reminder_enabled", "feeding_reminder_enabled", "feeding_reminder_interval",
-                "diaper_reminder_enabled", "diaper_reminder_interval",
-                "medication_reminder_enabled", "vaccine_reminder_enabled",
-                "vaccine_reminder_days", "reminder_check_interval",
-            ]
-            for key in keys:
-                val = _get_app_setting(f"notify_{key}")
-                if val is not None:
-                    # 类型转换
-                    if key.startswith("dnd_enabled") or key.endswith("_enabled"):
-                        cfg[key] = val.lower() in ("1", "true", "yes") if isinstance(val, str) else bool(val)
-                    elif key.endswith("_interval") or key.endswith("_days"):
-                        try:
-                            cfg[key] = float(val) if "." in str(val) else int(val)
-                        except (ValueError, TypeError):
-                            cfg[key] = val
-                    else:
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                stored = dict(conn.execute(
+                    "SELECT key, value FROM app_settings WHERE key LIKE 'notify%'"
+                ).fetchall())
+                conn.close()
+            except Exception as e:
+                logger.warning("读取推送配置失败: %s", e)
+                stored = {}
+            for key in CONFIG_KEYS:
+                val = stored.get(f"notify_{key}")
+                if val is None:
+                    continue
+                # 类型还原：布尔与数值项从库里读回来都是字符串
+                if key.endswith("_enabled"):
+                    cfg[key] = val.lower() in ("1", "true", "yes") if isinstance(val, str) else bool(val)
+                elif key.endswith(("_interval", "_days", "_timeout")):
+                    try:
+                        cfg[key] = float(val) if "." in str(val) else int(val)
+                    except (ValueError, TypeError):
                         cfg[key] = val
+                else:
+                    cfg[key] = val
             return cfg
 
         config = load_notify_config()
 
-        # 历史数据库路径
+        # 推送历史库放在应用数据目录（与业务数据同一处）。
+        # 早期回退分支是「代码目录/../data」—— 升级即丢，且安装目录通常不可写。
         import os
-        data_dir = os.environ.get("TRIM_PKGVAR", "")
-        if not data_dir:
-            data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+        from constants import DATA_DIR as _DATA_DIR
+        data_dir = os.environ.get("TRIM_PKGVAR", "").strip() or _DATA_DIR
         os.makedirs(data_dir, exist_ok=True)
         history_db = os.path.join(data_dir, "push_history.db")
 
@@ -183,8 +192,11 @@ def _init_notifier():
     except Exception as e:
         logger.error("[Notifier] 初始化失败: %s", e)
 
-# 延迟初始化（在首次请求时或启动后）
-_init_notifier()
+# 注意：_init_notifier() **不能在这里调用**。
+# 它依赖下面从 utils 导入的 _get_app_setting（导入语句在更后面），写在这行会让
+# 每次启动都抛 NameError 并被 except 静默吞掉 —— 结果是推送模块从未初始化成功
+# （_notifier = None、提醒调度器也没启动），设置页永远显示「推送模块未初始化」。
+# 现在统一由 _do_init() 调用：那时数据库已建好、配置也读得到。
 
 # 请求日志钩子：记录每个 API 请求的耗时和状态
 @app.before_request
@@ -1436,6 +1448,17 @@ def _json_int(data, key, default=None, minimum=None, maximum=None):
     except (TypeError, ValueError):
         return None, (jsonify({'success': False, 'message': f'字段 {key} 必须为整数'}), 400)
     if minimum is not None and value < minimum:
+    # 初始化推送通知模块（含提醒调度器）。放在这里而不是模块导入时：
+    # 此刻数据库已建表、推送配置也读得到；导入时调用会因名称未定义而静默失败。
+    try:
+        _init_notifier()
+        if _notifier is None:
+            app.logger.warning("推送通知模块未初始化（详见上方日志）")
+        else:
+            app.logger.info("推送通知模块已初始化")
+    except Exception as e:
+        app.logger.warning("推送通知模块初始化异常: %s", e)
+
         return None, (jsonify({'success': False, 'message': f'字段 {key} 不能小于 {minimum}'}), 400)
     if maximum is not None and value > maximum:
         return None, (jsonify({'success': False, 'message': f'字段 {key} 不能大于 {maximum}'}), 400)

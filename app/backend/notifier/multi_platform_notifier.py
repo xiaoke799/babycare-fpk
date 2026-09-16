@@ -20,8 +20,9 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
-# PushPlus 固定接口
-PUSHPLUS_URL = "http://www.pushplus.plus/send"
+# PushPlus 固定接口。
+# 必须走 https：这里是 POST 明文 token，用 http 等于把凭据裸奔在网络上。
+PUSHPLUS_URL = "https://www.pushplus.plus/send"
 
 
 @dataclass
@@ -81,8 +82,25 @@ class MultiPlatformNotifier:
             self._dedup_cache[key] = now
             return False
 
+    def _redact(self, text) -> str:
+        """把错误信息里的凭据抹掉。
+
+        urlopen 的异常常把整条 URL 带出来（如 `unknown url type: https://qyapi.weixin.qq.com/...key=xxx`），
+        而错误文本会写进 push_history 并通过 /api/notifications/history 回给前端 ——
+        等于把 webhook key / token 泄露给任何能看到推送历史的用户。
+        """
+        if not text:
+            return ""
+        s = str(text)
+        for secret in (self.wechat_webhook_url, self.dingtalk_webhook_url,
+                       self.feishu_webhook_url, self.bark_url, self.pushplus_token):
+            secret = str(secret or "")
+            if len(secret) > 8:
+                s = s.replace(secret, secret[:4] + "****")
+        return s
+
     def _http_post(self, url: str, data: dict, headers: Optional[dict] = None) -> Tuple[bool, Any]:
-        """HTTP POST 请求"""
+        """HTTP POST 请求（错误信息一律先脱敏再返回）"""
         try:
             body = json.dumps(data).encode("utf-8")
             req = urllib.request.Request(
@@ -99,9 +117,9 @@ class MultiPlatformNotifier:
                     return True, resp_text
         except urllib.error.HTTPError as e:
             error_body = e.read().decode("utf-8", errors="replace") if e.fp else ""
-            return False, f"HTTP {e.code}: {error_body}"
+            return False, self._redact(f"HTTP {e.code}: {error_body}")
         except Exception as e:
-            return False, str(e)
+            return False, self._redact(str(e))
 
     def _send_wechat(self, title: str, content: str) -> NotifyResult:
         """企业微信 Webhook 推送"""
@@ -191,7 +209,7 @@ class MultiPlatformNotifier:
                 return NotifyResult("bark", False, resp.get("message", str(resp)), resp)
             return NotifyResult("bark", ok, "" if ok else str(resp), resp)
         except Exception as e:
-            return NotifyResult("bark", False, str(e))
+            return NotifyResult("bark", False, self._redact(str(e)))
 
     def _send_pushplus(self, title: str, content: str) -> NotifyResult:
         """PushPlus 推送"""
@@ -264,8 +282,8 @@ class MultiPlatformNotifier:
                 else:
                     logger.warning("[Notifier] %s 推送失败: %s - %s", name, title, result.error)
             except Exception as e:
-                logger.error("[Notifier] %s 推送异常: %s", name, e)
-                results.append(NotifyResult(name, False, str(e)))
+                logger.error("[Notifier] %s 推送异常: %s", name, self._redact(str(e)))
+                results.append(NotifyResult(name, False, self._redact(str(e))))
 
         return any_success, results
 

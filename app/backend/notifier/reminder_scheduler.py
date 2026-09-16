@@ -29,6 +29,20 @@ def _parse_dt(value):
     return None
 
 
+def _row_get(row, key, default=""):
+    """从 sqlite3.Row 安全取值。
+
+    本项目的连接都设了 row_factory = sqlite3.Row（database.get_db / utils.get_db），
+    **Row 没有 .get()** —— 直接调会抛 AttributeError，被调度器的 except 吞掉后
+    提醒就永远发不出来（用药/疫苗提醒曾因此整条链路失效）。
+    """
+    try:
+        value = row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+    return default if value is None else value
+
+
 class ReminderScheduler:
     """定时提醒调度器"""
 
@@ -101,11 +115,29 @@ class ReminderScheduler:
             self._check_vaccine_reminder(now)
 
     def _should_remind(self, key: str, interval_minutes: int) -> bool:
-        """检查是否应该提醒（基于间隔）"""
-        now = time.time()
+        """是否到点该提醒（**只读判断，不改状态**）。
+
+        早期版本在这里就把「已提醒时间」记上了，于是只要发送环节出问题
+        （webhook 挂了、网络不通），本次提醒就被记为已发；下次重试要再等一整个
+        间隔（喂奶 3 小时、用药 24 小时）—— 等于这条提醒直接丢了。
+        现在改为发送成功后调用 _mark_reminded() 记账。
+        """
         last = self._last_reminders.get(key, 0)
-        if now - last >= interval_minutes * 60:
-            self._last_reminders[key] = now
+        return time.time() - last >= interval_minutes * 60
+
+    def _mark_reminded(self, key: str):
+        """发送成功后记账（勿扰跳过与发送失败都不算，留给下次检查重试）"""
+        self._last_reminders[key] = time.time()
+
+    def _remind(self, key: str, interval_minutes: int, title: str, content: str) -> bool:
+        """发送一条提醒：成功才记账。返回是否真正发出。"""
+        if not self._should_remind(key, interval_minutes):
+            return False
+        result = self.notifier.send_notification(title, content, skip_dedup=True)
+        # method == 'dnd_skipped' 表示当前在勿扰时段、并没有真的推送，
+        # 不能算「已提醒」，否则勿扰结束就不会补发了。
+        if result.success and result.method != "dnd_skipped":
+            self._mark_reminded(key)
             return True
         return False
 
@@ -117,7 +149,7 @@ class ReminderScheduler:
         try:
             db = self.db_getter()
             # 获取所有宝宝
-            babies = db.execute("SELECT id, name FROM babies WHERE active = 1").fetchall()
+            babies = db.execute("SELECT id, name FROM babies").fetchall()
             for baby in babies:
                 # 获取最后一次喂奶记录。
                 # 表名是 feeding_records（不是 feedings），且要按 start_time 而不是
@@ -140,14 +172,12 @@ class ReminderScheduler:
                         continue
 
                     if elapsed >= interval_minutes:
-                        key = f"feeding_{baby['id']}"
-                        if self._should_remind(key, interval_minutes):
-                            hours = elapsed / 60
-                            self.notifier.send_notification(
-                                "喂奶提醒",
-                                f"🍼 {baby['name']} 已经 {hours:.1f} 小时没有喂奶了，该喂奶啦！",
-                                skip_dedup=True,
-                            )
+                        hours = elapsed / 60
+                        self._remind(
+                            f"feeding_{baby['id']}", interval_minutes,
+                            "喂奶提醒",
+                            f"🍼 {baby['name']} 已经 {hours:.1f} 小时没有喂奶了，该喂奶啦！",
+                        )
         except Exception as e:
             logger.error("[Scheduler] 检查喂奶提醒失败: %s", e)
 
@@ -158,7 +188,7 @@ class ReminderScheduler:
 
         try:
             db = self.db_getter()
-            babies = db.execute("SELECT id, name FROM babies WHERE active = 1").fetchall()
+            babies = db.execute("SELECT id, name FROM babies").fetchall()
             for baby in babies:
                 # 表名是 diaper_records（不是 diaper_changes），时间列是 change_time
                 last_diaper = db.execute(
@@ -176,13 +206,11 @@ class ReminderScheduler:
                         continue
 
                     if elapsed >= interval_minutes:
-                        key = f"diaper_{baby['id']}"
-                        if self._should_remind(key, interval_minutes):
-                            self.notifier.send_notification(
-                                "换尿布提醒",
-                                f"[尿布] {baby['name']} 已经 {elapsed/60:.1f} 小时没有换尿布了，检查一下是否需要更换！",
-                                skip_dedup=True,
-                            )
+                        self._remind(
+                            f"diaper_{baby['id']}", interval_minutes,
+                            "换尿布提醒",
+                            f"[尿布] {baby['name']} 已经 {elapsed/60:.1f} 小时没有换尿布了，检查一下是否需要更换！",
+                        )
         except Exception as e:
             logger.error("[Scheduler] 检查换尿布提醒失败: %s", e)
 
@@ -194,7 +222,7 @@ class ReminderScheduler:
             reminders = db.execute(
                 "SELECT mr.*, b.name as baby_name FROM medication_reminders mr "
                 "JOIN babies b ON mr.baby_id = b.id "
-                "WHERE mr.enabled = 1 AND b.active = 1"
+                "WHERE mr.is_active = 1"
             ).fetchall()
 
             for rem in reminders:
@@ -212,13 +240,11 @@ class ReminderScheduler:
                 # 检查是否到达提醒时间（允许 1 分钟误差）
                 diff = abs((now - reminder_dt).total_seconds())
                 if diff <= 60:
-                    key = f"med_{rem['id']}"
-                    if self._should_remind(key, 1440):  # 每天只提醒一次
-                        self.notifier.send_notification(
-                            "用药提醒",
-                            f"💊 {rem['baby_name']} 该吃药了！\n药品：{rem['medication_name']}\n剂量：{rem.get('dosage', '遵医嘱')}",
-                            skip_dedup=True,
-                        )
+                    self._remind(
+                        f"med_{rem['id']}", 1440,  # 每天只提醒一次
+                        "用药提醒",
+                        f"💊 {rem['baby_name']} 该吃药了！\n药品：{rem['medication_name']}\n剂量：{_row_get(rem, 'dosage', '遵医嘱')}",
+                    )
         except Exception as e:
             logger.error("[Scheduler] 检查用药提醒失败: %s", e)
 
@@ -236,21 +262,19 @@ class ReminderScheduler:
                 "SELECT v.*, b.name as baby_name FROM vaccine_details v "
                 "JOIN babies b ON v.baby_id = b.id "
                 "WHERE v.scheduled_date >= ? AND v.scheduled_date <= ? "
-                "AND v.status = 'pending' AND b.active = 1 "
+                "AND v.status = 'pending' "
                 "ORDER BY v.scheduled_date",
                 (today, future_date),
             ).fetchall()
 
             for vac in vaccines:
-                key = f"vaccine_{vac['id']}"
-                if self._should_remind(key, 1440):  # 每天只提醒一次
-                    scheduled = vac["scheduled_date"]
-                    dose = vac.get("dose_number", "")
-                    self.notifier.send_notification(
-                        "疫苗提醒",
-                        f"[!] {vac['baby_name']} 该接种疫苗了!\n疫苗：{vac['vaccine_name']} 第{dose}剂\n预约日期：{scheduled}",
-                        skip_dedup=True,
-                    )
+                scheduled = vac["scheduled_date"]
+                dose = _row_get(vac, "dose_number", "")
+                self._remind(
+                    f"vaccine_{vac['id']}", 1440,  # 每天只提醒一次
+                    "疫苗提醒",
+                    f"[!] {vac['baby_name']} 该接种疫苗了!\n疫苗：{vac['vaccine_name']} 第{dose}剂\n预约日期：{scheduled}",
+                )
         except Exception as e:
             logger.error("[Scheduler] 检查疫苗提醒失败: %s", e)
 

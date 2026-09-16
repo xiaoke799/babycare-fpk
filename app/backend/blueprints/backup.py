@@ -25,6 +25,10 @@ BACKUP_DIR_NAME = "backups"
 # 默认保留的备份数量
 DEFAULT_KEEP_COUNT = 10
 
+# 上传备份的体积上限：JSON 全量备份正常也就几 MB，
+# 早期无上限 —— 传个超大文件就能把内存和数据库一起拖垮
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
 
 def _get_backup_dir():
     """获取备份目录路径"""
@@ -67,20 +71,34 @@ _BACKUP_FILENAME_RE = _re.compile(r'^(?:auto_)?backup_[A-Za-z0-9_\-]+\.json$')
 BACKUP_GLOBS = ('backup_*.json', 'auto_backup_*.json')
 
 
-def iter_backup_files(backup_dir):
-    """列出备份目录下所有备份文件（手动 + 自动），去掉重复。"""
+def iter_backup_files(backup_dir, only_auto=None):
+    """列出备份目录下的备份文件，按修改时间倒序。
+
+    only_auto=True  → 只列自动备份
+    only_auto=False → 只列手动备份
+    only_auto=None  → 两者都列（列表接口用这个）
+    """
+    if only_auto is True:
+        patterns = (BACKUP_GLOBS[1],)
+    elif only_auto is False:
+        patterns = (BACKUP_GLOBS[0],)
+    else:
+        patterns = BACKUP_GLOBS
     files = []
-    for pattern in BACKUP_GLOBS:
+    for pattern in patterns:
         files.extend(glob.glob(os.path.join(backup_dir, pattern)))
     return sorted(set(files), key=os.path.getmtime, reverse=True)
 
 
 def _validate_backup_filename(filename):
     """校验备份文件名，防路径穿越。
-    只允许 backup_ 前缀 + 字母数字下划线连字符 + .json 后缀，
+    只允许 backup_ / auto_backup_ 前缀 + 字母数字下划线连字符 + .json 后缀，
     天然拒绝 ..、/、\\、空字节等一切路径技巧。
+    非字符串（JSON 里传数字/布尔）直接判非法 —— 否则 re.match 会抛 TypeError。
     """
-    return bool(filename) and bool(_BACKUP_FILENAME_RE.match(filename))
+    if not filename or not isinstance(filename, str):
+        return False
+    return bool(_BACKUP_FILENAME_RE.match(filename))
 
 # 列名合法字符：字母数字下划线，杜绝 SQL 注入
 _COL_NAME_RE = _re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
@@ -132,12 +150,15 @@ def _collect_all_data(baby_id=None):
         }
         
         for table in EXPORT_TABLES:
-            if table == 'babies' or table not in existing_tables:
+            # 每个宝宝的 records 只放「带 baby_id」的表。
+            # 全局表（知识库、比价、记账等）统一进下面的 global 段 —— 早期把它们
+            # 也塞进每个宝宝的 records，后果是：① 同一份全局数据按宝宝数重复存储，
+            # 备份文件白白膨胀；② 恢复时走「按 baby_id 插入」的路径，而全局表没有
+            # baby_id 列 → 每行都失败，用户看到一堆「N 条失败」的假警报。
+            if (table == 'babies' or table not in existing_tables
+                    or table not in _BABY_SCOPED_TABLES):
                 continue
-            if table in _BABY_SCOPED_TABLES:
-                rows = db.execute(f'SELECT * FROM {table} WHERE baby_id = ?', (bid,)).fetchall()
-            else:
-                rows = db.execute(f'SELECT * FROM {table}').fetchall()
+            rows = db.execute(f'SELECT * FROM {table} WHERE baby_id = ?', (bid,)).fetchall()
             baby_data['records'][table] = [dict(r) for r in rows]
         
         all_data['babies'].append(baby_data)
@@ -153,9 +174,15 @@ def _collect_all_data(baby_id=None):
     return all_data
 
 
-def _cleanup_old_backups(backup_dir, keep_count):
-    """清理旧备份，只保留最近的 keep_count 个（手动 + 自动备份一起算）"""
-    backups = iter_backup_files(backup_dir)
+def _cleanup_old_backups(backup_dir, keep_count, only_auto=None):
+    """清理旧备份，只保留最近的 keep_count 个。
+
+    两类备份**分别排队**（调用点都会显式传 only_auto）：
+      自动备份只在自动备份里排队 —— 手动备份是用户主动创建的，被定时任务
+      按时间挤掉属于数据事故（自动备份每 24 小时一个，很快就会把手动的那几个顶出去）；
+      手动备份同理只在自己这一类里排队。
+    """
+    backups = iter_backup_files(backup_dir, only_auto)
     for old_backup in backups[keep_count:]:
         try:
             os.remove(old_backup)
@@ -170,9 +197,17 @@ def _cleanup_old_backups(backup_dir, keep_count):
 def create_backup():
     """创建新的备份文件"""
     data = json_body()
-    baby_id = data.get('baby_id')  # None 表示全部备份
-    note = data.get('note', '')
-    
+    baby_id = data.get('baby_id')  # None / 空 表示全部备份
+    note = str(data.get('note') or '')[:200]
+
+    # 指定了宝宝就必须真实存在：早期对不存在的 id 会生成一个「空的成功备份」，
+    # 用户以为备份好了，打开文件却发现一条记录都没有
+    if baby_id is not None and str(baby_id).strip() != '':
+        if not get_db().execute('SELECT 1 FROM babies WHERE id = ?', (baby_id,)).fetchone():
+            return jsonify({'success': False, 'message': '指定的宝宝不存在'}), 404
+    else:
+        baby_id = None
+
     backup_dir = _get_backup_dir()
     
     # 生成备份文件名
@@ -195,7 +230,7 @@ def create_backup():
     # keep_count 校验：非整数或 < 1 一律回退默认值，防止传 0 清空全部历史备份
     if not isinstance(keep_count, int) or isinstance(keep_count, bool) or keep_count < 1:
         keep_count = DEFAULT_KEEP_COUNT
-    _cleanup_old_backups(backup_dir, keep_count)
+    _cleanup_old_backups(backup_dir, keep_count, only_auto=False)
 
     file_size = os.path.getsize(filepath)
 
@@ -343,12 +378,17 @@ def _restore_from_data(db, backup_data, source='restore'):
             baby_id = existing['id']
             # 替换式恢复：先清除该宝宝旧记录，避免重复恢复数据翻倍
             _delete_baby_records(baby_id)
+            # 档案字段也一并还原：name/birthday 是匹配键必然一致，但头像这类字段
+            # 会不同 —— 早期恢复完全不碰 babies 行，用户换过头像后一恢复就回不来了
+            db.execute('UPDATE babies SET avatar = ? WHERE id = ?',
+                       (baby.get('avatar') or '', baby_id))
         else:
-            # 创建新宝宝（列名：birthday）
+            # 创建新宝宝（列名：birthday；avatar 也要带上，否则新机上头像全丢）
             cursor = db.execute(
-                'INSERT INTO babies (name, birthday, gender, due_date) VALUES (?, ?, ?, ?)',
+                'INSERT INTO babies (name, birthday, gender, due_date, avatar) VALUES (?, ?, ?, ?, ?)',
                 (baby.get('name', '未命名'), baby.get('birthday', ''),
-                 baby.get('gender', 'other'), baby.get('due_date'))
+                 baby.get('gender', 'other'), baby.get('due_date'),
+                 baby.get('avatar') or '')
             )
             baby_id = cursor.lastrowid
 
@@ -358,6 +398,11 @@ def _restore_from_data(db, backup_data, source='restore'):
             if table not in _RESTORE_ALLOWED_TABLES:
                 failed[table] = failed.get(table, 0) + len(rows)
                 current_app.logger.warning('%s时拒绝非法表名: %s', source, table)
+                continue
+            # 旧版备份把全局表也塞在每个宝宝的 records 里，这些由下面的 global 段统一
+            # 恢复；这里必须跳过 —— 按 baby_id 插入全局表会因「没有该列」逐行失败，
+            # 白白给用户报一堆失败数。
+            if table not in _BABY_SCOPED_TABLES:
                 continue
             if not rows or table not in existing_tables:
                 continue
@@ -381,11 +426,11 @@ def _restore_from_data(db, backup_data, source='restore'):
 @require_admin
 def restore_backup():
     """从备份文件恢复数据"""
-    data = request.get_json()
-    if not data or not data.get('filename'):
+    data = json_body()
+    filename = str(data.get('filename') or '').strip()
+    if not filename:
         return jsonify({'success': False, 'message': '请指定备份文件'}), 400
-    
-    filename = data['filename']
+
     # 安全检查：白名单格式校验，杜绝路径穿越
     if not _validate_backup_filename(filename):
         return jsonify({'success': False, 'message': '无效的文件名'}), 400
@@ -439,11 +484,25 @@ def upload_restore():
         return jsonify({'success': False, 'message': '请选择备份文件'}), 400
     
     file = request.files['file']
-    if not file.filename.endswith('.json'):
+    if not (file.filename or '').lower().endswith('.json'):
         return jsonify({'success': False, 'message': '请上传 JSON 格式的备份文件'}), 400
-    
+
+    # 体积检查：先量大小再解析，别让一个超大 JSON 把内存吃光
+    stream = file.stream
     try:
-        backup_data = json.load(file.stream)
+        stream.seek(0, os.SEEK_END)
+        size = stream.tell()
+        stream.seek(0)
+    except (OSError, AttributeError):
+        size = 0
+    if size > MAX_UPLOAD_BYTES:
+        return jsonify({
+            'success': False,
+            'message': f'备份文件过大（{size // 1024 // 1024}MB，上限 {MAX_UPLOAD_BYTES // 1024 // 1024}MB）',
+        }), 413
+
+    try:
+        backup_data = json.load(stream)
     except json.JSONDecodeError:
         return jsonify({'success': False, 'message': '无效的 JSON 文件'}), 400
     

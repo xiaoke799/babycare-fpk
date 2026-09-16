@@ -8,10 +8,12 @@
 """
 
 import os
+import re
 from logger import get_logger
 from flask import Blueprint, request, jsonify, g
 
 from user_context import require_auth, require_admin
+from utils import json_body
 
 logger = get_logger("notifications")
 bp = Blueprint("notifications", __name__, url_prefix="/api/notifications")
@@ -23,6 +25,55 @@ _SECRET_KEYS = (
     "wechat_webhook_url", "dingtalk_webhook_url", "feishu_webhook_url",
     "bark_url", "pushplus_token",
 )
+
+# 可配置项清单：**读接口与写接口共用同一份**，避免两处清单走岔
+# （历史上读接口就比写接口少一项，前端改了也不生效）。
+CONFIG_KEYS = (
+    "wechat_webhook_url", "dingtalk_webhook_url", "feishu_webhook_url",
+    "bark_url", "pushplus_token", "pushplus_topic", "title_prefix",
+    "dnd_enabled", "dnd_start_time", "dnd_end_time",
+    "reminder_enabled", "feeding_reminder_enabled", "feeding_reminder_interval",
+    "diaper_reminder_enabled", "diaper_reminder_interval",
+    "medication_reminder_enabled", "vaccine_reminder_enabled",
+    "vaccine_reminder_days", "reminder_check_interval", "notify_timeout",
+)
+
+# 数值型配置的取值范围（写入前夹紧）：这些值直接决定调度频率，
+# 传 0 或负数会让提醒逻辑算出错误间隔，传超大值相当于关掉提醒。
+_INT_RANGES = {
+    "feeding_reminder_interval": (1, 24),
+    "diaper_reminder_interval": (1, 24),
+    "vaccine_reminder_days": (1, 60),
+    "reminder_check_interval": (30, 3600),
+    "notify_timeout": (1, 60),
+}
+
+_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+# 默认配置：读接口的两个分支（模块未初始化 / 已初始化但缺项）共用，
+# 免得默认值散落三处、改一处漏两处
+_DEFAULTS = {
+    "wechat_webhook_url": "", "dingtalk_webhook_url": "", "feishu_webhook_url": "",
+    "bark_url": "", "pushplus_token": "", "pushplus_topic": "",
+    "title_prefix": "育儿宝",
+    "dnd_enabled": False, "dnd_start_time": "22:00", "dnd_end_time": "07:00",
+    "reminder_enabled": True,
+    "feeding_reminder_enabled": False, "feeding_reminder_interval": 3,
+    "diaper_reminder_enabled": False, "diaper_reminder_interval": 2,
+    "medication_reminder_enabled": False,
+    "vaccine_reminder_enabled": False, "vaccine_reminder_days": 3,
+    "reminder_check_interval": 60,
+    "notify_timeout": 10,
+}
+
+
+def _config_payload(config, mask_secrets=True):
+    """把配置整理成前端要的平铺结构（凭据可选打码）"""
+    out = {}
+    for key in CONFIG_KEYS:
+        raw = config.get(key, _DEFAULTS.get(key))
+        out[key] = _mask(raw) if (mask_secrets and key in _SECRET_KEYS) else raw
+    return out
 
 
 def _mask(value):
@@ -60,61 +111,19 @@ def get_config():
     """获取推送配置"""
     notifier = _get_notifier()
     if not notifier:
-        # 返回默认配置而不是 500 错误
+        # 返回默认配置而不是 500 错误（设置页要能正常渲染）
         return jsonify({
             "success": True,
-            "config": {
-                "wechat_webhook_url": "",
-                "dingtalk_webhook_url": "",
-                "feishu_webhook_url": "",
-                "bark_url": "",
-                "pushplus_token": "",
-                "pushplus_topic": "",
-                "title_prefix": "育儿宝",
-                "dnd_enabled": False,
-                "dnd_start_time": "22:00",
-                "dnd_end_time": "07:00",
-                "reminder_enabled": True,
-                "feeding_reminder_enabled": False,
-                "feeding_reminder_interval": 3,
-                "diaper_reminder_enabled": False,
-                "diaper_reminder_interval": 2,
-                "medication_reminder_enabled": False,
-                "vaccine_reminder_enabled": False,
-                "vaccine_reminder_days": 3,
-                "reminder_check_interval": 60,
-            },
+            "config": _config_payload(_DEFAULTS),
             "channels": [],
             "notifier_initialized": False,
         })
 
-    # 返回配置。凭据字段只回打码值 —— 此前注释写着「隐藏敏感信息」，
+    # 凭据字段只回打码值 —— 此前注释写着「隐藏敏感信息」，
     # 实际是把明文 webhook/token 原样吐出去了。
-    config = notifier.config
     return jsonify({
         "success": True,
-        "config": {
-            "wechat_webhook_url": _mask(config.get("wechat_webhook_url")),
-            "dingtalk_webhook_url": _mask(config.get("dingtalk_webhook_url")),
-            "feishu_webhook_url": _mask(config.get("feishu_webhook_url")),
-            "bark_url": _mask(config.get("bark_url")),
-            "pushplus_token": _mask(config.get("pushplus_token")),
-            "pushplus_topic": config.get("pushplus_topic", ""),
-            "title_prefix": config.get("title_prefix", "育儿宝"),
-            "dnd_enabled": config.get("dnd_enabled", False),
-            "dnd_start_time": config.get("dnd_start_time", "22:00"),
-            "dnd_end_time": config.get("dnd_end_time", "07:00"),
-            # 提醒配置
-            "reminder_enabled": config.get("reminder_enabled", True),
-            "feeding_reminder_enabled": config.get("feeding_reminder_enabled", False),
-            "feeding_reminder_interval": config.get("feeding_reminder_interval", 3),
-            "diaper_reminder_enabled": config.get("diaper_reminder_enabled", False),
-            "diaper_reminder_interval": config.get("diaper_reminder_interval", 2),
-            "medication_reminder_enabled": config.get("medication_reminder_enabled", False),
-            "vaccine_reminder_enabled": config.get("vaccine_reminder_enabled", False),
-            "vaccine_reminder_days": config.get("vaccine_reminder_days", 3),
-            "reminder_check_interval": config.get("reminder_check_interval", 60),
-        },
+        "config": _config_payload(notifier.config),
         "channels": notifier.multi_platform.get_active_channels(),
         "notifier_initialized": True,
     })
@@ -128,42 +137,69 @@ def update_config():
     if not notifier:
         return jsonify({"success": False, "message": "推送模块未初始化"}), 500
 
-    data = request.get_json(silent=True) or {}
+    data = json_body()
+    cfg = notifier.config
 
-    # 更新配置
-    config_keys = [
-        "wechat_webhook_url", "dingtalk_webhook_url", "feishu_webhook_url",
-        "bark_url", "pushplus_token", "pushplus_topic", "title_prefix",
-        "dnd_enabled", "dnd_start_time", "dnd_end_time",
-        "reminder_enabled", "feeding_reminder_enabled", "feeding_reminder_interval",
-        "diaper_reminder_enabled", "diaper_reminder_interval",
-        "medication_reminder_enabled", "vaccine_reminder_enabled",
-        "vaccine_reminder_days", "reminder_check_interval",
-    ]
-
-    for key in config_keys:
+    for key in CONFIG_KEYS:
         if key not in data:
             continue
-        if key in _SECRET_KEYS and data[key] == _mask(notifier.config.get(key)):
-            # 前端把打码值原样提交回来了 —— 说明用户没动这一项，保持原密钥
+        value = data[key]
+
+        # 前端把打码值原样提交回来了 —— 说明用户没动这一项，保持原密钥
+        if key in _SECRET_KEYS and value == _mask(cfg.get(key)):
             continue
-        notifier.config[key] = data[key]
+
+        if key in _INT_RANGES:
+            # 这些值直接决定调度频率：传 0/负数/字符串会让提醒逻辑算错间隔，
+            # 早期实现直接 int() 后存库，填个「三」就整条请求 500
+            try:
+                value = int(value)
+            except (TypeError, ValueError):
+                return jsonify({"success": False, "message": f"{key} 需要是数字"}), 400
+            lo, hi = _INT_RANGES[key]
+            value = max(lo, min(value, hi))
+
+        elif key in ("dnd_start_time", "dnd_end_time"):
+            value = str(value or "").strip()
+            if not _HHMM_RE.match(value):
+                return jsonify({"success": False, "message": "勿扰时间格式应为 HH:MM（如 22:00）"}), 400
+
+        elif key.endswith("_webhook_url") or key == "bark_url":
+            value = str(value or "").strip()
+            # 允许清空（= 停用该渠道）；非空则必须是 http(s) 地址，
+            # 否则等到真正推送时才在 urlopen 上抛 "unknown url type"
+            if value and not value.startswith(("http://", "https://")):
+                return jsonify({"success": False, "message": "推送地址需以 http:// 或 https:// 开头"}), 400
+
+        elif key.endswith("_enabled"):
+            value = bool(value)
+
+        cfg[key] = value
 
     # 热加载
-    notifier.reload_config(notifier.config)
+    notifier.reload_config(cfg)
     if _scheduler:
-        _scheduler.reload_config(notifier.config)
+        _scheduler.reload_config(cfg)
 
-    # 持久化到数据库
+    # 持久化到数据库：失败必须让用户知道，否则本次「已保存」只是内存里的假象，
+    # 重启后配置又退回旧值
+    saved = True
     try:
-        from server import _set_app_setting
-        for key in config_keys:
-            if key in notifier.config:
-                _set_app_setting(f"notify_{key}", notifier.config[key])
+        # 直接用 utils 的实现：早期写的是 `from server import _set_app_setting`，
+        # 而 server 里那个名字同样是从 utils 转进来的，绕一圈只会多一个导入时序坑
+        from utils import _set_app_setting
+        for key in CONFIG_KEYS:
+            if key in cfg:
+                _set_app_setting(f"notify_{key}", cfg[key])
     except Exception as e:
+        saved = False
         logger.warning("保存推送配置失败: %s", e)
 
-    return jsonify({"success": True, "message": "配置已更新"})
+    return jsonify({
+        "success": True,
+        "saved": saved,
+        "message": "配置已更新" if saved else "配置已生效，但写入数据库失败（重启后会丢失）",
+    })
 
 
 @bp.route("/test", methods=["POST"])
@@ -174,8 +210,8 @@ def send_test():
     if not notifier:
         return jsonify({"success": False, "message": "推送模块未初始化"}), 500
 
-    data = request.get_json(silent=True) or {}
-    channel = data.get("channel", "")
+    data = json_body()
+    channel = str(data.get("channel") or "").strip()
 
     result = notifier.send_test(channel)
     return jsonify({
@@ -193,8 +229,10 @@ def get_history():
     if not notifier:
         return jsonify({"success": False, "message": "推送模块未初始化"}), 500
 
-    limit = request.args.get("limit", 50, type=int)
-    offset = request.args.get("offset", 0, type=int)
+    # 夹紧分页参数：limit 无上限时，前端传个大数就能把整张历史表拉进内存
+    limit = request.args.get("limit", 50, type=int) or 50
+    limit = max(1, min(limit, 200))
+    offset = max(0, request.args.get("offset", 0, type=int) or 0)
 
     history = notifier.get_history(limit=limit, offset=offset)
     return jsonify({"success": True, "history": history})

@@ -103,17 +103,39 @@ class UnifiedNotifier:
         except Exception as e:
             logger.error("[Notifier] 保存历史失败: %s", e)
 
+    @staticmethod
+    def _parse_hhmm(value):
+        """'HH:MM' -> 当日分钟数；非法返回 None"""
+        parts = str(value or "").split(":")
+        if len(parts) != 2:
+            return None
+        try:
+            h, m = int(parts[0]), int(parts[1])
+        except (TypeError, ValueError):
+            return None
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            return None
+        return h * 60 + m
+
     def _in_dnd_window(self) -> bool:
-        """检查当前是否在勿扰时段"""
+        """检查当前是否在勿扰时段。
+
+        时间格式非法时**不启用勿扰**并继续推送，而不是抛异常：
+        用户在设置页把时间手填错（如写成「22点」）时，早期实现会在
+        int() 上抛 ValueError，异常一路穿透到调度线程 ——
+        结果是**所有**推送（含非勿扰时段的）全部发不出去。
+        """
         if not self._dnd_enabled:
             return False
         now = datetime.now()
         current_minutes = now.hour * 60 + now.minute
 
-        start_parts = self._dnd_start.split(":")
-        end_parts = self._dnd_end.split(":")
-        start_minutes = int(start_parts[0]) * 60 + int(start_parts[1])
-        end_minutes = int(end_parts[0]) * 60 + int(end_parts[1])
+        start_minutes = self._parse_hhmm(self._dnd_start)
+        end_minutes = self._parse_hhmm(self._dnd_end)
+        if start_minutes is None or end_minutes is None:
+            logger.warning("[Notifier] 勿扰时间段格式非法(%r-%r)，本次不启用勿扰",
+                           self._dnd_start, self._dnd_end)
+            return False
 
         if end_minutes <= start_minutes:
             # 跨天（如 22:00 - 07:00）
@@ -239,6 +261,11 @@ class UnifiedNotifier:
         self.multi_platform.pushplus_token = config.get("pushplus_token", "")
         self.multi_platform.pushplus_topic = config.get("pushplus_topic", "")
         self.multi_platform.title_prefix = config.get("title_prefix", "育儿宝")
+        # 超时也要一起热加载：早期只热加载了 URL/前缀，改了 notify_timeout 得重启才生效
+        try:
+            self.multi_platform.timeout = max(1, int(config.get("notify_timeout", self.multi_platform.timeout)))
+        except (TypeError, ValueError):
+            pass  # 非法值就保持原超时，不要因为一个配置项把热加载整体搞挂
         logger.info("[Notifier] 配置已热加载")
 
     def cleanup_cache(self):
