@@ -13,6 +13,7 @@ from flask import Blueprint, request, jsonify
 from utils import get_db, row_to_dict, rows_to_list, _get_int_arg
 from logger import get_logger
 import growth_utils
+import vaccine_utils
 # 睡眠达标判定复用 ai_engine 的一套口径（SLEEP_GUIDELINES + ±2 小时容差），
 # 不在这里另立第二份参考值 —— 否则「睡眠分析」和「AI 睡眠洞察」会给出互相打架的结论。
 from ai_engine import SLEEP_GUIDELINES, get_age_months
@@ -447,16 +448,19 @@ def get_dashboard(baby_id):
         except Exception:
             pass
 
-        # 即将到来的疫苗（可选表，不存在时返回空列表）
+        # 即将到来的疫苗。vaccines 是早期表（写入只进 vaccine_details），
+        # 统一走 vaccine_utils 合并两张表后再筛 —— 只读老表这里是恒空的。
         upcoming_vaccines = []
         try:
-            upcoming_vaccines = db.execute(
-                """SELECT * FROM vaccines
-                   WHERE baby_id = ? AND status = 'pending'
-                   AND scheduled_date >= ?
-                   ORDER BY scheduled_date ASC LIMIT 5""",
-                (baby_id, today),
-            ).fetchall()
+            upcoming_vaccines = sorted(
+                (
+                    v
+                    for v in vaccine_utils.merged_vaccinations(db, baby_id)
+                    if (v.get("status") or "") == "pending"
+                    and (v.get("scheduled_date") or "")[:10] >= today
+                ),
+                key=lambda v: v.get("scheduled_date") or "",
+            )[:5]
         except Exception:
             pass
 

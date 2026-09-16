@@ -13,6 +13,7 @@ import sqlite3
 from flask import Blueprint, request, jsonify
 
 from utils import get_db, row_to_dict, rows_to_list, json_body
+import vaccine_utils
 
 bp = Blueprint("health", __name__)
 
@@ -98,50 +99,10 @@ def get_clinic_summary(baby_id):
         (baby_id,),
     )
 
-    # 疫苗：vaccine_details 字段全（含批号、不良反应），vaccines 是早期表。
-    # 两个表都可能只有一边有数据，按「疫苗名 + 剂次」去重合并，details 优先。
-    vaccinations = []
-    seen_vaccine = set()
-    for r in _safe_query(
-        db,
-        'SELECT vaccine_name, dose_number, scheduled_date, actual_date, status, '
-        'has_reaction, reaction_detail FROM vaccine_details WHERE baby_id = ? '
-        'ORDER BY COALESCE(actual_date, scheduled_date) DESC LIMIT 30',
-        (baby_id,),
-    ):
-        key = (r.get('vaccine_name'), r.get('dose_number'))
-        seen_vaccine.add(key)
-        vaccinations.append({
-            'vaccine_name': r.get('vaccine_name'),
-            'dose_number': r.get('dose_number'),
-            'scheduled_date': r.get('scheduled_date'),
-            'actual_date': r.get('actual_date'),
-            'status': r.get('status'),
-            'has_reaction': r.get('has_reaction'),
-            'reaction_detail': r.get('reaction_detail') or '',
-        })
-    for r in _safe_query(
-        db,
-        'SELECT vaccine_name, dose_number, scheduled_date, actual_date, status '
-        'FROM vaccines WHERE baby_id = ? '
-        'ORDER BY COALESCE(actual_date, scheduled_date) DESC LIMIT 30',
-        (baby_id,),
-    ):
-        key = (r.get('vaccine_name'), r.get('dose_number'))
-        if key in seen_vaccine:
-            continue
-        vaccinations.append({
-            'vaccine_name': r.get('vaccine_name'),
-            'dose_number': r.get('dose_number'),
-            'scheduled_date': r.get('scheduled_date'),
-            'actual_date': r.get('actual_date'),
-            'status': r.get('status'),
-            'has_reaction': 0,
-            'reaction_detail': '',
-        })
-    vaccinations.sort(
-        key=lambda x: (x.get('actual_date') or x.get('scheduled_date') or ''), reverse=True)
-    vaccinations = vaccinations[:8]
+    # 疫苗：vaccine_details 字段全（含批号、不良反应），vaccines 是早期表，
+    # 两个表都可能只有一边有数据。合并去重的口径统一收敛在 vaccine_utils
+    #（AI 疫苗问答、首页仪表盘也走它），这里只取最近 8 条。
+    vaccinations = vaccine_utils.merged_vaccinations(db, baby_id, limit=8)
 
     summary = {
         'baby': row_to_dict(baby),
@@ -607,54 +568,10 @@ def update_allergy_test(test_id):
 
 
 # ==================== API: 纸尿裤价格对比 ====================
-
-@bp.route('/api/diaper-prices', methods=['GET'])
-def list_diaper_prices():
-    """获取纸尿裤价格列表"""
-    db = get_db()
-    spec = request.args.get('spec', '')
-    brand = request.args.get('brand', '')
-    query = 'SELECT * FROM diaper_prices WHERE 1=1'
-    params = []
-    if spec:
-        query += ' AND spec = ?'
-        params.append(spec)
-    if brand:
-        query += ' AND brand LIKE ?'
-        params.append(f'%{brand}%')
-    query += ' ORDER BY unit_price ASC'
-    rows = db.execute(query, params).fetchall()
-    return jsonify({'success': True, 'data': [dict(r) for r in rows]})
-
-
-@bp.route('/api/diaper-prices', methods=['POST'])
-def add_diaper_price():
-    """添加纸尿裤价格记录"""
-    data = json_body()
-    # 必填校验
-    if not data.get('brand'):
-        return jsonify({'success': False, 'message': '品牌不能为空'}), 400
-    price = data.get('price', 0)
-    count = data.get('count_per_pack', 0)
-    unit_price = price / count if count > 0 else 0
-    db = get_db()
-    db.execute(
-        '''INSERT INTO diaper_prices (brand, series, spec, price, count_per_pack, unit_price, source)
-           VALUES (?, ?, ?, ?, ?, ?, ?)''',
-        (data['brand'], data.get('series', ''), data.get('spec', ''),
-         price, count, unit_price, data.get('source', ''))
-    )
-    db.commit()
-    return jsonify({'success': True})
-
-
-@bp.route('/api/diaper-prices/<int:record_id>', methods=['DELETE'])
-def delete_diaper_price(record_id):
-    """删除纸尿裤价格记录"""
-    db = get_db()
-    db.execute('DELETE FROM diaper_prices WHERE id = ?', (record_id,))
-    db.commit()
-    return jsonify({'success': True})
+# 已被「购物比价」模块取代（product_prices 表，见 blueprints/shopping.py）：
+# 迁移脚本会把旧 diaper_prices 数据搬到 product_prices（category='diaper'）。
+# 原来的 /api/diaper-prices 增/查/删三个接口没有任何前端入口，属重复实现，已移除；
+# diaper_prices 表本身保留（历史备份/导出里可能包含它）。
 
 
 # ==================== API: 用药提醒 ====================
@@ -731,32 +648,7 @@ def get_medication_reminder(baby_id, record_id):
 
 
 # ==================== API: 出牙追踪 ====================
-
-@bp.route('/api/babies/<int:baby_id>/teeth', methods=['POST'])
-def add_teeth_record(baby_id):
-    """添加出牙记录"""
-    data = json_body()
-    db = get_db()
-    db.execute(
-        'INSERT INTO baby_teeth (baby_id, tooth_code, tooth_name, erupt_date, note) VALUES (?, ?, ?, ?, ?)',
-        (baby_id, data['tooth_code'], data.get('tooth_name', ''), data['erupt_date'], data.get('note', ''))
-    )
-    db.commit()
-    return jsonify({'success': True})
-
-
-@bp.route('/api/babies/<int:baby_id>/teeth/<int:record_id>', methods=['DELETE'])
-def delete_teeth_record(baby_id, record_id):
-    """删除出牙记录"""
-    db = get_db()
-    db.execute('DELETE FROM baby_teeth WHERE id = ? AND baby_id = ?', (record_id, baby_id))
-    db.commit()
-    return jsonify({'success': True})
-
-
-@bp.route('/api/babies/<int:baby_id>/teeth', methods=['GET'])
-def get_teeth_records(baby_id):
-    """获取出牙记录列表"""
-    db = get_db()
-    rows = db.execute('SELECT * FROM baby_teeth WHERE baby_id = ? ORDER BY erupt_date DESC', (baby_id,)).fetchall()
-    return jsonify({'success': True, 'data': rows_to_list(rows)})
+# 出牙记录已统一到 teething_records 表（见 blueprints/development.py 的
+# /api/babies/<id>/teething，出牙页在用）。这里原本还有一套写 baby_teeth 表的
+# 实现（/api/babies/<id>/teeth 增/查/删），但前端从未接入，属重复实现，已移除；
+# baby_teeth 表本身保留（历史备份/导出里可能包含它，删表会影响旧备份恢复）。

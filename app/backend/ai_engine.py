@@ -16,6 +16,7 @@ from base64 import b64decode, b64encode
 from functools import lru_cache
 
 import growth_utils
+import vaccine_utils
 
 logger = logging.getLogger(__name__)
 
@@ -1000,21 +1001,23 @@ def _answer_vaccine_records(question, db, baby_id, baby_context=None):
         return "请先在应用中添加宝宝并选择宝宝，我就能帮你查询疫苗接种安排了。"
     try:
         today = datetime.datetime.now().strftime('%Y-%m-%d')
-        due = db.execute(
-            "SELECT * FROM vaccines WHERE baby_id = ? AND status = 'pending' AND date(scheduled_date) < ? "
-            "ORDER BY scheduled_date ASC LIMIT 5",
-            (baby_id, today)
-        ).fetchall()
-        upcoming = db.execute(
-            "SELECT * FROM vaccines WHERE baby_id = ? AND status = 'pending' AND date(scheduled_date) >= ? "
-            "ORDER BY scheduled_date ASC LIMIT 5",
-            (baby_id, today)
-        ).fetchall()
-        done = db.execute(
-            "SELECT * FROM vaccines WHERE baby_id = ? AND status = 'completed' "
-            "ORDER BY COALESCE(actual_date, scheduled_date) DESC LIMIT 5",
-            (baby_id,)
-        ).fetchall()
+        # 疫苗数据可能散在两张表（vaccines 是早期表，写入只进 vaccine_details），
+        # 合并口径统一在 vaccine_utils —— 只读老表的话，用户新接种的疫苗这里看不到。
+        records = vaccine_utils.merged_vaccinations(db, baby_id)
+        pending = [v for v in records if (v.get('status') or '') == 'pending']
+
+        def _scheduled_day(v):
+            return str(v.get('scheduled_date') or '')[:10]
+
+        due = sorted(
+            [v for v in pending if _scheduled_day(v) and _scheduled_day(v) < today],
+            key=lambda v: str(v.get('scheduled_date') or ''),
+        )[:5]
+        upcoming = sorted(
+            [v for v in pending if _scheduled_day(v) and _scheduled_day(v) >= today],
+            key=lambda v: str(v.get('scheduled_date') or ''),
+        )[:5]
+        done = [v for v in records if (v.get('status') or '') == 'completed'][:5]
         if not due and not upcoming and not done:
             return "暂无疫苗接种记录。您可以在健康记录中添加疫苗接种信息。"
 
