@@ -356,18 +356,6 @@
             </section>
 
             <!-- 体温记录页面 -->
-            <section class="page" id="page-temperature">
-                <div class="temperature-header">
-                    <h3 class="section-title">体温监测</h3>
-                    <button class="btn btn-primary btn-sm" id="addTempBtn">＋ 记录体温</button>
-                </div>
-                <div class="temperature-summary" id="temperatureSummary"></div>
-                <div class="temperature-chart-container">
-                    <canvas id="temperatureCanvas" width="700" height="250"></canvas>
-                </div>
-                <div class="temperature-list" id="temperatureList"></div>
-            </section>
-
 
             <!-- 24小时节律图页面 -->
             <section class="page" id="page-pattern">
@@ -666,21 +654,6 @@
             </section>
 
             <!-- 疫苗追踪页面 -->
-            <section class="page" id="page-vaccines">
-                <div class="record-page-header">
-                    <h3 class="section-title">疫苗追踪</h3>
-                    <div class="vaccines-actions">
-                        <button class="btn btn-outline btn-sm" id="showTimelineBtn">时间线</button>
-                        <button class="btn btn-outline btn-sm" id="exportVaccinesBtn">导出记录</button>
-                        <button class="btn btn-outline btn-sm" id="initVaccinesBtn">生成接种计划</button>
-                        <button class="btn btn-primary btn-sm" id="addVaccineBtn">+ 添加记录</button>
-                    </div>
-                </div>
-                <div class="vaccines-stats" id="vaccinesStats"></div>
-                <div class="vaccines-list" id="vaccinesList">
-                    <p class="empty-tip">暂无疫苗记录<br><small>点击"生成接种计划"自动生成推荐疫苗</small></p>
-                </div>
-            </section>
 
             <!-- 看诊摘要页面 -->
             <section class="page" id="page-clinic">
@@ -822,6 +795,7 @@
     <div class="health-tabs">
         <button class="health-tab active" data-tab="overview">概览</button>
         <button class="health-tab" data-tab="checkup">体检</button>
+        <button class="health-tab" data-tab="temperature">体温</button>
         <button class="health-tab" data-tab="vaccine">疫苗</button>
         <button class="health-tab" data-tab="growth">生长</button>
         <button class="health-tab" data-tab="milestone">里程碑</button>
@@ -932,7 +906,7 @@
         </div>
     </div>
 
-    <!-- 提醒 Tab -->
+    <!-- 提醒 Tab：健康提醒 + 用药提醒两个小节（原「用药提醒」独立页已并入） -->
     <div class="health-tab-content" id="tab-reminders">
         <div class="health-action-bar">
             <button class="btn btn-primary btn-sm" id="addReminderBtn">＋ 添加提醒</button>
@@ -943,6 +917,40 @@
         <div class="reminder-list" id="reminderList">
             <p class="empty-tip">暂无提醒</p>
         </div>
+
+        <div class="health-subsection">
+            <div class="health-subsection-head">
+                <h4 class="section-subtitle">用药提醒</h4>
+                <button class="btn btn-outline btn-sm" id="addMedReminderBtn">＋ 添加用药提醒</button>
+            </div>
+            <div class="med-reminder-info-card">
+                <div class="med-reminder-info-title">⏰ 用药提醒说明</div>
+                <p>记录宝宝正在服用的药物，设置下次用药时间。系统会在首页显示即将到期的用药提醒。请咨询医生确认用药方案。</p>
+            </div>
+            <div class="med-reminder-stats" id="medReminderStats"></div>
+            <div class="med-reminder-active">
+                <h4 class="section-subtitle">活跃提醒</h4>
+                <div id="activeRemindersList">
+                    <p class="empty-tip">暂无活跃用药提醒<br><small>添加提醒后系统会按时推送通知</small></p>
+                </div>
+            </div>
+            <div class="med-reminder-all">
+                <h4 class="section-subtitle">全部提醒</h4>
+                <div id="allRemindersList"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 体温 Tab（原「体温监测」独立页已并入） -->
+    <div class="health-tab-content" id="tab-temperature">
+        <div class="health-action-bar">
+            <button class="btn btn-primary btn-sm" id="addTempBtn">＋ 记录体温</button>
+        </div>
+        <div class="temperature-summary" id="temperatureSummary"></div>
+        <div class="temperature-chart-container">
+            <canvas id="temperatureCanvas" width="700" height="250"></canvas>
+        </div>
+        <div class="temperature-list" id="temperatureList"></div>
     </div>
 
     <!-- 疫苗 Tab -->
@@ -950,6 +958,10 @@
         <div class="health-action-bar">
             <button class="btn btn-primary btn-sm" id="addVaccineBtn2">＋ 添加疫苗</button>
             <button class="btn btn-secondary btn-sm" id="loadScheduleBtn">加载标准程序</button>
+            <!-- 以下三个按钮来自原「疫苗追踪」独立页：时间线 / 导出 / 生成计划 -->
+            <button class="btn btn-outline btn-sm" id="showTimelineBtn">时间线</button>
+            <button class="btn btn-outline btn-sm" id="exportVaccinesBtn">导出记录</button>
+            <button class="btn btn-outline btn-sm" id="initVaccinesBtn">生成接种计划</button>
             <div class="health-filter">
                 <select id="vaccineStatusFilter">
                     <option value="">全部状态</option>
@@ -959,6 +971,8 @@
                 </select>
             </div>
         </div>
+        <!-- 接种进度统计（原独立页的 vaccinesStats） -->
+        <div class="vaccines-stats" id="vaccinesStats"></div>
         <div class="vaccine-schedule-section" id="vaccineScheduleSection" style="display:none">
             <h4>一类疫苗（免费）<span class="vaccine-toggle" onclick="toggleVaccineSection('standard')">收起▲</span></h4>
             <div id="vaccineStandardList"></div>
@@ -968,6 +982,8 @@
         <div class="vaccine-list" id="vaccineList">
             <p class="empty-tip">暂无疫苗记录，点击"加载标准程序"查看接种计划</p>
         </div>
+        <!-- 接种时间线：点「时间线」按钮展开/收起（来自原独立页） -->
+        <div class="vaccine-timeline-box" id="vaccineTimelineBox" style="display:none"></div>
     </div>
 
     <!-- 里程碑 Tab -->
@@ -1056,6 +1072,27 @@
         </div>
         <div class="allergy-list" id="allergyList">
             <p class="empty-tip">暂无过敏记录</p>
+        </div>
+
+        <!-- 过敏测试小节（原「辅食过敏测试」独立页已并入） -->
+        <div class="health-subsection">
+            <div class="health-subsection-head">
+                <h4 class="section-subtitle">辅食过敏测试</h4>
+                <button class="btn btn-outline btn-sm" id="addAllergyBtn2">＋ 添加测试</button>
+            </div>
+            <div class="allergy-info-card">
+                <div class="allergy-info-title">过敏测试指南</div>
+                <p>添加新辅食时，建议每次只添加一种新食物，连续观察3-5天。如出现不良反应，立即停止并记录。常见过敏原：鸡蛋、牛奶、花生、小麦、大豆、鱼类、虾、坚果。</p>
+                <div class="allergy-scale">
+                    <div class="allergy-scale-item"><span class="severity-dot none"></span><span>无症状</span></div>
+                    <div class="allergy-scale-item"><span class="severity-dot mild"></span><span>轻微（轻微皮疹、少量红疹）</span></div>
+                    <div class="allergy-scale-item"><span class="severity-dot moderate"></span><span>中度（明显皮疹、呕吐、腹泻）</span></div>
+                    <div class="allergy-scale-item"><span class="severity-dot severe"></span><span>严重（呼吸困难、肿胀、休克）</span></div>
+                </div>
+            </div>
+            <div class="allergy-list" id="allergyList2">
+                <p class="empty-tip">暂无过敏测试记录</p>
+            </div>
         </div>
     </div>
 
@@ -1975,37 +2012,6 @@
 </section>
 
 <!-- 辅食过敏测试页面 -->
-<section class="page" id="page-allergy-detail">
-    <div class="allergy-header">
-        <h3 class="section-title">辅食过敏测试</h3>
-        <button class="btn btn-primary btn-sm" id="addAllergyBtn2">＋ 添加测试</button>
-    </div>
-    <div class="allergy-info-card">
-        <div class="allergy-info-title">过敏测试指南</div>
-        <p>添加新辅食时，建议每次只添加一种新食物，连续观察3-5天。如出现不良反应，立即停止并记录。常见过敏原：鸡蛋、牛奶、花生、小麦、大豆、鱼类、虾、坚果。</p>
-        <div class="allergy-scale">
-            <div class="allergy-scale-item">
-                <span class="severity-dot none"></span>
-                <span>无症状</span>
-            </div>
-            <div class="allergy-scale-item">
-                <span class="severity-dot mild"></span>
-                <span>轻微（轻微皮疹、少量红疹）</span>
-            </div>
-            <div class="allergy-scale-item">
-                <span class="severity-dot moderate"></span>
-                <span>中度（明显皮疹、呕吐、腹泻）</span>
-            </div>
-            <div class="allergy-scale-item">
-                <span class="severity-dot severe"></span>
-                <span>严重（呼吸困难、肿胀、休克）</span>
-            </div>
-        </div>
-    </div>
-    <div class="allergy-list" id="allergyList2">
-        <p class="empty-tip">暂无过敏测试记录</p>
-    </div>
-</section>
 
 <!-- 辅食记录页面 -->
 <section class="page" id="page-solidfood">
@@ -2094,27 +2100,6 @@
 </section>
 
 <!-- 用药提醒页面 -->
-<section class="page" id="page-med-reminder">
-    <div class="record-page-header">
-        <h3 class="section-title">用药提醒</h3>
-        <button class="btn btn-primary btn-sm" id="addMedReminderBtn">＋ 添加提醒</button>
-    </div>
-    <div class="med-reminder-info-card">
-        <div class="med-reminder-info-title">⏰ 用药提醒说明</div>
-        <p>记录宝宝正在服用的药物，设置下次用药时间。系统会在首页显示即将到期的用药提醒。请咨询医生确认用药方案。</p>
-    </div>
-    <div class="med-reminder-stats" id="medReminderStats"></div>
-    <div class="med-reminder-active">
-        <h4 class="section-subtitle">活跃提醒</h4>
-        <div id="activeRemindersList">
-            <p class="empty-tip">暂无活跃用药提醒<br><small>添加提醒后系统会按时推送通知</small></p>
-        </div>
-    </div>
-    <div class="med-reminder-all">
-        <h4 class="section-subtitle">全部提醒</h4>
-        <div id="allRemindersList"></div>
-    </div>
-</section>
 
 </main>
 

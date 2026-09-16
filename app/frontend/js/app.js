@@ -1264,11 +1264,9 @@ const NAV_HUBS = [
             { page: 'pumping', label: '吸奶', icon: 'icon-pumping' },
             { page: 'sleep-record', label: '睡眠记录', icon: 'icon-moon' },
             { page: 'diaper-record', label: '换尿布', icon: 'icon-diaper' },
-            { page: 'temperature', label: '体温', icon: 'icon-thermometer' },
-            { page: 'med-reminder', label: '用药提醒', icon: 'icon-bell' },
+            // 体温 / 用药提醒 / 疫苗 / 过敏测试已并入「健康档案」的 Tab，不再单列入口
             { page: 'solidfood', label: '辅食', icon: 'icon-bowl' },
             { page: 'tummytime', label: '趴睡训练', icon: 'icon-activity' },
-            { page: 'vaccines', label: '疫苗', icon: 'icon-syringe' },
             { page: 'diaper-price', label: '比价记账', icon: 'icon-tag' },
             { page: 'diary', label: '日记', icon: 'icon-book' },
             { page: 'photos', label: '相册', icon: 'icon-image' },
@@ -1276,7 +1274,6 @@ const NAV_HUBS = [
             { page: 'fontanelle', label: '囟门', icon: 'icon-circle' },
             { page: 'teeth', label: '出牙记录', icon: 'icon-tooth' },
             { page: 'health', label: '健康档案', icon: 'icon-heart2' },
-            { page: 'allergy-detail', label: '过敏测试', icon: 'icon-shield' },
             { page: 'sounds', label: '安抚', icon: 'icon-wave' }
         ]
     },
@@ -1398,14 +1395,15 @@ function switchPage(page) {
     const prevPage = App.currentPage;
     App.currentPage = page;
 
-    // 「睡眠分析」这类页面已经合并成成长页的 Tab，没有独立 section。
-    // 先切到宿主页面再激活对应 Tab，否则 #page-sleep-analysis 不存在会白屏。
-    const hostPage = GROWTH_TAB_PAGES[page];
-    if (hostPage) {
-        switchPage(hostPage);
-        activateGrowthTab(page);
+    // 「睡眠分析」这类页面已并进成长页的 Tab；疫苗/体温/用药提醒/过敏测试
+    // 并进了健康档案的 Tab。它们都没有独立 section 了，
+    // 这里先切到宿主页面再激活对应 Tab，否则 #page-xxx 找不到会白屏。
+    const tabTarget = GROWTH_TAB_PAGES[page] || HEALTH_TAB_PAGES[page];
+    if (tabTarget) {
+        switchPage(tabTarget.host);
+        activatePageTab(tabTarget.host, tabTarget.tab);
         // switchPage(宿主) 把 currentPage 改成了宿主，这里改回来，
-        // 保证底部导航、相关功能、切宝宝刷新都还认得 'sleep-analysis'
+        // 保证底部导航、相关功能、切宝宝刷新都还认得合并前的 page id
         App.currentPage = page;
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
         document.querySelectorAll('.nav-item[data-page="' + page + '"]').forEach(t => t.classList.add('active'));
@@ -1485,7 +1483,7 @@ function loadPageData(page) {
             loadTemperaturePage();
             break;
         case 'med-reminder':
-            loadMedicationPage();
+            loadMedReminders();
             break;
         case 'tummytime':
             loadTummyTimePage();
@@ -4247,7 +4245,26 @@ const GROWTH_TAB_VIEWS = {
  * 但底部导航/相关功能仍可能按 'sleep-analysis' 跳，这里做一次转换，
  * 否则 switchPage 找不到 #page-sleep-analysis 会直接白屏。
  */
-const GROWTH_TAB_PAGES = { 'sleep-analysis': 'growth' };
+const GROWTH_TAB_PAGES = { 'sleep-analysis': { host: 'growth', tab: 'sleep-analysis' } };
+
+/**
+ * 已并入健康档案 Tab 的页面：合并前的 page id → { 宿主页面, 目标 Tab }。
+ * 疫苗 / 体温 / 用药提醒 / 过敏测试四个独立页已删除，底部导航与「相关功能」
+ * 仍可能按老 id 跳，靠这张表落到「健康档案 + 对应 Tab」。
+ */
+const HEALTH_TAB_PAGES = {
+    'vaccines': { host: 'health', tab: 'vaccine' },
+    'temperature': { host: 'health', tab: 'temperature' },
+    'med-reminder': { host: 'health', tab: 'reminders' },
+    'allergy-detail': { host: 'health', tab: 'allergy' },
+};
+
+/** 切到宿主页面（growth / health）的某个 Tab */
+function activatePageTab(host, tab) {
+    if (host === 'growth') return activateGrowthTab(tab);
+    if (host === 'health') return activateHealthTab(tab);
+    return false;
+}
 
 /** 切到成长页的某个 Tab。视图先显示再加载数据——
  *  canvas 在 display:none 时宽高是 0，先显示才能画出图。 */
@@ -7332,7 +7349,10 @@ function backToComparisonGrid() {
 // ==================== 疫苗追踪 ====================
 
 function initVaccineModal() {
-    document.getElementById('addVaccineBtn').addEventListener('click', () => {
+    // 「疫苗追踪」独立页已并入健康档案的疫苗 Tab，#addVaccineBtn 随 page-vaccines 一起删了。
+    // 健康档案走 addVaccineBtn2 -> showVaccineForm（checkupFormModal 通用弹窗）。
+    // 这里用可选链：按钮没了就只是没有入口，不能让下面关闭/提交的绑定也跟着失效。
+    document.getElementById('addVaccineBtn')?.addEventListener('click', () => {
         document.getElementById('vaccineForm').reset();
         document.getElementById('vaccineId').value = '';
         document.getElementById('vaccineModalTitle').textContent = '添加疫苗记录';
@@ -7392,83 +7412,15 @@ function initVaccineModal() {
 }
 
 function loadVaccinesPage() {
-    if (!App.currentBaby) return;
-
-    // 加载统计数据
+    // 「疫苗追踪」独立页已并入健康档案的疫苗 Tab，旧列表容器 #vaccinesList 已删除。
+    // 这里保留旧入口（保存/生成计划后会调用），委托给健康档案那套实现，
+    // 否则会去渲染一个不存在的节点而抛异常。
+    loadVaccineRecords();
     loadVaccineStats();
-
-    api(`/api/babies/${App.currentBaby}/vaccines`).then(res => {
-        if (!res.success) return;
-        const vaccines = res.data;
-
-        // 列表
-        const list = document.getElementById('vaccinesList');
-        if (vaccines.length === 0) {
-            list.innerHTML = '<p class="empty-tip">暂无疫苗记录</p>';
-            return;
-        }
-
-        list.innerHTML = vaccines.map(v => {
-            const isOverdue = v.status === 'pending' && v.scheduled_date && v.scheduled_date < getToday();
-            const statusText = {
-                'pending': '待接种',
-                'completed': '已接种',
-                'skipped': '跳过',
-                'delayed': '延期',
-                'overdue': '已到期'
-            };
-            const statusClass = isOverdue ? 'overdue' : v.status;
-            const itemClass = isOverdue ? 'overdue' : v.status;
-
-            return `
-                <div class="vaccine-item ${itemClass}" data-vaccine-id="${v.id}">
-                    <div class="vaccine-icon ${v.vaccine_type}">${v.vaccine_type === 'free' ? '[免]' : '[自]'}</div>
-                    <div class="vaccine-info">
-                        <div class="vaccine-name">${escapeHtml(v.vaccine_name)} (第${v.dose_number}剂)</div>
-                        <div class="vaccine-meta">计划：${escapeHtml(v.scheduled_date || '未设置')}${v.actual_date ? ' | 实际：' + escapeHtml(v.actual_date) : ''}${v.hospital ? ' | ' + escapeHtml(v.hospital) : ''}${v.batch_number ? ' | 批号:' + escapeHtml(v.batch_number) : ''}${v.note ? ' | ' + escapeHtml(v.note) : ''}</div>
-                        ${v.has_reaction ? '<div class="vaccine-reaction-tag">[!] 不良反应</div>' : ''}
-                    </div>
-                    <span class="vaccine-status ${statusClass}">${isOverdue ? '已到期' : statusText[v.status] || v.status}</span>
-                </div>
-            `;
-        }).join('');
-
-        // 点击编辑
-        list.querySelectorAll('.vaccine-item').forEach(item => {
-            item.addEventListener('click', () => {
-                const vaccineId = item.dataset.vaccineId;
-                const vaccine = vaccines.find(v => v.id == vaccineId);
-                if (!vaccine) return;
-
-                document.getElementById('vaccineId').value = vaccine.id;
-                document.getElementById('vaccineName').value = vaccine.vaccine_name;
-                document.getElementById('vaccineType').value = vaccine.vaccine_type || 'free';
-                document.getElementById('vaccineDose').value = vaccine.dose_number || 1;
-                document.getElementById('vaccineScheduled').value = vaccine.scheduled_date || '';
-                document.getElementById('vaccineActual').value = vaccine.actual_date || '';
-                document.getElementById('vaccineStatus').value = vaccine.status || 'pending';
-                document.getElementById('vaccineHospital').value = vaccine.hospital || '';
-                document.getElementById('vaccineDoctor').value = vaccine.doctor || '';
-                document.getElementById('vaccineManufacturer').value = vaccine.manufacturer || '';
-                document.getElementById('vaccineBatch').value = vaccine.batch_number || '';
-                document.getElementById('vaccineSite').value = vaccine.injection_site || '';
-                document.getElementById('vaccineNextDose').value = vaccine.next_dose_date || '';
-                document.getElementById('vaccineNote').value = vaccine.note || '';
-                const reactionCheckbox = document.getElementById('vaccineReaction');
-                if (reactionCheckbox) reactionCheckbox.checked = !!vaccine.has_reaction;
-                const reactionDetail = document.getElementById('vaccineReactionDetail');
-                if (reactionDetail) reactionDetail.value = vaccine.reaction_detail || '';
-                const reactionSeverity = document.getElementById('vaccineReactionSeverity');
-                if (reactionSeverity) reactionSeverity.value = vaccine.reaction_severity || 'none';
-                document.getElementById('vaccineModalTitle').textContent = '编辑疫苗记录';
-                showModal('vaccineModal');
-            });
-        });
-    });
 }
 
 function initVaccinesPage() {
-    document.getElementById('initVaccinesBtn').addEventListener('click', () => {
+    document.getElementById('initVaccinesBtn')?.addEventListener('click', () => {
         if (!App.currentBaby) return;
         if (!confirm('将根据宝宝生日自动生成接种计划，已有记录不会被覆盖。继续吗？')) return;
 
@@ -7503,11 +7455,19 @@ function initVaccinesPage() {
 
 function loadVaccineTimeline() {
     if (!App.currentBaby) return;
+    // 「疫苗追踪」独立页已并入健康档案的疫苗 Tab，时间线渲染到 Tab 内的容器。
+    // 点按钮是切换展开/收起，不是每次都重新拉数据。
+    const box = document.getElementById('vaccineTimelineBox');
+    if (!box) return;
+    if (box.style.display !== 'none') {
+        box.style.display = 'none';
+        return;
+    }
     api(`/api/babies/${App.currentBaby}/vaccines/timeline`).then(res => {
         if (!res.success) return;
         const timeline = res.data;
-        const container = document.getElementById('vaccinesList');
-        if (!container) return;
+        const container = box;
+        container.style.display = '';
 
         if (timeline.length === 0) {
             container.innerHTML = '<p class="empty-tip">暂无接种记录</p>';
@@ -8405,6 +8365,18 @@ function initTemperature() {
             }
         });
     });
+
+    // 手机横竖屏/窗口缩放时按新宽度重画（画布尺寸是按容器算的）。
+    // 只在体温 Tab 正显示时重画，其它 Tab 上画了也是空白。
+    let _tempResizeTimer = null;
+    window.addEventListener('resize', () => {
+        clearTimeout(_tempResizeTimer);
+        _tempResizeTimer = setTimeout(() => {
+            const view = document.getElementById('tab-temperature');
+            if (!view || !view.classList.contains('active')) return;
+            loadTemperaturePage();
+        }, 300);
+    });
 }
 
 function loadTemperaturePage() {
@@ -8528,9 +8500,14 @@ function saveTemperatureEdit(id) {
 
 function drawTemperatureChart(temps) {
     const canvas = document.getElementById('temperatureCanvas');
-    const ctx = canvas.getContext('2d');
-    const W = canvas.width;
-    const H = canvas.height;
+    if (!canvas) return;
+    // 体温页已并入健康档案的「体温」Tab：Tab 没显示时 canvas 宽高是 0，
+    // 画出来是一张空白图，而切过来时又会重新加载，所以这里直接跳过。
+    if (canvas.offsetWidth === 0 && canvas.offsetHeight === 0) return;
+    // 手机端按容器宽度重算画布（原固定 700px 会横向溢出）
+    const fitted = fitCanvas(canvas, 250);
+    if (!fitted) return;
+    const { ctx, W, H } = fitted;
 
     ctx.clearRect(0, 0, W, H);
 
@@ -8605,9 +8582,11 @@ function drawTemperatureChart(temps) {
         ctx.stroke();
     });
 
-    // X轴标签
+    // X轴标签：按可用宽度算能放几个，窄屏自动稀化，避免叠在一起
+    const maxLabels = Math.max(3, Math.floor(chartW / 44));
+    const labelEvery = Math.ceil(temps.length / maxLabels);
     temps.forEach((t, i) => {
-        if (temps.length > 7 && i % 2 !== 0) return;
+        if (i % labelEvery !== 0) return;
         const x = padding.left + step * i;
         const dateParts = t.measure_time.split(' ')[0].split('-');
         ctx.fillStyle = '#636e72';
@@ -13358,19 +13337,40 @@ function initHealthArchivePage() {
     if (typeof loadOverview === 'function') loadOverview();
 }
 
+/** 切到健康档案的某个 Tab（外部跳转用）。视图先显示再加载数据，
+ *  和健康档案内部的 Tab 点击走同一条路径，避免两套切法行为不一致。 */
+function activateHealthTab(tab) {
+    const btn = document.querySelector('.health-tab[data-tab="' + tab + '"]');
+    if (!btn) return false;
+    btn.click();
+    return true;
+}
+
 function loadHealthTabData(tab) {
     if (!App.currentBaby) return;
     switch (tab) {
         case 'overview': loadOverview(); break;
         case 'checkup': loadCheckupRecords(); break;
-        case 'vaccine': loadVaccineRecords(); break;
+        case 'temperature': loadTemperaturePage(); break;
+        case 'vaccine':
+            // 列表沿用健康档案自己的（配套增删改流程），
+            // 统计条来自原「疫苗追踪」独立页，渲染到 #vaccinesStats
+            loadVaccineRecords();
+            loadVaccineStats();
+            break;
+        case 'allergy':
+            loadAllergies();       // 过敏史
+            loadAllergyTests();    // 辅食过敏测试（原独立页）
+            break;
+        case 'reminders':
+            loadReminders();       // 健康提醒
+            loadMedReminders();    // 用药提醒（原独立页，渲染 #activeRemindersList / #allRemindersList / #medReminderStats）
+            break;
         case 'milestone': loadMilestones(); break;
         case 'screening': loadScreenings(); break;
         case 'growth': loadGrowthChart('weight'); break;
         case 'indicators': loadIndicators(); break;
-        case 'allergy': loadAllergies(); break;
         case 'feeding': loadFeedingSummary(); break;
-        case 'reminders': loadReminders(); break;
     }
 }
 

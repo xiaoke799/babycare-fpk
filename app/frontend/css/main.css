@@ -2802,6 +2802,25 @@ body {
     margin-bottom: 16px;
 }
 
+/* 手机上 4 列统计卡会挤成一团，两列更好读 */
+@media (max-width: 600px) {
+    .vaccines-stats { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* 疫苗列表容器 */
+.vaccine-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* 接种时间线：默认收起，点「时间线」按钮展开 */
+.vaccine-timeline-box {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--border-color);
+}
+
 .vaccine-stat-card {
     background: var(--card-bg);
     border-radius: var(--radius-sm);
@@ -8638,6 +8657,25 @@ body {
     color: var(--text-primary);
 }
 
+/* 健康档案里「一 Tab 两小节」的小节容器：上面一条分隔线，视觉上把两块分开 */
+.health-subsection {
+    margin-top: 22px;
+    padding-top: 16px;
+    border-top: 1px dashed var(--border-color);
+}
+
+.health-subsection-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.health-subsection-head .section-subtitle {
+    margin: 0;
+}
+
 .health-show-done {
     font-size: 12px;
     color: var(--text-secondary);
@@ -10044,6 +10082,29 @@ body {
     font-weight: 600;
     margin-bottom: 6px;
     font-size: 14px;
+}
+
+/* 用药提醒统计条：JS 会按有无记录切 display，所以这里只管排布不写死显示 */
+.med-reminder-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.stat-chip {
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    padding: 5px 14px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.stat-chip strong {
+    color: var(--primary-color);
+    font-size: 14px;
+    margin: 0 2px;
 }
 
 .med-reminder-active, .med-reminder-all {
