@@ -150,7 +150,16 @@ class ReminderScheduler:
             db = self.db_getter()
             # 获取所有宝宝
             babies = db.execute("SELECT id, name FROM babies").fetchall()
-            for baby in babies:
+        except Exception as e:
+            logger.error("[Scheduler] 检查喂奶提醒失败: %s", e)
+            return
+
+        # ⚠️ 每个宝宝单独 try。2026-09-19 修：原先整个 for 被同一个 try 包着，
+        # 只要某个宝宝在 _remind 里抛一次异常（推送失败、notifier 返回异常…），
+        # for 立刻中断 —— 结果是「排在它后面的宝宝永远收不到提醒」，
+        # 而日志只有一条笼统的「检查喂奶提醒失败」，根本看不出漏了谁。
+        for baby in babies:
+            try:
                 # 获取最后一次喂奶记录。
                 # 表名是 feeding_records（不是 feedings），且要按 start_time 而不是
                 # created_at：补录一条昨晚的记录时 created_at 是「现在」，提醒永远不会响。
@@ -160,26 +169,27 @@ class ReminderScheduler:
                     (baby["id"],),
                 ).fetchone()
 
-                if last_feeding and last_feeding["last_time"]:
-                    last_time = _parse_dt(last_feeding["last_time"])
-                    if last_time is None:
-                        continue
-                    elapsed = (now - last_time).total_seconds() / 60  # 分钟
+                if not (last_feeding and last_feeding["last_time"]):
+                    continue
+                last_time = _parse_dt(last_feeding["last_time"])
+                if last_time is None:
+                    continue
+                elapsed = (now - last_time).total_seconds() / 60  # 分钟
 
-                    # 记成了未来的时间（手抖填错）就跳过：不然 MAX() 一直取到它，
-                    # 这条宝宝永远「刚喂过」，提醒彻底哑掉
-                    if elapsed < 0:
-                        continue
+                # 记成了未来的时间（手抖填错）就跳过：不然 MAX() 一直取到它，
+                # 这条宝宝永远「刚喂过」，提醒彻底哑掉
+                if elapsed < 0:
+                    continue
 
-                    if elapsed >= interval_minutes:
-                        hours = elapsed / 60
-                        self._remind(
-                            f"feeding_{baby['id']}", interval_minutes,
-                            "喂奶提醒",
-                            f"🍼 {baby['name']} 已经 {hours:.1f} 小时没有喂奶了，该喂奶啦！",
-                        )
-        except Exception as e:
-            logger.error("[Scheduler] 检查喂奶提醒失败: %s", e)
+                if elapsed >= interval_minutes:
+                    hours = elapsed / 60
+                    self._remind(
+                        f"feeding_{baby['id']}", interval_minutes,
+                        "喂奶提醒",
+                        f"🍼 {baby['name']} 已经 {hours:.1f} 小时没有喂奶了，该喂奶啦！",
+                    )
+            except Exception as e:
+                logger.error("[Scheduler] 宝宝 %s 喂奶提醒检查失败: %s", baby["id"], e)
 
     def _check_diaper_reminder(self, now: datetime):
         """检查换尿布提醒"""
@@ -189,7 +199,13 @@ class ReminderScheduler:
         try:
             db = self.db_getter()
             babies = db.execute("SELECT id, name FROM babies").fetchall()
-            for baby in babies:
+        except Exception as e:
+            logger.error("[Scheduler] 检查换尿布提醒失败: %s", e)
+            return
+
+        # 同喂奶提醒：每个宝宝单独 try，一个宝宝出错不能连累后面的
+        for baby in babies:
+            try:
                 # 表名是 diaper_records（不是 diaper_changes），时间列是 change_time
                 last_diaper = db.execute(
                     "SELECT MAX(replace(change_time, 'T', ' ')) as last_time "
@@ -197,22 +213,23 @@ class ReminderScheduler:
                     (baby["id"],),
                 ).fetchone()
 
-                if last_diaper and last_diaper["last_time"]:
-                    last_time = _parse_dt(last_diaper["last_time"])
-                    if last_time is None:
-                        continue
-                    elapsed = (now - last_time).total_seconds() / 60
-                    if elapsed < 0:  # 同上：未来时间不参与提醒判定
-                        continue
+                if not (last_diaper and last_diaper["last_time"]):
+                    continue
+                last_time = _parse_dt(last_diaper["last_time"])
+                if last_time is None:
+                    continue
+                elapsed = (now - last_time).total_seconds() / 60
+                if elapsed < 0:  # 同上：未来时间不参与提醒判定
+                    continue
 
-                    if elapsed >= interval_minutes:
-                        self._remind(
-                            f"diaper_{baby['id']}", interval_minutes,
-                            "换尿布提醒",
-                            f"[尿布] {baby['name']} 已经 {elapsed/60:.1f} 小时没有换尿布了，检查一下是否需要更换！",
-                        )
-        except Exception as e:
-            logger.error("[Scheduler] 检查换尿布提醒失败: %s", e)
+                if elapsed >= interval_minutes:
+                    self._remind(
+                        f"diaper_{baby['id']}", interval_minutes,
+                        "换尿布提醒",
+                        f"[尿布] {baby['name']} 已经 {elapsed/60:.1f} 小时没有换尿布了，检查一下是否需要更换！",
+                    )
+            except Exception as e:
+                logger.error("[Scheduler] 宝宝 %s 换尿布提醒检查失败: %s", baby["id"], e)
 
     def _check_medication_reminder(self, now: datetime):
         """检查用药提醒"""
@@ -224,8 +241,13 @@ class ReminderScheduler:
                 "JOIN babies b ON mr.baby_id = b.id "
                 "WHERE mr.is_active = 1"
             ).fetchall()
+        except Exception as e:
+            logger.error("[Scheduler] 检查用药提醒失败: %s", e)
+            return
 
-            for rem in reminders:
+        # 同上：逐条 try，某条用药提醒出问题不影响其他
+        for rem in reminders:
+            try:
                 reminder_time = rem["reminder_time"]  # HH:MM 格式
                 if not reminder_time:
                     continue
@@ -245,8 +267,8 @@ class ReminderScheduler:
                         "用药提醒",
                         f"💊 {rem['baby_name']} 该吃药了！\n药品：{rem['medication_name']}\n剂量：{_row_get(rem, 'dosage', '遵医嘱')}",
                     )
-        except Exception as e:
-            logger.error("[Scheduler] 检查用药提醒失败: %s", e)
+            except Exception as e:
+                logger.error("[Scheduler] 用药提醒 %s 检查失败: %s", _row_get(rem, "id", "?"), e)
 
     def _check_vaccine_reminder(self, now: datetime):
         """检查疫苗提醒（从 vaccine_details 表读取）"""
@@ -266,8 +288,13 @@ class ReminderScheduler:
                 "ORDER BY v.scheduled_date",
                 (today, future_date),
             ).fetchall()
+        except Exception as e:
+            logger.error("[Scheduler] 检查疫苗提醒失败: %s", e)
+            return
 
-            for vac in vaccines:
+        # 同上：逐条 try，某条疫苗记录有问题不影响其他
+        for vac in vaccines:
+            try:
                 scheduled = vac["scheduled_date"]
                 dose = _row_get(vac, "dose_number", "")
                 self._remind(
@@ -275,8 +302,8 @@ class ReminderScheduler:
                     "疫苗提醒",
                     f"[!] {vac['baby_name']} 该接种疫苗了!\n疫苗：{vac['vaccine_name']} 第{dose}剂\n预约日期：{scheduled}",
                 )
-        except Exception as e:
-            logger.error("[Scheduler] 检查疫苗提醒失败: %s", e)
+            except Exception as e:
+                logger.error("[Scheduler] 疫苗提醒 %s 检查失败: %s", _row_get(vac, "id", "?"), e)
 
     def reload_config(self, config: Dict[str, Any]):
         """热加载配置"""

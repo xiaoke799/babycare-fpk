@@ -108,8 +108,8 @@ if html and 'id="page-clinic"' in html:
     clin = clin[:clin.index('</section>')]
 chk('看诊摘要页已瘦身（只剩 clinicSummary）',
     'clinicSummary' in clin and 'storageOverview' not in clin and 'backupHistory' not in clin)
-chk("app.js 含 TAB_PAGE_HUB = { 'sleep-analysis': 'growth-hub' }",
-    bool(js) and "TAB_PAGE_HUB = { 'sleep-analysis': 'growth-hub' }" in js)
+chk("app.js 的 TAB_PAGE_HUB 覆盖睡眠分析与成长曲线两个虚拟页",
+    bool(js) and "TAB_PAGE_HUB = { 'sleep-analysis': 'growth-hub', 'growth-chart': 'growth-hub' }" in js)
 chk('app.js 已移除重复初始化 initDataManagement-2',
     bool(js) and "'initDataManagement-2'" not in js)
 chk('app.js 进入设置页会刷新存储数据',
@@ -136,13 +136,31 @@ js_rec = js_gro = ''
 if js:
     js_rec = _hub_block(js, 'record')
     js_gro = _hub_block(js, 'growth')
-# 2026-09-19 二次修正：成长成就(回顾/报表)与时间线从「记录」栏移到「成长」栏
-chk('成长栏：含「成长成就」(milestones)',
-    "page: 'milestones', label: '成长成就'" in js_gro)
+# 2026-09-19 定稿：记录栏=只管往里填数据，成长栏=只管看结果；
+# 一个功能横跨两边就拆两半（录的归记录栏、看的归成长栏），各栏各一个 page id。
+chk('成长栏：含「成长回顾」(milestone-review)',
+    "page: 'milestone-review', label: '成长回顾'" in js_gro)
+chk('成长栏：含「成长曲线」(growth-chart)',
+    "page: 'growth-chart', label: '成长曲线'" in js_gro)
 chk('成长栏：含「时间线」(timeline)',
     "page: 'timeline', label: '时间线'" in js_gro)
-chk('记录栏：已移出 milestones 与 timeline',
-    bool(js_rec) and 'milestones' not in js_rec and 'timeline' not in js_rec)
+chk('记录栏：含「成长成就」录入入口 (milestones)',
+    "page: 'milestones', label: '成长成就'" in js_rec)
+chk('记录栏：含「身高体重」录入入口 (growth)',
+    "page: 'growth', label: '身高体重'" in js_rec)
+chk('记录栏：已移出 timeline', bool(js_rec) and "page: 'timeline'" not in js_rec)
+
+
+def _page_ids(block):
+    """NAV_HUBS 某栏里所有 page id。"""
+    return set(p.split("'")[0] for p in block.split("page: '")[1:])
+
+
+_dup = sorted(_page_ids(js_rec) & _page_ids(js_gro)) if js else []
+chk('两栏不共用任何 page id（共用即形态分不开 = 假拆分）%s'
+    % ('' if not _dup else '，重复：' + '、'.join(_dup)), not _dup)
+chk('成长曲线走别名直接落 who-chart（不是默认的录入 Tab）',
+    bool(js) and "tab: 'who-chart'" in js and "case 'growth-chart':" in js)
 chk('已删的 firsts 页面没有复活', bool(js) and "page: 'firsts'" not in js)
 chk('系统栏：安抚音效已归入', bool(js) and "page: 'sounds', label: '安抚音效'" in js)
 chk('「第一次」页面已从包内移除', bool(html) and 'id="page-firsts"' not in html)

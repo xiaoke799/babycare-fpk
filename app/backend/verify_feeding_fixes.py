@@ -203,12 +203,19 @@ check("编辑不存在的记录返回 404",
 print("\n=== 11. 喂奶提醒调度器（之前查的是不存在的表，一直是死的） ===")
 try:
     from notifier.reminder_scheduler import ReminderScheduler
+    from notifier.unified_notifier import NotificationResult
 
     sent = []
 
     class FakeNotifier:
+        """假推送器。必须返回 NotificationResult ——
+        早先这里不返回值，_remind() 里 `result.success` 直接抛 AttributeError，
+        异常被调度器吞掉，测试既测不出「发没发」，还会因为 len(sent) 凑巧为 1
+        而误判通过（2026-09-19 修）。"""
+
         def send_notification(self, title, body, **kwargs):
             sent.append((title, body))
+            return NotificationResult(success=True, method="test")
 
     c = sqlite3.connect(TMP_DB)
     c.row_factory = sqlite3.Row
@@ -228,7 +235,12 @@ try:
         {"reminder_enabled": True, "feeding_reminder_enabled": True, "feeding_reminder_interval": 3},
     )
     sched._check_feeding_reminder(datetime.datetime.now())
-    check("超过 3 小时会发提醒", len(sent) == 1 and "喂奶" in sent[0][0], sent)
+    # ⚠️ 调度器会遍历**所有**宝宝（这是对的），所以别用 len(sent) 断言 ——
+    # 1 号宝宝的测试数据里也有会触发的记录，会被算进来。
+    # 曾因此误报「刚喂过却提醒」：实际提醒的是 1 号，2 号根本没发。
+    # 断言必须盯住 2 号「提醒宝宝」。
+    check("超过 3 小时会发提醒",
+          any("提醒宝宝" in body for _, body in sent), sent)
 
     # 刚喂过（间隔 30 分钟）不应该提醒
     sent.clear()
@@ -237,7 +249,21 @@ try:
     c.commit()
     sched._last_reminders.clear()
     sched._check_feeding_reminder(datetime.datetime.now())
-    check("刚喂过不提醒", len(sent) == 0, sent)
+    check("刚喂过不提醒（只看 2 号宝宝）",
+          not any("提醒宝宝" in body for _, body in sent), sent)
+
+    # 原来只在注释里说「顺便验证未来记录不会把提醒卡死」，实际没断言到。
+    # 单独造一个 3 号宝宝：最近一条记成明天 → 应判为"还没到点"，不发提醒。
+    c.execute("INSERT INTO babies (id, name, active) VALUES (3, '未来宝宝', 1)")
+    tomorrow = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+    c.execute("INSERT INTO feeding_records (baby_id, start_time, feeding_type) "
+              "VALUES (3, ?, 'breast')", (tomorrow,))
+    c.commit()
+    sent.clear()
+    sched._last_reminders.clear()
+    sched._check_feeding_reminder(datetime.datetime.now())
+    check("记成未来的时间不发提醒（elapsed<0 要跳过，不能卡死）",
+          not any("未来宝宝" in body for _, body in sent), sent)
     c.close()
 except Exception as exc:  # noqa: BLE001
     check("提醒调度器可正常执行", False, f"异常：{exc}")

@@ -1254,45 +1254,81 @@ function initNavigation() {
 // ==================== 底部 Tab + 宫格导航 ====================
 // 5 个一级 tab（首页/记录/成长/知识/系统），每个非首页 tab 承载一个宫格页面；
 // 点击宫格 tile 进入对应详情页（含图表）。首页以数据展示为主。
+//
+// 【记录栏 / 成长栏的分工 —— 2026-09-19 定稿】
+//   记录栏 = 只管「往里填数据」。每个入口进去都是表单，这栏只有录入，没有报表。
+//   成长栏 = 只管「看结果」。曲线/分析/节律/报告/回顾，全部只读，没有＋添加按钮。
+//
+//   「一个功能拆两半」是通用规则：录的那半归记录栏，看的那半归成长栏，
+//   两栏各放一个入口、各进各的形态。已按此拆开的：
+//     身高体重(录)     ↔ 成长曲线(看)          —— 两个 page id 共用一个 page-growth
+//     睡眠记录(录)     ↔ 睡眠分析(看)          —— 看的那半是成长页的 Tab
+//     成长成就(录)     ↔ 成长回顾(看)          —— 同一个 page-milestones，只读形态，见 READONLY_ALIAS
+//   判定标准是「这块是填表还是看结果」，不是「有没有＋按钮」——出牙/囟门/飞跃期这几个页面
+//   主体就是填表，图只是顺带看一眼，所以整个留在记录栏，不拆。
 const NAV_HUBS = [
     { hub: 'home', label: '首页', icon: 'icon-home', page: 'dashboard' },
     {
         hub: 'record', label: '记录', icon: 'icon-clipboard', page: 'record',
-        items: [
-            { page: 'feeding', label: '喂奶', icon: 'icon-bottle' },
-            { page: 'pumping', label: '吸奶', icon: 'icon-pumping' },
-            { page: 'sleep-record', label: '睡眠记录', icon: 'icon-moon' },
-            { page: 'diaper-record', label: '换尿布', icon: 'icon-diaper' },
-            // 身高体重：记录页这边负责「录数值」，成长页那边的「成长曲线」负责看报表
-            { page: 'growth', label: '身高体重', icon: 'icon-scale' },
-            // 体温 / 用药提醒 / 疫苗 / 过敏测试已并入「健康档案」的 Tab，不再单列入口
-            { page: 'solidfood', label: '辅食', icon: 'icon-bowl' },
-            { page: 'tummytime', label: '趴睡训练', icon: 'icon-activity' },
-            { page: 'diaper-price', label: '比价记账', icon: 'icon-tag' },
-            { page: 'diary', label: '日记', icon: 'icon-book' },
-            { page: 'photos', label: '相册', icon: 'icon-image' },
-            { page: 'leap', label: '飞跃期', icon: 'icon-rocket' },
-            { page: 'fontanelle', label: '囟门', icon: 'icon-circle' },
-            { page: 'teeth', label: '出牙记录', icon: 'icon-tooth' },
-            { page: 'health', label: '健康档案', icon: 'icon-heart2' }
-            // 安抚音效既不是记录也不是报表，属于工具，已移到「系统」栏
+        // 14 个入口按 6 组收纳：宫格加了小组标题，找东西不用一格格扫
+        groups: [
+            { title: '喂养', items: [
+                { page: 'feeding', label: '喂奶', icon: 'icon-bottle' },
+                { page: 'pumping', label: '吸奶', icon: 'icon-pumping' },
+                { page: 'solidfood', label: '辅食', icon: 'icon-bowl' },
+            ]},
+            { title: '睡眠', items: [
+                { page: 'sleep-record', label: '睡眠记录', icon: 'icon-moon' },
+            ]},
+            { title: '日常', items: [
+                { page: 'diaper-record', label: '换尿布', icon: 'icon-diaper' },
+                { page: 'tummytime', label: '趴睡训练', icon: 'icon-activity' },
+            ]},
+            { title: '发育', items: [
+                // 身高体重在这栏是「录数值」，看曲线去成长栏的「成长曲线」
+                { page: 'growth', label: '身高体重', icon: 'icon-scale' },
+                // 成长成就同样拆两半：这栏带表单可录入，成长栏那个只能看
+                { page: 'milestones', label: '成长成就', icon: 'icon-trophy' },
+                { page: 'leap', label: '飞跃期', icon: 'icon-rocket' },
+            ]},
+            { title: '生活', items: [
+                { page: 'diary', label: '日记', icon: 'icon-book' },
+                { page: 'photos', label: '相册', icon: 'icon-image' },
+                { page: 'diaper-price', label: '比价记账', icon: 'icon-tag' },
+            ]},
+            { title: '健康', items: [
+                // 出牙/囟门是身体状况指标，跟健康档案归一类；放这组也能让各组项数均衡
+                { page: 'teeth', label: '出牙记录', icon: 'icon-tooth' },
+                { page: 'fontanelle', label: '囟门', icon: 'icon-circle' },
+                // 体温 / 用药提醒 / 疫苗 / 过敏测试都在「健康档案」的 Tab 里，不单列
+                // 安抚音效既不是记录也不是报表，属于工具，已移到「系统」栏
+                { page: 'health', label: '健康档案', icon: 'icon-heart2' },
+            ]},
         ]
     },
     {
         hub: 'growth', label: '成长', icon: 'icon-chart', page: 'growth-hub',
-        // 本栏放「看结果」的报表与回顾视图。注意：带＋添加按钮不等于必须放记录栏
-        // ——「成长成就」虽然能录入，但它本质是"宝宝成长历程"的回顾/报表（2026-09-19 二次修正）。
-        // 纯逐条录入的（喂奶/睡眠/尿布/囟门/出牙…）仍在「记录」栏。
-        items: [
-            { page: 'growth', label: '成长曲线', icon: 'icon-chart' },
-            // 成长成就（原「里程碑」+「第一次」合并）与时间线都属「回顾」性质
-            { page: 'milestones', label: '成长成就', icon: 'icon-trophy' },
-            { page: 'timeline', label: '时间线', icon: 'icon-clock' },
-            { page: 'sleep-analysis', label: '睡眠分析', icon: 'icon-wave' },
-            { page: 'bmi', label: 'BMI', icon: 'icon-scale' },
-            { page: 'asq', label: '发育筛查', icon: 'icon-list' },
-            { page: 'pattern', label: '作息节律', icon: 'icon-bar' },
-            { page: 'reports', label: '阶段报告', icon: 'icon-doc' }
+        // 本栏只放「看结果」的报表与回顾视图，全部只读
+        groups: [
+            { title: '生长', items: [
+                // 同一个 #page-growth：这栏进 = 直接看 WHO 曲线（录入在记录栏的「身高体重」）
+                { page: 'growth-chart', label: '成长曲线', icon: 'icon-chart' },
+                { page: 'bmi', label: 'BMI', icon: 'icon-scale' },
+            ]},
+            { title: '睡眠', items: [
+                { page: 'sleep-analysis', label: '睡眠分析', icon: 'icon-wave' },
+                { page: 'pattern', label: '作息节律', icon: 'icon-bar' },
+            ]},
+            { title: '回顾', items: [
+                { page: 'timeline', label: '时间线', icon: 'icon-clock' },
+                // 成长回顾 = 同一个 page-milestones 的只读形态，录入入口在记录栏
+                { page: 'milestone-review', label: '成长回顾', icon: 'icon-trophy' },
+            ]},
+            { title: '发育', items: [
+                { page: 'asq', label: '发育筛查', icon: 'icon-list' },
+                // 阶段报告本身就是按月龄给发育结论，跟筛查同一组比放「回顾」更贴
+                { page: 'reports', label: '阶段报告', icon: 'icon-doc' },
+            ]},
         ]
     },
     {
@@ -1318,10 +1354,17 @@ const NAV_HUBS = [
 
 // 首页快捷入口（常用记录）
 // pageId -> 底部 tab（用于高亮）
+// 一个 hub 的入口既可能写在 items（不分组），也可能写在 groups（分组），
+// 统一用 hubItems() 摊平，别在两处各写一遍遍历。
+function hubItems(g) {
+    if (g.groups) return g.groups.reduce((acc, gr) => acc.concat(gr.items || []), []);
+    return g.items || [];
+}
+
 const HUB_OF = { dashboard: 'home' };
 NAV_HUBS.forEach(g => {
     HUB_OF[g.page] = g.hub;
-    (g.items || []).forEach(it => { HUB_OF[it.page] = g.hub; });
+    hubItems(g).forEach(it => { HUB_OF[it.page] = g.hub; });
 });
 HUB_OF['ai'] = 'system'; // 兜底
 
@@ -1343,7 +1386,25 @@ function buildHubPages() {
         const c = document.getElementById('hub-' + g.hub);
         if (!c) return;
         c.innerHTML = '';
-        (g.items || []).forEach(it => c.appendChild(makeNavTile(it)));
+        // 分组的 hub 逐组渲染：一组一行，组名在左、图标在右。
+        // 不要把组名做成跨整行的 grid item —— 那样每组要多吃一行高度，
+        // 而且组内只有 1-3 个图标时右侧会空一大片（桌面端容器越宽越明显）。
+        const groups = g.groups || [{ title: '', items: g.items || [] }];
+        groups.forEach(gr => {
+            const row = document.createElement('div');
+            row.className = 'hub-group';
+            if (gr.title) {
+                const t = document.createElement('div');
+                t.className = 'hub-group-title';
+                t.textContent = gr.title;
+                row.appendChild(t);
+            }
+            const box = document.createElement('div');
+            box.className = 'hub-group-items';
+            (gr.items || []).forEach(it => box.appendChild(makeNavTile(it)));
+            row.appendChild(box);
+            c.appendChild(row);
+        });
     });
 }
 
@@ -1367,6 +1428,19 @@ let _skipHistoryPush = false;  // 标记跳过历史入栈（返回时使用）
 // 一级页面：底部 tab 直接到达的宫格页和首页。这些页面不显示返回按钮，
 // 只有从宫格/链接点进去的子页面才有「返回」。
 const TOP_LEVEL_PAGES = ['dashboard', 'record', 'growth-hub', 'knowledge-hub', 'system'];
+
+/**
+ * 「只读别名页」：本体是别的 section，但从另一栏进去要换一种形态。
+ * 成长成就是一个「功能拆两半」的例子（见 NAV_HUBS 顶部说明）：
+ * 记录栏进 = 可录入，成长栏进 = 只看回顾。
+ *
+ * 别名页不新增 section，靠给宿主 section 挂 class 切形态，所以：
+ *   - switchPage 得用宿主的 #page-xxx 找元素，否则白屏；
+ *   - App.currentPage 仍记别名，底部高亮 / 返回按钮 / 切宝宝刷新才认得这个入口；
+ *   - 相关功能条也画在宿主 section 上，两个入口看到的是同一份。
+ * 目前一个宿主只挂一个别名，class 直接 toggle 即可，不用记上一次是什么形态。
+ */
+const READONLY_ALIAS = { 'milestone-review': { host: 'milestones', cls: 'only-view' } };
 
 // 返回上一页
 function goBack() {
@@ -1414,6 +1488,10 @@ function switchPage(page) {
     const prevPage = App.currentPage;
     App.currentPage = page;
 
+    // 只读别名页 → 真正要显示的是宿主 section
+    const alias = READONLY_ALIAS[page];
+    const sectionId = alias ? alias.host : page;
+
     // 「睡眠分析」这类页面已并进成长页的 Tab；疫苗/体温/用药提醒/过敏测试
     // 并进了健康档案的 Tab。它们都没有独立 section 了，
     // 这里先切到宿主页面再激活对应 Tab，否则 #page-xxx 找不到会白屏。
@@ -1437,16 +1515,32 @@ function switchPage(page) {
         }
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
         document.querySelectorAll('.nav-item[data-page="' + page + '"]').forEach(t => t.classList.add('active'));
+        // 底部 tab 高亮要按「别名页自己的归属」重算。上面 switchPage(host) 是按宿主算的，
+        // 而宿主可能属于另一栏（page-growth 既是记录栏「身高体重」的家，
+        // 也是成长栏「成长曲线」的家）→ 不重算就会高亮错栏。
+        const aliasHub = HUB_OF[page] || 'home';
+        document.querySelectorAll('.nav-tab').forEach(t => t.classList.toggle('active', t.dataset.hub === aliasHub));
         updateBackButton();
         renderRelatedLinks(page);
         return;
     }
 
     // 更新页面显示
-    const pageEl = document.getElementById('page-' + page);
+    const pageEl = document.getElementById('page-' + sectionId);
     if (!pageEl) { console.warn('[switchPage] 未找到页面:', page); return; }
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     pageEl.classList.add('active');
+
+    // 别名形态：从只读入口进来挂 class（CSS 负责藏掉录入元素），从普通入口进来摘掉。
+    // 页面本体是同一个 section，形态差别只体现在这个 class 上。
+    Object.values(READONLY_ALIAS).forEach(cfg => {
+        if (cfg.host === sectionId) {
+            pageEl.classList.toggle(cfg.cls, page !== sectionId);
+            // 形态文案（标题等）在这一起切，别等 loadXxxPage 里再切 ——
+            // 没添加宝宝时那些加载函数会提前 return，标题就永远停在另一种形态上了。
+            syncMilestoneMode();
+        }
+    });
 
     // 记录「来时的页面」（跳过返回时的入栈）
     if (!_skipHistoryPush) {
@@ -1535,13 +1629,21 @@ function loadPageData(page) {
             initPattern();
             break;
         case 'growth':
-            // 直接进「成长曲线」时回到「记录」Tab，避免上次停在睡眠分析、
-            // 点进来却看到别的页。深链到睡眠分析时 currentPage 是 'sleep-analysis'，
-            // 不在这里重置，随后由 activateGrowthTab 切过去，顺序不受影响。
+            // 这个 page id 现在只归记录栏的「身高体重」用（成长栏的「成长曲线」
+            // 走别名 growth-chart，直接落 who-chart Tab）。
+            // 固定落「记录」Tab，免得上次停在别的 Tab、点进来看到的不是录入表单。
             if (App.currentPage === 'growth') activateGrowthTab('records');
             loadGrowthPage();
             break;
-        case 'milestones':
+        case 'growth-chart': {
+            // 切宝宝后刷新曲线。注意要判视图可见——canvas 在 display:none 时宽高为 0，
+            // 画了也是空白（同 sleep-analysis 的处理）。
+            const view = document.getElementById('growthViewWhoChart');
+            if (view && view.style.display !== 'none') loadWhoChart();
+            break;
+        }
+        case 'milestones':        // 记录栏进来的形态：带表单，可录入
+        case 'milestone-review':  // 成长栏进来的形态：只读回顾（同一个 section）
             loadMilestonesPage();
             break;
         case 'photos':
@@ -1635,6 +1737,7 @@ const PAGE_LINKS = {
     timeline:       ['feeding', 'sleep-record', 'diaper-record', 'growth'],
     feeding:        ['pumping', 'sleep-analysis', 'pattern', 'reports'],
     pumping:        ['feeding', 'reports'],
+    solidfood:      ['feeding', 'health', 'reports'],
     'sleep-record': ['sleep-analysis', 'pattern', 'sounds'],
     'sleep-analysis': ['sleep-record', 'pattern', 'reports'],
     'diaper-record':['diaper-price', 'reports'],
@@ -1644,30 +1747,63 @@ const PAGE_LINKS = {
     vaccines:       ['health'],
     'diaper-price': ['diaper-record'],
     diary:          ['photos', 'milestones'],
+    photos:         ['diary', 'timeline'],
     leap:           ['milestones', 'sleep-record', 'tummytime'],
     fontanelle:     ['teeth', 'health', 'growth'],
     teeth:          ['fontanelle', 'milestones', 'health'],
     health:         ['temperature', 'med-reminder', 'vaccines', 'teeth', 'growth'],
     sounds:         ['sleep-record'],
 
-    bmi:            ['growth'],
-    asq:            ['milestones', 'leap'],
+    bmi:            ['growth-chart', 'growth'],
+    // 本页在成长栏，跳「成长成就」也走成长栏那个只读形态，别把人带回记录栏
+    asq:            ['milestone-review', 'leap'],
     pattern:        ['feeding', 'sleep-record', 'diaper-record', 'reports'],
-    reports:        ['growth', 'feeding', 'sleep-record', 'diaper-record', 'pattern'],
+    reports:        ['growth-chart', 'feeding', 'sleep-record', 'diaper-record', 'pattern'],
+
+    // 「录 / 看」拆开的两半要互相指路：在录入页能一键去看结果，在回顾页能一键去补录。
+    // 否则用户录完不知道还有回顾视图、看的时候又找不到录入入口。
+    // ⚠️ milestone-review 必须有自己的一条：别名页若找不到自己的 key 会 fallback 到
+    // 宿主那份（PAGE_LINKS['milestones']），而那份的第一个就是它自己 —— 回顾页上
+    // 会冒出一个指向自己的按钮。
+    growth:             ['growth-chart', 'bmi', 'milestones'],
+    'growth-chart':     ['growth', 'bmi', 'reports'],
+    milestones:         ['milestone-review', 'growth', 'timeline'],
+    'milestone-review': ['milestones', 'timeline'],
 };
 
 // pageId -> 中文名，从导航配置里反查，避免两处维护
 const PAGE_LABELS = {};
 NAV_HUBS.forEach(g => {
-    (g.items || []).forEach(it => { PAGE_LABELS[it.page] = it.label; });
+    hubItems(g).forEach(it => { PAGE_LABELS[it.page] = it.label; });
 });
-PAGE_LABELS['clinic'] = '就诊小结';
+PAGE_LABELS['clinic'] = '看诊摘要';
+
+// 已并入「健康档案」Tab 的页：它们不在 NAV_HUBS 里（不单列入口），
+// 但「相关功能」条还会链过去。不补中文名，按钮上就会直接显示英文 page id
+// （曾出现「temperature、med-reminder、vaccines」这种按钮，2026-09-19 深审抓到）。
+Object.assign(PAGE_LABELS, {
+    vaccines: '疫苗',
+    temperature: '体温',
+    'med-reminder': '用药提醒',
+    'allergy-detail': '过敏测试',
+});
 
 function renderRelatedLinks(page) {
-    const section = document.getElementById('page-' + page);
+    // 页面本体可能是别的 section，三种别名都要认：
+    //   READONLY_ALIAS   —— 只读形态（milestone-review）
+    //   GROWTH_TAB_PAGES —— 并进成长页 Tab 的虚拟页（sleep-analysis / growth-chart）
+    //   HEALTH_TAB_PAGES —— 并进健康档案 Tab 的页（vaccines / temperature / …）
+    // 漏认任何一种 → #page-xxx 找不到 → 这里直接 return，
+    // 而宿主 section 上的"相关功能"条是上一次渲染留下的，
+    // 于是会显示成上一个页面的链接（残留 bug，2026-09-19 深审时抓到）。
+    const alias = READONLY_ALIAS[page] || GROWTH_TAB_PAGES[page] || HEALTH_TAB_PAGES[page];
+    const hostPage = alias ? alias.host : page;
+    const section = document.getElementById('page-' + hostPage);
     if (!section) return;
     let bar = section.querySelector('.related-links');
-    const targets = PAGE_LINKS[page] || [];
+    // 先用页面自己的链接配置，别名页没配自己的 key 时才退回宿主那份。
+    // 顺序反了会出事：milestone-review 会拿到 milestones 的列表，而那份第一个是它自己。
+    const targets = PAGE_LINKS[page] || PAGE_LINKS[hostPage] || [];
 
     if (targets.length === 0) {
         if (bar) bar.remove();
@@ -4312,8 +4448,15 @@ const GROWTH_TAB_VIEWS = {
  * 「睡眠分析」原本是独立页面，报表类统一收进成长，
  * 但底部导航/相关功能仍可能按 'sleep-analysis' 跳，这里做一次转换，
  * 否则 switchPage 找不到 #page-sleep-analysis 会直接白屏。
+ *
+ * 「成长曲线」也走这张表：它和记录栏的「身高体重」共用 #page-growth，
+ * 但两栏必须落在不同 Tab —— 记录栏进 = 录入（records），成长栏进 = 看曲线（who-chart）。
+ * 不分开的话，从成长栏点「成长曲线」会落到录入表单上，等于没拆。
  */
-const GROWTH_TAB_PAGES = { 'sleep-analysis': { host: 'growth', tab: 'sleep-analysis' } };
+const GROWTH_TAB_PAGES = {
+    'sleep-analysis': { host: 'growth', tab: 'sleep-analysis' },
+    'growth-chart':   { host: 'growth', tab: 'who-chart' },
+};
 
 /**
  * 「虚拟页」→ 它所属的一级宫格。
@@ -4322,7 +4465,7 @@ const GROWTH_TAB_PAGES = { 'sleep-analysis': { host: 'growth', tab: 'sleep-analy
  * 所以单靠历史栈不可靠——在它们上面按「返回」统一回到所属宫格。
  * 睡眠分析属于「成长」板块，因此返回 → 成长宫格。
  */
-const TAB_PAGE_HUB = { 'sleep-analysis': 'growth-hub' };
+const TAB_PAGE_HUB = { 'sleep-analysis': 'growth-hub', 'growth-chart': 'growth-hub' };
 
 /**
  * 已并入健康档案 Tab 的页面：合并前的 page id → { 宿主页面, 目标 Tab }。
@@ -5179,6 +5322,10 @@ function loadNotificationConfig() {
         setVal('notifyDiaperInterval', cfg.diaper_reminder_interval);
         setCheck('notifyMedEnabled', cfg.medication_reminder_enabled);
         setCheck('notifyVaccineEnabled', cfg.vaccine_reminder_enabled);
+        // 下面三项后端一直在 CONFIG_KEYS 里，只是设置页原先没暴露 → 用户改不了
+        setVal('notifyPushplusTopic', cfg.pushplus_topic);
+        setVal('notifyTitlePrefix', cfg.title_prefix);
+        setVal('notifyVaccineDays', cfg.vaccine_reminder_days);
     });
 }
 
@@ -5199,6 +5346,11 @@ function saveNotificationConfig() {
         diaper_reminder_interval: parseFloat(document.getElementById('notifyDiaperInterval')?.value) || 2,
         medication_reminder_enabled: document.getElementById('notifyMedEnabled')?.checked || false,
         vaccine_reminder_enabled: document.getElementById('notifyVaccineEnabled')?.checked || false,
+        // 这三项对应后端 CONFIG_KEYS 里一直存在、但设置页原先没暴露的配置。
+        // vaccine_reminder_days 后端会 clamp 到 1-60；这里填 0/非法值时退回默认 3。
+        vaccine_reminder_days: parseInt(document.getElementById('notifyVaccineDays')?.value, 10) || 3,
+        pushplus_topic: document.getElementById('notifyPushplusTopic')?.value || '',
+        title_prefix: document.getElementById('notifyTitlePrefix')?.value || '',
     };
 
     // 喂奶页顶部的提醒条也用这个间隔，存一份到本地免得每次去服务端取
@@ -7867,8 +8019,16 @@ function initMilestoneModal() {
     });
 }
 
+/** 成长成就页有两种形态，由从哪栏进来决定（见 READONLY_ALIAS）：
+ *  记录栏 'milestones'       = 记录形态：＋添加、模板快捷键、卡片可点开改/删
+ *  成长栏 'milestone-review' = 回顾形态：只剩筛选和列表，录入元素由 .only-view 藏掉 */
+function isMilestoneReview() {
+    return App.currentPage === 'milestone-review';
+}
+
 function loadMilestonesPage() {
     if (!App.currentBaby) return;
+    syncMilestoneMode();
     api(`/api/babies/${App.currentBaby}/milestones`).then(res => {
         if (!res.success) return;
         App.milestones = res.data;
@@ -7876,9 +8036,52 @@ function loadMilestonesPage() {
     });
 }
 
+/** 形态差异里 CSS 管不了的部分：页面标题文案 */
+function syncMilestoneMode() {
+    const title = document.getElementById('milestonesPageTitle');
+    if (title) title.textContent = isMilestoneReview() ? '成长回顾' : '成长成就';
+}
+
+/** 回顾形态顶部的成就概览。传 null 表示不是回顾形态 → 清空不显示。
+ *  注意统计的是「全部」成就，不跟着分类筛选变 —— 概览是总账，筛选是看局部。 */
+function renderMilestoneOverview(all) {
+    const box = document.getElementById('milestoneOverview');
+    if (!box) return;
+    if (!all || all.length === 0) { box.innerHTML = ''; return; }
+
+    const firsts = all.filter(m => m.is_first === 1 || m.is_first === true).length;
+    const catNames = { motor: '运动', language: '语言', social: '社交', cognitive: '认知', other: '其他' };
+    const counts = {};
+    all.forEach(m => { const c = m.category || 'other'; counts[c] = (counts[c] || 0) + 1; });
+
+    const bars = Object.keys(counts)
+        .sort((a, b) => counts[b] - counts[a])
+        .slice(0, 5)
+        .map(c => {
+            const pct = Math.max(4, Math.round(counts[c] / all.length * 100));
+            return '<div class="mo-bar-row">' +
+                '<span class="mo-bar-label">' + (catNames[c] || '其他') + '</span>' +
+                '<span class="mo-bar-track"><span class="mo-bar-fill" style="width:' + pct + '%"></span></span>' +
+                '<span class="mo-bar-num">' + counts[c] + '</span></div>';
+        }).join('');
+
+    box.innerHTML =
+        '<div class="mo-cards">' +
+          '<div class="mo-card"><span class="mo-value">' + all.length + '</span><span class="mo-label">已记录成就</span></div>' +
+          '<div class="mo-card"><span class="mo-value">' + firsts + '</span><span class="mo-label">人生第一次</span></div>' +
+          '<div class="mo-card"><span class="mo-value">' + Object.keys(counts).length + '</span><span class="mo-label">覆盖分类</span></div>' +
+        '</div>' +
+        '<div class="mo-bars">' + bars + '</div>';
+}
+
 function renderMilestones() {
     const list = document.getElementById('milestonesTimeline');
+    const review = isMilestoneReview();
     let milestones = App.milestones || [];
+
+    // 回顾形态先给一张概览：既然独立成一个"看"的页面，就该有汇总，
+    // 而不是把记录页那份列表原样搬过来。记录形态不画（那里重点是录入）。
+    renderMilestoneOverview(review ? (App.milestones || []) : null);
 
     if (currentMilestoneCategory === 'first') {
         // 「第一次」不是分类，而是 is_first 标记
@@ -7888,7 +8091,9 @@ function renderMilestones() {
     }
 
     if (milestones.length === 0) {
-        list.innerHTML = '<p class="empty-tip">暂无里程碑记录</p>';
+        list.innerHTML = review
+            ? '<p class="empty-tip">还没有成长记录<br><small>录入请到「记录 → 成长成就」</small></p>'
+            : '<p class="empty-tip">暂无里程碑记录</p>';
         return;
     }
 
@@ -7903,11 +8108,14 @@ function renderMilestones() {
                 ${m.description ? `<div class="milestone-desc">${escapeHtml(m.description)}</div>` : ''}
                 <div class="milestone-date">${escapeHtml(m.achieved_date)} · ${catNames[m.category] || '其他'}${m.is_first ? ' · 第一次' : ''}</div>
             </div>
-            <div class="milestones-actions">
+            ${review ? '' : `<div class="milestones-actions">
                 <button class="milestone-action-btn" onclick="deleteGrowthMilestone(${m.id}, event)">X</button>
-            </div>
+            </div>`}
         </div>
     `).join('');
+
+    // 只读形态下卡片不绑编辑点击——从成长栏"看"着看着把数据改了，正是这轮要拆开的事
+    if (review) return;
 
     // 点击编辑
     list.querySelectorAll('.milestone-card').forEach(card => {
@@ -8901,12 +9109,16 @@ function loadAsqScreenings() {
     if (!App.currentBaby) return;
     api(`/api/babies/${App.currentBaby}/asq`).then(res => {
         if (!res.success) return;
+        const records = res.data || [];
+        // 概览 + 五领域趋势：独立成一个报表页，只给个列表太空（2026-09-19 丰富）
+        renderAsqOverview(records);
+        renderAsqTrend(records);
         const container = document.getElementById('asqList');
-        if (res.data.length === 0) {
+        if (records.length === 0) {
             container.innerHTML = '<p class="empty-tip">暂无筛查记录</p>';
             return;
         }
-        container.innerHTML = res.data.map(r => {
+        container.innerHTML = records.map(r => {
             const resultMap = { normal: '正常', monitor: '需关注', refer: '建议转介' };
             const resultClass = r.result === 'normal' ? 'good' : r.result === 'monitor' ? 'warn' : 'alert';
             return `
@@ -8932,6 +9144,117 @@ function loadAsqScreenings() {
             `;
         }).join('');
     });
+}
+
+/** ASQ 的标准筛查月龄点，用来推算"下次该什么时候复筛" */
+const ASQ_AGE_POINTS = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 30, 33, 36];
+
+/** 发育筛查概览：筛查次数 / 最近结论 / 下次建议复查月龄。无记录则清空。 */
+function renderAsqOverview(records) {
+    const box = document.getElementById('asqOverview');
+    if (!box) return;
+    if (!records || records.length === 0) { box.innerHTML = ''; return; }
+
+    const resultMap = { normal: '正常', monitor: '需关注', refer: '建议转介' };
+    // 最近一次按筛查日期取，别假定后端已排好序
+    const latest = records.slice().sort((a, b) =>
+        String(b.screening_date || '').localeCompare(String(a.screening_date || '')))[0];
+
+    const baby = (App.babies || []).find(b => b.id === App.currentBaby);
+    const months = baby && baby.birth_date ? calcAgeMonths(baby.birth_date) : null;
+    const next = (months === null || months === undefined)
+        ? null : ASQ_AGE_POINTS.find(a => a > months);
+
+    const resultCls = latest.result === 'normal' ? 'good'
+        : latest.result === 'monitor' ? 'warn' : 'alert';
+
+    box.innerHTML =
+        '<div class="asq-ov-card"><span class="asq-ov-value">' + records.length +
+            '</span><span class="asq-ov-label">已筛查次数</span></div>' +
+        '<div class="asq-ov-card"><span class="asq-ov-value asq-ov-' + resultCls + '">' +
+            (resultMap[latest.result] || '—') + '</span><span class="asq-ov-label">最近结论</span></div>' +
+        '<div class="asq-ov-card"><span class="asq-ov-value">' +
+            (next ? next + ' 月龄' : '已覆盖') + '</span><span class="asq-ov-label">下次建议</span></div>';
+}
+
+/** 五领域得分随月龄的变化曲线。只有一次记录时只画点，并提示多筛几次才看得出趋势。 */
+function renderAsqTrend(records) {
+    const card = document.getElementById('asqTrendCard');
+    const canvas = document.getElementById('asqTrendChart');
+    const note = document.getElementById('asqTrendNote');
+    if (!card || !canvas) return;
+    if (!records || records.length === 0) { card.style.display = 'none'; return; }
+    card.style.display = '';
+
+    const fields = [
+        { key: 'communication_score',   color: '#FF8A5B' },
+        { key: 'gross_motor_score',     color: '#4CAF84' },
+        { key: 'fine_motor_score',      color: '#5B8DEF' },
+        { key: 'problem_solving_score', color: '#C77DFF' },
+        { key: 'personal_social_score', color: '#F2A65A' },
+    ];
+    const rows = records.slice().sort((a, b) => (a.age_months || 0) - (b.age_months || 0));
+
+    // 先确保卡片可见再量尺寸：canvas 在 display:none 时宽高是 0，画了也是空白
+    const fit = fitCanvas(canvas, 200);
+    if (!fit) return;
+    const ctx = fit.ctx, W = fit.W, H = fit.H;
+    ctx.clearRect(0, 0, W, H);
+
+    const padL = 28, padR = 10, padT = 12, padB = 20;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+
+    let maxV = 0;
+    rows.forEach(r => fields.forEach(f => { maxV = Math.max(maxV, Number(r[f.key]) || 0); }));
+    maxV = Math.max(5, Math.ceil(maxV / 5) * 5);
+
+    // 横向网格 + Y 轴刻度
+    ctx.lineWidth = 1;
+    ctx.font = '10px sans-serif';
+    for (let i = 0; i <= 4; i++) {
+        const y = padT + plotH * i / 4;
+        ctx.strokeStyle = '#F0E4DC';
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+        ctx.fillStyle = '#B5A8A0';
+        ctx.textAlign = 'right';
+        ctx.fillText(String(Math.round(maxV * (4 - i) / 4)), padL - 4, y + 3);
+    }
+
+    const n = rows.length;
+    const xAt = i => n === 1 ? padL + plotW / 2 : padL + plotW * i / (n - 1);
+    const yAt = v => padT + plotH * (1 - (Number(v) || 0) / maxV);
+
+    fields.forEach(f => {
+        ctx.strokeStyle = f.color;
+        ctx.fillStyle = f.color;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        rows.forEach((r, i) => {
+            const x = xAt(i), y = yAt(r[f.key]);
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        rows.forEach((r, i) => {
+            ctx.beginPath();
+            ctx.arc(xAt(i), yAt(r[f.key]), 2.5, 0, Math.PI * 2);
+            ctx.fill();
+        });
+    });
+
+    // X 轴月龄标签：点数多时稀化，免得挤成一团
+    ctx.fillStyle = '#B5A8A0';
+    ctx.textAlign = 'center';
+    const step = Math.max(1, Math.ceil(n / 6));
+    rows.forEach((r, i) => {
+        if (i % step !== 0 && i !== n - 1) return;
+        ctx.fillText(r.age_months + 'm', xAt(i), H - 6);
+    });
+
+    if (note) {
+        note.textContent = n === 1
+            ? '目前只有一次筛查，多筛查几次就能看出各领域的变化趋势。'
+            : '';
+    }
 }
 
 function showAsqModal() {

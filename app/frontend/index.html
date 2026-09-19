@@ -173,7 +173,7 @@
             <section class="page" id="page-record">
                 <div class="hub-header">
                     <h3 class="section-title">记录</h3>
-                    <p class="hub-desc">喂养、睡眠、健康等日常记录，点击进入对应记录</p>
+                    <p class="hub-desc">喂养、睡眠、发育、生活，宝宝的各种数据都从这录</p>
                 </div>
                 <div class="hub-grid" id="hub-record"></div>
             </section>
@@ -182,7 +182,7 @@
             <section class="page" id="page-growth-hub">
                 <div class="hub-header">
                     <h3 class="section-title">成长</h3>
-                    <p class="hub-desc">生长曲线、睡眠作息分析与各阶段评估报告（只负责看，录入请到「记录」）</p>
+                    <p class="hub-desc">曲线、分析、节律与阶段报告。这一栏只看结果，录入请到「记录」</p>
                 </div>
                 <div class="hub-grid" id="hub-growth"></div>
             </section>
@@ -569,13 +569,21 @@
             </section>
 
             <!-- 成长成就页面（原「里程碑」与「第一次」是同一张 milestones 表的两个界面，
-                 后者只加了 is_first 过滤 → 合并成一个入口。2026-09-19 按定位从成长栏
-                 移到记录栏：它是要你填表的记录功能，不是报表。） -->
+                 后者只加了 is_first 过滤 → 合并成一个入口）。
+                 2026-09-19 定稿：这个功能拆两半 —— 记录栏进 = 本形态，带表单可录入；
+                 成长栏进 = 'milestone-review'（只读回顾），复用本 section 并挂 .only-view。
+                 别在这两处各建一个 section，会撞 DOM id。映射见 app.js 的 READONLY_ALIAS。 -->
             <section class="page" id="page-milestones">
                 <div class="record-page-header">
-                    <h3 class="section-title">成长成就</h3>
+                    <h3 class="section-title" id="milestonesPageTitle">成长成就</h3>
                     <button class="btn btn-primary btn-sm" id="addMilestoneBtn">＋ 添加</button>
                 </div>
+                <!-- 只在只读形态（.only-view）显示。空数据时列表里有提示，
+                     但有数据时用户同样需要知道"要改去哪改"。 -->
+                <p class="only-view-hint">这是回顾视图。要添加或修改，请到「记录 → 成长成就」。</p>
+                <!-- 回顾形态的成就概览：既然独立成一个"看"的页面，就该有汇总，
+                     而不是把记录页那份列表原样搬过来。只在 .only-view 下渲染。 -->
+                <div class="milestone-overview" id="milestoneOverview"></div>
                 <div class="milestones-intro-card">
                     <div class="milestones-intro-title">宝宝第一次</div>
                     <p>记录宝宝成长中的每一个重要时刻，点击下方标签可快速添加。</p>
@@ -1103,6 +1111,20 @@
         <p>ASQ-3（年龄与阶段问卷）是标准化的发育筛查工具，涵盖沟通、大运动、精细运动、解决问题、个人-社交五大领域。</p>
         <p class="asq-info-note">建议筛查月龄：2、4、6、8、10、12、14、16、18、20、22、24、27、30、33、36个月</p>
     </div>
+    <!-- 概览（筛查次数 / 最近结论 / 下次建议）与五领域趋势：无记录时由 JS 隐藏 -->
+    <div class="asq-overview" id="asqOverview"></div>
+    <div class="asq-trend-card" id="asqTrendCard">
+        <h4 class="asq-trend-title">五领域发展趋势</h4>
+        <div class="asq-legend">
+            <span><i style="background:#FF8A5B"></i>沟通</span>
+            <span><i style="background:#4CAF84"></i>大运动</span>
+            <span><i style="background:#5B8DEF"></i>精细运动</span>
+            <span><i style="background:#C77DFF"></i>解决问题</span>
+            <span><i style="background:#F2A65A"></i>个人社交</span>
+        </div>
+        <canvas id="asqTrendChart" width="700" height="200"></canvas>
+        <p class="asq-trend-note" id="asqTrendNote"></p>
+    </div>
     <div class="asq-list" id="asqList">
         <p class="empty-tip">暂无筛查记录</p>
     </div>
@@ -1551,6 +1573,15 @@
             <label class="settings-field-label" for="notifyPushplus">PushPlus Token</label>
             <input type="text" id="notifyPushplus" class="settings-input" placeholder="你的 PushPlus Token">
         </div>
+        <!-- 下面两项后端一直支持（在 CONFIG_KEYS 里），只是设置页没暴露出来 -->
+        <div class="settings-field">
+            <label class="settings-field-label" for="notifyPushplusTopic">PushPlus 群组编码（可选）</label>
+            <input type="text" id="notifyPushplusTopic" class="settings-input" placeholder="留空推给自己；填群组编码则推到群组">
+        </div>
+        <div class="settings-field">
+            <label class="settings-field-label" for="notifyTitlePrefix">推送标题前缀（可选）</label>
+            <input type="text" id="notifyTitlePrefix" class="settings-input" placeholder="如「育儿宝」，多宝宝时便于区分">
+        </div>
 
         <div class="settings-group-title">勿扰模式</div>
         <div class="settings-row">
@@ -1605,6 +1636,11 @@
                 <input type="checkbox" id="notifyVaccineEnabled">
                 <span class="toggle-slider"></span>
             </label>
+        </div>
+        <!-- 后端 vaccine_reminder_days 支持 1-60 天，范围与 _INT_RANGES 一致 -->
+        <div class="settings-field">
+            <label class="settings-field-label" for="notifyVaccineDays">疫苗提前几天提醒</label>
+            <input type="number" id="notifyVaccineDays" class="settings-input" value="3" min="1" max="60" step="1">
         </div>
 
         <div class="settings-actions">

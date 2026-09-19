@@ -43,3 +43,6 @@ _*.json
 secret_key
 .env
 .env.local
+
+# 会话临时产物：离线预览服务、DOM 探针、截图输出（用完即弃，不进仓库）
+.workbuddy/tmp/

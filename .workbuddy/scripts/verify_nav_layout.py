@@ -2,11 +2,17 @@
 # -*- coding: utf-8 -*-
 """导航分层与「系统诊断」板块的静态校验。
 
-背景（2026-09-19 用户定的规则，同日二次修正）：
-  1. 记录栏只放「逐条录入」的记录功能；成长栏放「看结果」的报表与回顾视图。
-     注意：**带＋添加按钮不等于必须放记录栏** —— 「成长成就」能录入，但它本质是
-     宝宝成长历程的回顾/报表，2026-09-19 用户二次修正后与「时间线」一起归成长栏。
-  2. 应用信息 / 存储 / 数据库健康 / 日志 / 异常记录，统一收在
+背景（2026-09-19 用户定的规则，当日迭代两轮到定稿）：
+  1. 记录栏只放「往里填数据」的录入入口；成长栏只放「看结果」的报表与回顾视图。
+     **一个功能横跨两边时拆两半**：录的那半归记录栏，看的那半归成长栏，各栏各一个入口。
+        · 身高体重(录)          ↔ 成长曲线(看)
+        · 睡眠记录(录)          ↔ 睡眠分析(看)
+        · 成长成就(录 milestones) ↔ 成长回顾(看 milestone-review，复用同一个 section)
+  2. **「带＋添加按钮 ≠ 归记录栏」这条启发式已废弃**（同日上午定、下午推翻）。
+     判定标准是「这块是填表，还是看结果」，不是「有没有添加按钮」。
+     出牙/囟门/飞跃期这几个页面主体就是填表（图表只是顺带看一眼），所以整个留在记录栏。
+  3. 两栏内部按小组收纳（记录栏 6 组 / 成长栏 4 组），宫格渲染时插 `.hub-group-title`。
+  4. 应用信息 / 存储 / 数据库健康 / 日志 / 异常记录，统一收在
      设置页的「系统诊断」一个板块里，不散落别处。
 
 这些约定靠人眼很容易在后续迭代中失守，固化成脚本。
@@ -23,6 +29,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 JS_PATH = os.path.join(ROOT, "app", "frontend", "js", "app.js")
 HTML_PATH = os.path.join(ROOT, "app", "frontend", "index.html")
+CSS_PATH = os.path.join(ROOT, "app", "frontend", "css", "main.css")
 STORAGE_PATH = os.path.join(ROOT, "app", "backend", "blueprints", "storage.py")
 CONSTANTS_PATH = os.path.join(ROOT, "app", "backend", "constants.py")
 
@@ -43,12 +50,13 @@ def read(path):
 
 js = read(JS_PATH)
 html = read(HTML_PATH)
+css = read(CSS_PATH)
 storage = read(STORAGE_PATH)
 constants = read(CONSTANTS_PATH)
 
 
 def hub_block(name):
-    """截出 NAV_HUBS 里某个 hub 的 items 段（到下一个 hub: 为止）。"""
+    """截出 NAV_HUBS 里某个 hub 的段（到下一个 hub: 为止）。"""
     start = js.index("hub: '%s'" % name)
     nxt = js.find("hub: '", start + 5)
     return js[start: nxt if nxt != -1 else len(js)]
@@ -58,13 +66,19 @@ def pages_in(block):
     return re.findall(r"page:\s*'([a-z0-9\-]+)'", block)
 
 
-print("=== 一、记录栏：只放逐条录入的记录 ===")
+def titles_in(block):
+    return re.findall(r"title:\s*'([^']*)'", block)
+
+
+print("=== 一、记录栏：只放往里填数据的录入入口 ===")
 rec = hub_block("record")
 rec_pages = pages_in(rec)
 chk("记录栏含身高体重的「录」入口 (growth)", "growth" in rec_pages)
+chk("记录栏不含成长栏的曲线形态 (growth-chart)", "growth-chart" not in rec_pages)
 chk("记录栏不再是安抚音效的入口 (sounds)", "sounds" not in rec_pages)
-# 2026-09-19 用户二次修正：成长成就/时间线属「回顾/报表」，已从记录栏移到成长栏
-chk("记录栏已无「成长成就」(milestones)", "milestones" not in rec_pages)
+# 成长成就拆两半：带表单的「录」这半归记录栏，只读的「回顾」那半在成长栏
+chk("记录栏含「成长成就」录入入口 (milestones)", "milestones" in rec_pages)
+chk("记录栏不含只读回顾页 (milestone-review)", "milestone-review" not in rec_pages)
 chk("记录栏已无「时间线」(timeline)", "timeline" not in rec_pages)
 for p in ["feeding", "pumping", "sleep-record", "diaper-record", "solidfood",
           "tummytime", "diaper-price", "diary", "photos", "leap",
@@ -72,17 +86,52 @@ for p in ["feeding", "pumping", "sleep-record", "diaper-record", "solidfood",
     chk("记录栏保留 %s" % p, p in rec_pages)
 
 print()
-print("=== 二、成长栏：报表与回顾视图 ===")
+print("=== 二、成长栏：只放看结果的报表与回顾视图 ===")
 gro = hub_block("growth")
 gro_pages = pages_in(gro)
-for p in ["growth", "milestones", "timeline", "sleep-analysis", "bmi", "asq",
-          "pattern", "reports"]:
+for p in ["growth-chart", "milestone-review", "timeline", "sleep-analysis", "bmi",
+          "asq", "pattern", "reports"]:
     chk("成长栏含 %s" % p, p in gro_pages)
+chk("成长栏不含录入形态的成长成就 (milestones)",
+    "milestones" not in gro_pages)
+chk("成长栏不含录入形态的身高体重 (growth)",
+    "growth" not in gro_pages)
 chk("成长栏没有混进逐条录入页",
     not any(p in gro_pages for p in ["feeding", "diaper-record", "sleep-record",
                                      "fontanelle", "teeth"]))
 chk("已删的 firsts 页面没有复活（两栏都无）",
     "firsts" not in gro_pages and "firsts" not in rec_pages)
+
+# 一个 page id 出现在两栏 = 两栏进的是同一个页面，形态根本分不开（假拆分）。
+# 真拆分的做法是给「看」的那半单独一个 page id，再登记进
+# GROWTH_TAB_PAGES / READONLY_ALIAS。这条断言就是防假拆分复发的。
+_dup = sorted(set(rec_pages) & set(gro_pages))
+chk("两栏不共用任何 page id（共用即为假拆分）%s"
+    % ("" if not _dup else "，重复：" + "、".join(_dup)), not _dup)
+
+print()
+print("=== 二之二、三对拆分各自的落点 ===")
+chk("身高体重(录) → page-growth 落 records Tab",
+    re.search(r"case 'growth':[\s\S]{0,400}activateGrowthTab\('records'\)", js) is not None)
+chk("成长曲线(看) → growth-chart 别名落 who-chart Tab",
+    re.search(r"'growth-chart':\s*\{\s*host:\s*'growth',\s*tab:\s*'who-chart'\s*\}", js) is not None)
+chk("睡眠分析(看) → sleep-analysis 别名落同名 Tab",
+    re.search(r"'sleep-analysis':\s*\{\s*host:\s*'growth',\s*tab:\s*'sleep-analysis'\s*\}", js) is not None)
+chk("成长成就(录) / 成长回顾(看) → 同一 section 靠 only-view 切形态",
+    re.search(r"'milestone-review':\s*\{\s*host:\s*'milestones',\s*cls:\s*'only-view'\s*\}", js)
+    is not None)
+chk("三个「看」的别名都登记了返回目标（回成长宫格）",
+    all(("'%s': 'growth-hub'" % a) in js
+        for a in ["sleep-analysis", "growth-chart"]))
+chk("切宝宝能刷新成长曲线（loadPageData 认 growth-chart）",
+    "case 'growth-chart':" in js)
+chk("别名页会重算底部 tab 高亮（别沿用宿主算出来的）",
+    "const aliasHub = HUB_OF[page]" in js)
+# 用户 2026-09-19 明确「这三个不管」：页面里虽有图，但主体是填表/档案，
+# 不给它们加成长栏只读入口。以后别手滑加进去。
+for p in ["fontanelle", "tummytime", "health"]:
+    chk("有意不拆的 %s 仍只在记录栏" % p,
+        p in rec_pages and p not in gro_pages)
 
 print()
 print("=== 三、系统栏：工具与设置 ===")
@@ -160,6 +209,100 @@ for r in ["/api/admin/logs/stats", "/api/admin/logs/errors", "/api/admin/logs/tr
           "/api/admin/logs/files/clear"]:
     chk("admin_logs 路由存在 %s" % r, r in read(os.path.join(
         ROOT, "app", "backend", "blueprints", "admin_logs.py")))
+
+print()
+print("=== 十、两栏分组与「只读别名」机制 ===")
+chk("NAV_HUBS 改用 groups 收纳（不再是平铺 items）", "groups: [" in js)
+chk("旧的平铺 items 遍历已清除", "(g.items || []).forEach" not in js)
+chk("hubItems() 摊平 groups，HUB_OF/PAGE_LABELS 共用一份",
+    "function hubItems(" in js
+    and "hubItems(g).forEach(it => { HUB_OF" in js
+    and "hubItems(g).forEach(it => { PAGE_LABELS" in js)
+chk("宫格渲染会插分组标题（JS + CSS 都在）",
+    "hub-group-title" in js and ".hub-group-title {" in css)
+chk("组名与图标同行（.hub-group flex，不做跨整行标题）",
+    "hub-group-items" in js and ".hub-group-items {" in css)
+chk("桌面端没有再把图标按整屏均分（不许出现 hub-grid 的 grid-template-columns）",
+    not re.search(r"\.hub-grid\s*\{[^}]*grid-template-columns", css))
+chk("记录栏 6 个分组标题",
+    titles_in(rec) == ['喂养', '睡眠', '日常', '发育', '生活', '健康'])
+chk("成长栏 4 个分组标题",
+    titles_in(gro) == ['生长', '睡眠', '回顾', '发育'])
+chk("只读别名表存在", "const READONLY_ALIAS =" in js)
+chk("成长回顾复用 page-milestones 的只读形态",
+    re.search(r"READONLY_ALIAS = \{\s*'milestone-review':\s*\{\s*host:\s*'milestones'", js)
+    is not None)
+chk("milestone-review 没有另建 section（否则撞 DOM id）",
+    'id="page-milestone-review"' not in html)
+chk("switchPage 用别名换算 section id",
+    "const sectionId = alias ? alias.host : page" in js)
+chk("switchPage 按进来的入口切形态 class",
+    "pageEl.classList.toggle(cfg.cls" in js)
+chk("loadPageData 认只读别名页", "case 'milestone-review':" in js)
+chk("renderMilestones 有只读分支（不绑编辑点击）",
+    "if (review) return;" in js and "isMilestoneReview()" in js)
+chk("只读形态 CSS 存在", "#page-milestones.only-view" in css)
+chk("里程碑页标题有 id，供两种形态切文案", 'id="milestonesPageTitle"' in html)
+
+print()
+print("=== 十一、每个入口都有落点（防死入口白屏）===")
+# NAV_HUBS 里每个 item 的 page，要么有 #page-xxx，要么在
+# GROWTH_TAB_PAGES / HEALTH_TAB_PAGES / READONLY_ALIAS 里。
+# 少一个就会点下去白屏 —— 这是本项目最容易复发的一类 bug。
+_nav_start = js.index("const NAV_HUBS = [")
+_nav_end = js.index("\n];", _nav_start)
+nav_block = js[_nav_start:_nav_end]
+html_pages = set(re.findall(r'id="page-([a-z0-9\-]+)"', html))
+alias_keys = set(re.findall(r"'([a-z0-9\-]+)':\s*\{\s*host:", js))
+nav_entries = re.findall(r"\{ page: '([a-z0-9\-]+)', label: '([^']*)'", nav_block)
+missing = []
+for p, lbl in nav_entries:
+    if p in html_pages or p in alias_keys:
+        continue
+    if p not in missing:
+        missing.append("%s(%s)" % (p, lbl))
+chk("全部 %d 个入口都有 section 或别名落点%s"
+    % (len(nav_entries), "" if not missing else "，缺：" + "、".join(missing)),
+    not missing)
+chk("别名页都没有独立 section（会撞 DOM id）",
+    all(('id="page-%s"' % a) not in html for a in alias_keys))
+chk("switchPage / renderRelatedLinks 都做了别名换算",
+    "const sectionId = alias ? alias.host : page" in js
+    and "const hostPage = alias ? alias.host : page" in js)
+
+print()
+print("=== 十二、「相关功能」链接的完整性 ===")
+# PAGE_LINKS 引用的 id 必须都能取到中文名，否则按钮上会直接显示英文 page id。
+# 2026-09-19 深审抓到：健康档案页的相关功能冒出了 temperature / med-reminder / vaccines
+# —— 它们已并入 Tab、不在 NAV_HUBS 里，PAGE_LABELS 取不到 key 就 fallback 成 id 本身。
+_pl = js[js.index('const PAGE_LINKS'):]
+_pl = _pl[:_pl.index('\n};')]
+_targets = set(re.findall(r"'([a-z0-9\-]+)'", _pl))
+
+
+def page_links_of(page_id):
+    """取 PAGE_LINKS 里某一项配置的链接文本（没配返回空串）。"""
+    m = re.search(r"^\s*'?%s'?:\s*\[([^\]]*)\]" % re.escape(page_id), _pl, re.M)
+    return m.group(1) if m else ''
+
+_nav_ids = set(re.findall(r"page: '([a-z0-9\-]+)'", nav_block))
+_alias_ids = set(re.findall(r"'([a-z0-9\-]+)':\s*\{\s*host:", js))
+_lb = js[js.index('const PAGE_LABELS'):]
+_lb = _lb[:_lb.index('function renderRelatedLinks')]
+_manual_ids = set(re.findall(r"'?([a-z0-9\-]+)'?:\s*'[^']+'", _lb))
+_known = _nav_ids | _alias_ids | _manual_ids
+_missing = sorted(t for t in _targets if t not in _known)
+chk("PAGE_LINKS 引用的 id 都有中文名（否则按钮显示英文 id）%s"
+    % ("" if not _missing else "，缺：" + "、".join(_missing)), not _missing)
+chk("renderRelatedLinks 认全三种别名表（漏认会残留上一个页面的链接）",
+    "READONLY_ALIAS[page] || GROWTH_TAB_PAGES[page] || HEALTH_TAB_PAGES[page]" in js)
+chk("别名页优先用自己的链接配置（否则会显示指向自己的按钮）",
+    "PAGE_LINKS[page] || PAGE_LINKS[hostPage]" in js)
+chk("拆开的两半互相指路（录↔看）",
+    "milestone-review" in page_links_of("milestones")
+    and "milestones" in page_links_of("milestone-review")
+    and "growth-chart" in page_links_of("growth")
+    and "growth" in page_links_of("growth-chart"))
 
 print()
 print("通过" if ok else "存在失败项")

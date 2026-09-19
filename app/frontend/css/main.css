@@ -1187,12 +1187,91 @@ body {
 .hub-header .section-title { font-size: 19px; }
 .hub-desc { margin: 4px 0 0; font-size: 13px; color: var(--text-light); }
 .hub-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
-    gap: 12px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
     padding: 8px 2px 16px;
-    align-content: start;
 }
+
+/* 一组 = 组名在左 + 图标在右，同一行。
+   组名不做成跨整行的标题：那会让每组多吃一行高度（记录栏 6 组就是 6 行），
+   而且组内只有 1-3 个图标时右侧会空一大片 —— 桌面端容器 999px 宽、
+   auto-fill 能排 9 列，每组只占前 3 列，看着像没排满。
+   图标容器用 flex、图标给固定宽度，宽度随内容走，就不会被均分拉伸。 */
+.hub-group {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+}
+.hub-group-title {
+    flex: 0 0 54px;
+    padding-top: 15px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    line-height: 1;
+}
+.hub-group-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 10px;
+    min-width: 0;
+}
+.hub-group-items .nav-item { width: 84px; }
+
+/* 成长成就的「只读回顾」形态：从成长栏进来时 switchPage 会给 #page-milestones
+   挂 .only-view，这里把录入入口全藏掉，只留筛选和列表。
+   用 id 限定，避免这条规则将来误伤别处。 */
+#page-milestones.only-view #addMilestoneBtn,
+#page-milestones.only-view .milestones-intro-card { display: none !important; }
+#page-milestones.only-view .milestone-card { cursor: default; }
+
+/* 只读形态的说明行：默认藏着，挂 .only-view 才出现 */
+#page-milestones .only-view-hint { display: none; }
+#page-milestones.only-view .only-view-hint {
+    display: block;
+    margin: 0 2px 12px;
+    font-size: 12px;
+    color: var(--text-light);
+}
+
+/* 回顾形态的成就概览：三张数字卡 + 分类分布条。
+   默认藏着（记录形态不需要），挂 .only-view 才出。 */
+#page-milestones .milestone-overview { display: none; }
+#page-milestones.only-view .milestone-overview { display: block; margin-bottom: 16px; }
+
+.mo-cards { display: flex; gap: 8px; margin-bottom: 12px; }
+.mo-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 6px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+}
+.mo-value { font-size: 20px; font-weight: 600; line-height: 1; color: var(--primary-strong); }
+.mo-label { font-size: 11px; color: var(--text-light); }
+
+.mo-bars { display: flex; flex-direction: column; gap: 6px; }
+.mo-bar-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.mo-bar-label { flex: 0 0 34px; color: var(--text-secondary); }
+.mo-bar-track {
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border-color);
+    overflow: hidden;
+}
+.mo-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--primary-color), var(--primary-dark));
+}
+.mo-bar-num { flex: 0 0 22px; text-align: right; color: var(--text-secondary); }
 
 /* 旧抽屉面板不再使用，强制隐藏（宫格改由各 hub 页面承载） */
 .nav-panels { display: none !important; }
@@ -1535,12 +1614,17 @@ body {
         font-size: 13px;
     }
 
-    /* 宫格在桌面更舒展 */
+    /* 宫格在桌面更舒展：图标大一点、组间距松一点。
+       这里别再写 grid-template-columns —— 图标容器已是 flex 定宽，
+       再指定网格列会把布局拉回「按整屏宽度均分」，右侧就会空一大片。 */
     .hub-grid {
-        grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-        gap: 14px 10px;
+        gap: 18px;
         padding: 12px 4px 20px;
     }
+    .hub-group { gap: 18px; }
+    .hub-group-title { flex-basis: 64px; padding-top: 18px; font-size: 14px; }
+    .hub-group-items { gap: 16px 12px; }
+    .hub-group-items .nav-item { width: 96px; }
 
     /* 内容区留白舒适 */
     .app-content {
@@ -3219,13 +3303,18 @@ body {
 
 .milestones-categories {
     display: flex;
+    /* 7 个标签在手机上排不下。原来靠 overflow-x 横滑，但"第一次"这种有用的筛选
+       正好被切在屏幕外，用户根本不知道它存在 → 改成换行，全部可见。 */
+    flex-wrap: wrap;
     gap: 6px;
     margin-bottom: 16px;
-    overflow-x: auto;
     padding-bottom: 4px;
 }
 
 .milestone-cat-btn {
+    /* 别被 flex 容器压扁：不加这条最后一个按钮会显示不全（"第一次"只剩半个），
+       而容器虽然有 overflow-x:auto，被压扁的按钮并不会触发滚动。 */
+    flex: 0 0 auto;
     padding: 6px 12px;
     border: 1px solid var(--border-color);
     border-radius: 18px;
@@ -5353,6 +5442,39 @@ body {
     color: #1976D2;
     margin-top: 4px;
 }
+
+/* 发育筛查的概览三卡 + 五领域趋势（原页面只有"说明 + 列表"，太单薄） */
+.asq-overview { display: flex; gap: 8px; margin-bottom: 14px; }
+.asq-ov-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 6px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+}
+.asq-ov-value { font-size: 17px; font-weight: 600; line-height: 1.2; color: var(--primary-strong); text-align: center; }
+/* 顺序放在 .asq-ov-value 之后：同优先级，后者生效 */
+.asq-ov-good { color: var(--success-color); }
+.asq-ov-warn { color: var(--warning-color); }
+.asq-ov-alert { color: var(--danger-color); }
+.asq-ov-label { font-size: 11px; color: var(--text-light); }
+
+.asq-trend-card {
+    margin-bottom: 16px;
+    padding: 14px 12px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+}
+.asq-trend-title { margin: 0 0 8px; font-size: 14px; color: var(--text-primary); }
+.asq-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; font-size: 11px; color: var(--text-secondary); }
+.asq-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+.asq-trend-note { margin: 8px 0 0; font-size: 12px; color: var(--text-light); }
+.asq-trend-note:empty { display: none; }
 
 .asq-list {
     display: flex;
