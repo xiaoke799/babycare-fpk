@@ -37,6 +37,25 @@ for k in ['appname=babycare-fpk', 'version=0.0.1', 'platform=all',
           'desktop_applaunchname=babycare-fpk.main']:
     chk('manifest 含 ' + k, ''.join(k.split()) in mf_flat)
 
+# ---- 回归门禁：manifest 值不能被 INI 注释符 `;` 截断（2026-09-19 事故）----
+# fnpack 打包时把行内 `;` 当注释，desc 里写 `style="width:100%;border-radius..."`
+# 会被砍成半个 `<img src="..." style="width:100%`，应用中心解析失败 → 简介图不显示。
+mf_fields = {}
+for _ln in mf.splitlines():
+    if not _ln.strip() or _ln.lstrip().startswith((';', '#')):
+        continue
+    if '=' in _ln:
+        _k, _, _v = _ln.partition('=')
+        mf_fields.setdefault(_k.strip(), _v)
+pkg_desc = mf_fields.get('desc', '')
+chk('包内 desc 未被截断（3 张简介图都在）', pkg_desc.count('<img') == 3)
+chk('包内 desc 标签闭合（"<" 与 ">" 数量一致）',
+    pkg_desc.count('<') == pkg_desc.count('>') and pkg_desc.count('<') > 0)
+chk('包内 manifest 所有字段值都不含 ";"（否则会被当行内注释截断）',
+    not any(';' in _v for _v in mf_fields.values()))
+chk('包内 manifest 无游离注释行（截断残渣）',
+    not any(_ln.lstrip().startswith(';') for _ln in mf.splitlines()))
+
 inn = outer.extractfile('app.tgz').read()
 it = tarfile.open(fileobj=io.BytesIO(inn), mode='r:*')
 print('内层条目:', len(it.getnames()))
