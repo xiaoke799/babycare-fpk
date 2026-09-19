@@ -34,9 +34,10 @@ LEAP_NUMBER_MIN, LEAP_NUMBER_MAX = 1, 10        # Wonder Weeks 共 10 次飞跃
 def list_milestones(baby_id):
     """获取里程碑列表。
 
-    里程碑与「第一次」共用同一张表，靠 is_first 区分：
-    - 不传参数：返回全部（里程碑页使用）
-    - first=1：只返回「第一次」成就（第一次页使用）
+    里程碑与「第一次」共用同一张表 milestones，靠 is_first 区分。
+    2026-09-19 起「第一次」不再是一个独立页面，已被并进「成长成就」页
+    当作一个分类筛选（前端拉全量后本地按 is_first 过滤，不再传 first）；
+    这里的 first=1 仅作向后兼容保留（老备份恢复 / 老调用方）。
     """
     db = get_db()
     only_first = request.args.get("first", "")
