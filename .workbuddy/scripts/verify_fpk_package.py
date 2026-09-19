@@ -54,7 +54,9 @@ chk('包内 desc 已改为纯文字（不含 <img>，避免被详情页简介框
     pkg_desc.count('<img') == 0)
 chk('包内 desc 标签闭合（"<" 与 ">" 数量一致）',
     pkg_desc.count('<') == pkg_desc.count('>') and pkg_desc.count('<') > 0)
-chk('包内 desc 含项目主页链接', 'gitee.com/xiaoke799/babycare-fpk' in pkg_desc)
+chk('包内 desc 含项目主页链接（gitee / github 任一）',
+    'gitee.com/xiaoke799/babycare-fpk' in pkg_desc
+    or 'github.com/xiaoke799/babycare-fpk' in pkg_desc)
 chk('包内 manifest 所有字段值都不含 ";"（否则会被当行内注释截断）',
     not any(';' in _v for _v in mf_fields.values()))
 chk('包内 manifest 无游离注释行（截断残渣）',
