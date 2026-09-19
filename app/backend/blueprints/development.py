@@ -34,9 +34,10 @@ LEAP_NUMBER_MIN, LEAP_NUMBER_MAX = 1, 10        # Wonder Weeks 共 10 次飞跃
 def list_milestones(baby_id):
     """获取里程碑列表。
 
-    里程碑与「第一次」共用同一张表，靠 is_first 区分：
-    - 不传参数：返回全部（里程碑页使用）
-    - first=1：只返回「第一次」成就（第一次页使用）
+    里程碑与「第一次」共用同一张表 milestones，靠 is_first 区分。
+    2026-09-19 起「第一次」不再是一个独立页面，已被并进「成长成就」页
+    当作一个分类筛选（前端拉全量后本地按 is_first 过滤，不再传 first）；
+    这里的 first=1 仅作向后兼容保留（老备份恢复 / 老调用方）。
     """
     db = get_db()
     only_first = request.args.get("first", "")
@@ -96,8 +97,10 @@ def update_milestone(baby_id, record_id):
 def delete_milestone(baby_id, record_id):
     """删除里程碑"""
     db = get_db()
-    db.execute("DELETE FROM milestones WHERE id = ? AND baby_id = ?", (record_id, baby_id))
+    cur = db.execute("DELETE FROM milestones WHERE id = ? AND baby_id = ?", (record_id, baby_id))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({"success": False, "message": "里程碑不存在"}), 404
     return jsonify({"success": True, "message": "里程碑已删除"})
 
 
@@ -142,8 +145,10 @@ def add_asq_screening(baby_id):
 def delete_asq_screening(record_id):
     """删除ASQ筛查记录"""
     db = get_db()
-    db.execute("DELETE FROM asq_screenings WHERE id = ?", (record_id,))
+    cur = db.execute("DELETE FROM asq_screenings WHERE id = ?", (record_id,))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({"success": False, "message": "筛查记录不存在"}), 404
     return jsonify({"success": True, "message": "已删除"})
 
 
@@ -326,8 +331,10 @@ def add_checkup_record(baby_id):
 def delete_checkup_record(record_id):
     """删除体检记录"""
     db = get_db()
-    db.execute("DELETE FROM checkup_records WHERE id = ?", (record_id,))
+    cur = db.execute("DELETE FROM checkup_records WHERE id = ?", (record_id,))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({"success": False, "message": "体检记录不存在"}), 404
     return jsonify({"success": True, "message": "已删除"})
 
 

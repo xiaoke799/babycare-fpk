@@ -602,8 +602,10 @@ def add_activity_log():
 def delete_activity_log(log_id):
     """删除活动完成记录"""
     db = get_db()
-    db.execute('DELETE FROM activity_logs WHERE id = ?', (log_id,))
+    cur = db.execute('DELETE FROM activity_logs WHERE id = ?', (log_id,))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({'success': False, 'message': '活动记录不存在'}), 404
     return jsonify({'success': True, 'message': '记录已删除'})
 
 

@@ -153,8 +153,10 @@ def add_vaccine(baby_id):
 def delete_vaccine(vaccine_id):
     """删除疫苗记录"""
     db = get_db()
-    db.execute('DELETE FROM vaccine_details WHERE id = ?', (vaccine_id,))
+    cur = db.execute('DELETE FROM vaccine_details WHERE id = ?', (vaccine_id,))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({'success': False, 'message': '疫苗记录不存在'}), 404
     return jsonify({'success': True, 'message': '已删除'})
 
 
@@ -502,8 +504,10 @@ def vaccine_detail_create(baby_id):
 def vaccine_detail_delete(vaccine_id):
     """删除疫苗记录"""
     db = get_db()
-    db.execute('DELETE FROM vaccine_details WHERE id = ?', (vaccine_id,))
+    cur = db.execute('DELETE FROM vaccine_details WHERE id = ?', (vaccine_id,))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({'success': False, 'message': '疫苗记录不存在'}), 404
     return jsonify({'success': True, 'message': '疫苗记录已删除'})
 
 

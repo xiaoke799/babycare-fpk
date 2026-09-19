@@ -3535,7 +3535,9 @@ function deleteRecord(type, id) {
             }
             loadDashboard();
         } else {
-            showToast.error('删除失败');
+            // 后端对「记录不存在 / 不属于该宝宝」返回 404 + message，优先透出它，
+            // 否则用户只会看到笼统的「删除失败」，不知道是自己重复点了删除
+            showToast.error((res && res.message) || '删除失败');
         }
     });
 }

@@ -34,6 +34,10 @@ temp_wizard_test/
 test_data/
 *.bak
 *.log
+# 一次性脚本与临时产物（下划线前缀）：避免 `git add -A` 误提交
+_*.py
+_*.txt
+_*.json
 
 # 密钥和本地配置
 secret_key

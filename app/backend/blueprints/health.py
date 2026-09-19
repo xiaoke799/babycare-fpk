@@ -163,8 +163,10 @@ def add_temperature(baby_id):
 def delete_temperature(temp_id):
     """删除体温记录"""
     db = get_db()
-    db.execute('DELETE FROM temperature_records WHERE id = ?', (temp_id,))
+    cur = db.execute('DELETE FROM temperature_records WHERE id = ?', (temp_id,))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({'success': False, 'message': '体温记录不存在'}), 404
     return jsonify({'success': True, 'message': '已删除'})
 
 
@@ -270,8 +272,10 @@ def add_medication(baby_id):
 def delete_medication(med_id):
     """删除用药记录"""
     db = get_db()
-    db.execute('DELETE FROM medication_records WHERE id = ?', (med_id,))
+    cur = db.execute('DELETE FROM medication_records WHERE id = ?', (med_id,))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({'success': False, 'message': '用药记录不存在'}), 404
     return jsonify({'success': True, 'message': '已删除'})
 
 
@@ -411,14 +415,16 @@ def update_tummytime_record(baby_id, record_id):
 @bp.route('/api/babies/<int:baby_id>/tummy-time/<int:record_id>', methods=['DELETE'])
 def delete_tummytime_record(baby_id, record_id):
     """删除趴卧训练记录"""
-    _delete_tummytime_row(record_id, baby_id)
+    if _delete_tummytime_row(record_id, baby_id) == 0:
+        return jsonify({'success': False, 'message': '记录不存在'}), 404
     return jsonify({'success': True, 'message': '已删除'})
 
 
 @bp.route('/api/tummy-time/<int:record_id>', methods=['DELETE'])
 def delete_tummy_time(record_id):
     """删除趴卧训练记录（旧版无 baby_id 的地址，保留兼容）"""
-    _delete_tummytime_row(record_id)
+    if _delete_tummytime_row(record_id) == 0:
+        return jsonify({'success': False, 'message': '记录不存在'}), 404
     return jsonify({'success': True, 'message': '已删除'})
 
 
@@ -502,8 +508,10 @@ def add_health_record(baby_id):
 def delete_health_record(baby_id, record_id):
     """删除健康记录"""
     db = get_db()
-    db.execute('DELETE FROM health_records WHERE id = ? AND baby_id = ?', (record_id, baby_id))
+    cur = db.execute('DELETE FROM health_records WHERE id = ? AND baby_id = ?', (record_id, baby_id))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({'success': False, 'message': '健康记录不存在'}), 404
     return jsonify({'success': True})
 
 
@@ -533,8 +541,10 @@ def add_allergy_test(baby_id):
 def delete_allergy_test(baby_id, record_id):
     """删除过敏测试记录"""
     db = get_db()
-    db.execute('DELETE FROM allergy_tests WHERE id = ? AND baby_id = ?', (record_id, baby_id))
+    cur = db.execute('DELETE FROM allergy_tests WHERE id = ? AND baby_id = ?', (record_id, baby_id))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({'success': False, 'message': '过敏测试记录不存在'}), 404
     return jsonify({'success': True})
 
 
@@ -624,8 +634,10 @@ def update_medication_reminder(baby_id, record_id):
 def delete_medication_reminder(baby_id, record_id):
     """删除用药提醒"""
     db = get_db()
-    db.execute('DELETE FROM medication_reminders WHERE id = ? AND baby_id = ?', (record_id, baby_id))
+    cur = db.execute('DELETE FROM medication_reminders WHERE id = ? AND baby_id = ?', (record_id, baby_id))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({'success': False, 'message': '用药提醒不存在'}), 404
     return jsonify({'success': True})
 
 

@@ -80,8 +80,10 @@ def list_growth_records(baby_id):
 def delete_growth_record(record_id):
     """删除成长记录"""
     db = get_db()
-    db.execute("DELETE FROM growth_records WHERE id = ?", (record_id,))
+    cur = db.execute("DELETE FROM growth_records WHERE id = ?", (record_id,))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({"success": False, "message": "成长记录不存在"}), 404
     return jsonify({"success": True, "message": "已删除"})
 
 

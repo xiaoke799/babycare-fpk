@@ -70,8 +70,10 @@ def add_baby():
 def delete_baby(baby_id):
     """删除宝宝及其所有记录（危险操作，仅管理员）"""
     db = get_db()
-    db.execute("DELETE FROM babies WHERE id = ?", (baby_id,))
+    cur = db.execute("DELETE FROM babies WHERE id = ?", (baby_id,))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({"success": False, "message": "宝宝不存在"}), 404
     return jsonify({"success": True, "message": "已删除"})
 
 

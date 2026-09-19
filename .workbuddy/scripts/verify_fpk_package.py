@@ -46,6 +46,9 @@ html = None
 js = None
 storage_py = None
 constants_py = None
+health_py = None
+development_py = None
+vaccines_py = None
 for m in it.getmembers():
     if not m.isfile():
         continue
@@ -61,6 +64,12 @@ for m in it.getmembers():
         storage_py = data.decode('utf-8')
     if m.name.endswith('backend/constants.py'):
         constants_py = data.decode('utf-8')
+    if m.name.endswith('backend/blueprints/health.py'):
+        health_py = data.decode('utf-8')
+    if m.name.endswith('backend/blueprints/development.py'):
+        development_py = data.decode('utf-8')
+    if m.name.endswith('backend/blueprints/vaccines.py'):
+        vaccines_py = data.decode('utf-8')
 
 print('带 shebang 但缺执行位:', noexec if noexec else '无')
 chk('内层带 shebang 脚本都有执行位', not noexec)
@@ -112,6 +121,20 @@ chk('包内 storage.py 含 /api/storage/app-info',
     bool(storage_py) and '/api/storage/app-info' in storage_py)
 chk('包内 constants.py 含 APP_VERSION',
     bool(constants_py) and 'APP_VERSION' in constants_py)
+
+# ---- 本轮：删除接口「假成功」守卫（2026-09-19）----
+print()
+print('=== 本轮（删除接口假成功守卫）===')
+chk('包内 health.py 已补 rowcount 守卫',
+    bool(health_py) and health_py.count('cur.rowcount == 0') >= 5)
+chk('包内 development.py 已补 rowcount 守卫',
+    bool(development_py) and development_py.count('cur.rowcount == 0') >= 3)
+chk('包内 vaccines.py 已补 rowcount 守卫',
+    bool(vaccines_py) and vaccines_py.count('cur.rowcount == 0') >= 2)
+chk('包内 health.py 趴卧删除已用上 helper 的返回值',
+    bool(health_py) and '_delete_tummytime_row(record_id, baby_id) == 0' in health_py)
+chk('app.js 删除失败会透出后端 message',
+    bool(js) and "showToast.error((res && res.message) || '删除失败')" in js)
 
 print()
 print('验货通过' if ok else '验货存在失败项')
