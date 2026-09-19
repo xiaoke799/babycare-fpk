@@ -6,6 +6,14 @@
 
 BabyCare (育儿宝) is a native NAS parenting app for the fnOS platform (by fnOS / 飞牛), designed for families running a fnOS NAS. It is **local-first**: all parenting data — growth records, feeding logs, diaries, photos — stays entirely on your own NAS. Nothing is uploaded to third-party clouds, so your family's parenting data remains a truly private digital space.
 
+## Screenshots
+
+![BabyCare · multi-baby management, feeding/sleep/diaper logging, medication reminders](docs/images/intro1.webp)
+
+![BabyCare · WHO growth curves, development milestones, clinic summary](docs/images/intro2.webp)
+
+![BabyCare · local-LLM AI Q&A, knowledge base and smart diary](docs/images/intro3.webp)
+
 ## Core Features
 
 ### 📊 Growth Records

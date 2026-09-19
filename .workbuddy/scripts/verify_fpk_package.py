@@ -48,9 +48,13 @@ for _ln in mf.splitlines():
         _k, _, _v = _ln.partition('=')
         mf_fields.setdefault(_k.strip(), _v)
 pkg_desc = mf_fields.get('desc', '')
-chk('包内 desc 未被截断（3 张简介图都在）', pkg_desc.count('<img') == 3)
+# 2026-09-19 复测结论：desc 里的 <img> 是能被渲染的，但**详情页简介框高度有限、会把长图裁掉**
+# （电脑端只露顶条、手机端几乎不可见），所以简介改为纯文字，图片移到 README 展示。
+chk('包内 desc 已改为纯文字（不含 <img>，避免被详情页简介框裁切）',
+    pkg_desc.count('<img') == 0)
 chk('包内 desc 标签闭合（"<" 与 ">" 数量一致）',
     pkg_desc.count('<') == pkg_desc.count('>') and pkg_desc.count('<') > 0)
+chk('包内 desc 含项目主页链接', 'gitee.com/xiaoke799/babycare-fpk' in pkg_desc)
 chk('包内 manifest 所有字段值都不含 ";"（否则会被当行内注释截断）',
     not any(';' in _v for _v in mf_fields.values()))
 chk('包内 manifest 无游离注释行（截断残渣）',

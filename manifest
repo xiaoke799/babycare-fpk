@@ -1,7 +1,7 @@
 appname=babycare-fpk
 version=0.0.1
 display_name=育儿宝
-desc=<p>育儿宝是一款部署在你自己的 NAS 上的本地优先育儿记录应用。支持多宝宝管理、WHO 生长曲线、喂奶/睡眠/尿布记录、里程碑、日记、知识库与看诊摘要，数据完全本地存储，无需依赖第三方云服务。</p><p>核心功能：多宝宝切换、喂养与睡眠尿布记录、生长曲线与里程碑、用药提醒、AI 育儿问答、看诊摘要，一站式照护宝宝成长。</p><p>界面预览</p><p><img src="https://gitee.com/xiaoke799/babycare-fpk/raw/master/docs/images/intro1.webp" style="width:100%"></p><p><img src="https://gitee.com/xiaoke799/babycare-fpk/raw/master/docs/images/intro2.webp" style="width:100%"></p><p><img src="https://gitee.com/xiaoke799/babycare-fpk/raw/master/docs/images/intro3.webp" style="width:100%"></p>
+desc=<p>育儿宝是部署在你自己的 NAS 上的本地优先育儿记录应用：多宝宝管理、WHO 生长曲线、喂奶/睡眠/尿布记录、成长里程碑、育儿日记与知识库，数据全部保存在你的 NAS 内，不依赖第三方云服务。</p><p>核心功能：一键切换宝宝，喂养与睡眠尿布随手记，生长曲线与发育里程碑，疫苗与用药提醒，AI 育儿问答，看诊摘要与数据导出备份。</p><p>项目主页：https://gitee.com/xiaoke799/babycare-fpk</p>
 source=thirdparty
 platform=all
 maintainer=xiaoke799
