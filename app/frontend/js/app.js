@@ -1365,6 +1365,16 @@ const TOP_LEVEL_PAGES = ['dashboard', 'record', 'growth-hub', 'knowledge-hub', '
 
 // 返回上一页
 function goBack() {
+    // 「虚拟页」（如睡眠分析）本体是成长页里的一个 Tab，入口多样，
+    // 且顶部 Tab 切换不产生页面跳转 —— 历史栈不足为凭。
+    // 统一规则：回到它所属的一级宫格。
+    const hub = TAB_PAGE_HUB[App.currentPage];
+    if (hub) {
+        _skipHistoryPush = true;
+        switchPage(hub);
+        updateBackButton();
+        return;
+    }
     if (_pageHistory.length === 0) {
         console.log('[goBack] 没有历史记录，返回首页');
         _skipHistoryPush = true;  // 回首页不该把当前页压进栈，否则按钮又会冒出来
@@ -1385,7 +1395,9 @@ function updateBackButton() {
     if (!backBtn) return;
     // 一级页面不给返回（它们是入口，不是「进来的」）
     const onTopLevel = TOP_LEVEL_PAGES.indexOf(App.currentPage) !== -1;
-    if (_pageHistory.length > 0 && !onTopLevel) {
+    // 虚拟页（如睡眠分析）即使历史栈为空也要给「返回」（回所属宫格）
+    const canGoBack = _pageHistory.length > 0 || !!TAB_PAGE_HUB[App.currentPage];
+    if (canGoBack && !onTopLevel) {
         backBtn.classList.add('show');
     } else {
         backBtn.classList.remove('show');
@@ -1402,13 +1414,25 @@ function switchPage(page) {
     // 这里先切到宿主页面再激活对应 Tab，否则 #page-xxx 找不到会白屏。
     const tabTarget = GROWTH_TAB_PAGES[page] || HEALTH_TAB_PAGES[page];
     if (tabTarget) {
+        const cameFrom = prevPage;
+        // 内层 switchPage(宿主) 不要入栈：旧实现让它把「虚拟页自己」记进了历史，
+        // 于是返回时弹出来的还是自己（像没反应），再按一次才落到更早的页面。
+        _skipHistoryPush = true;
         switchPage(tabTarget.host);
         activatePageTab(tabTarget.host, tabTarget.tab);
         // switchPage(宿主) 把 currentPage 改成了宿主，这里改回来，
         // 保证底部导航、相关功能、切宝宝刷新都还认得合并前的 page id
         App.currentPage = page;
+        // 正确的「上一页」：虚拟页交给 goBack 统一回宫格，不占历史栈；
+        // 其余已合并页（疫苗/体温/用药提醒/过敏）恢复正常语义——回到真正来的那一页。
+        if (!TAB_PAGE_HUB[page] && cameFrom && cameFrom !== page &&
+            (_pageHistory.length === 0 || _pageHistory[_pageHistory.length - 1] !== cameFrom)) {
+            _pageHistory.push(cameFrom);
+            if (_pageHistory.length > _MAX_HISTORY) _pageHistory.shift();
+        }
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
         document.querySelectorAll('.nav-item[data-page="' + page + '"]').forEach(t => t.classList.add('active'));
+        updateBackButton();
         renderRelatedLinks(page);
         return;
     }
@@ -1534,6 +1558,11 @@ function loadPageData(page) {
             break;
         case 'settings':
             loadSettings();
+            // 「数据管理 / 系统诊断」两块现都在设置页：进页顺手刷新一次，
+            // 避免显示的是启动时拉的旧数据（此前挂在看诊页时也无此刷新）
+            if (typeof loadBackupList === 'function') loadBackupList();
+            if (typeof loadStorageOverview === 'function') loadStorageOverview(false);
+            if (typeof loadAutoBackupConfig === 'function') loadAutoBackupConfig();
             break;
         case 'ai':
             initAIChat();
@@ -4280,6 +4309,15 @@ const GROWTH_TAB_VIEWS = {
 const GROWTH_TAB_PAGES = { 'sleep-analysis': { host: 'growth', tab: 'sleep-analysis' } };
 
 /**
+ * 「虚拟页」→ 它所属的一级宫格。
+ * 这类页面本体是别的页里的一个 Tab，但有自己的 page id，入口也多样
+ * （宫格 tile / 相关功能链接 / 页面顶部 Tab）；而顶部 Tab 切换不算一次页面跳转，
+ * 所以单靠历史栈不可靠——在它们上面按「返回」统一回到所属宫格。
+ * 睡眠分析属于「成长」板块，因此返回 → 成长宫格。
+ */
+const TAB_PAGE_HUB = { 'sleep-analysis': 'growth-hub' };
+
+/**
  * 已并入健康档案 Tab 的页面：合并前的 page id → { 宿主页面, 目标 Tab }。
  * 疫苗 / 体温 / 用药提醒 / 过敏测试四个独立页已删除，底部导航与「相关功能」
  * 仍可能按老 id 跳，靠这张表落到「健康档案 + 对应 Tab」。
@@ -4316,6 +4354,11 @@ function initGrowthTabs() {
             btn.classList.add('active');
             const tab = btn.dataset.growthTab;
 
+            // 睡眠分析是「虚拟页」（有自己的 page id / 返回目标=成长宫格）；
+            // 其余 Tab 都属于成长页本身。让 App.currentPage 跟上，返回按钮与 goBack 才有正确上下文。
+            if (tab === 'sleep-analysis') App.currentPage = 'sleep-analysis';
+            else if (App.currentPage === 'sleep-analysis') App.currentPage = 'growth';
+
             Object.entries(GROWTH_TAB_VIEWS).forEach(([name, id]) => {
                 const el = document.getElementById(id);
                 if (el) el.style.display = (name === tab) ? 'block' : 'none';
@@ -4333,6 +4376,8 @@ function initGrowthTabs() {
                 loadSleepAnalysis();
                 loadSleepPrediction();
             }
+
+            updateBackButton();
         });
     });
 
@@ -10451,7 +10496,6 @@ function mainInit() {
     safeCall(initShoppingPage, 'initShoppingPage');
     safeCall(initMedReminderPage, 'initMedReminderPage');
     safeCall(initReportsPage, 'initReportsPage');
-    safeCall(() => { initDataManagement(); }, 'initDataManagement-2');
     safeCall(initDarkMode, 'initDarkMode');
 
     // 返回按钮点击事件
@@ -10712,33 +10756,23 @@ function showBmiForm() {
 
 // ==================== 数据导出/导入 ====================
 function initDataManagement() {
-    // 看诊摘要页（clinic）里的那套按钮
-    document.getElementById('exportDataBtn')?.addEventListener('click', exportData);
-    document.getElementById('importDataBtn')?.addEventListener('click', () => {
-        document.getElementById('importFileInput')?.click();
-    });
-    document.getElementById('importFileInput')?.addEventListener('change', handleImportFile);
-    document.getElementById('exportAllBtn')?.addEventListener('click', exportAllData);
-
-    // 备份管理
-    document.getElementById('createBackupBtn')?.addEventListener('click', createBackup);
-    document.getElementById('importBackupInput')?.addEventListener('change', handleBackupUpload);
-
-    // ---- 数据存储管理：存储总览 / 健康 / 自动备份 / 清理 ----
+    // 设置页「系统诊断」：存储总览 / 数据库健康 / 空间清理
     document.getElementById('refreshStorageBtn')?.addEventListener('click', loadStorageOverview);
     document.getElementById('checkDbHealthBtn')?.addEventListener('click', checkDbHealth);
     document.getElementById('optimizeDbBtn')?.addEventListener('click', optimizeDb);
     document.getElementById('cleanOrphanBtn')?.addEventListener('click', cleanOrphanPhotos);
     document.getElementById('cleanLogsBtn')?.addEventListener('click', cleanupLogs);
+
+    // 设置页「数据管理」：导出 / 导入 / 备份 / 自动备份
+    document.getElementById('exportAllBtn')?.addEventListener('click', exportAllData);
+    document.getElementById('importDataBtn')?.addEventListener('click', () => {
+        document.getElementById('importFileInput')?.click();
+    });
+    document.getElementById('importFileInput')?.addEventListener('change', handleImportFile);
+    document.getElementById('createBackupBtn')?.addEventListener('click', createBackup);
+    document.getElementById('importBackupInput')?.addEventListener('change', handleBackupUpload);
     document.getElementById('triggerAutoBackupBtn')?.addEventListener('click', triggerAutoBackup);
     document.getElementById('saveAutoBackupBtn')?.addEventListener('click', saveAutoBackupConfig);
-
-    // 设置页里的同款按钮
-    document.getElementById('exportDataBtn2')?.addEventListener('click', exportData);
-    document.getElementById('importDataBtn2')?.addEventListener('click', () => {
-        document.getElementById('importFileInput2')?.click();
-    });
-    document.getElementById('importFileInput2')?.addEventListener('change', handleImportFile);
 
     // 加载备份列表 + 存储总览 + 自动备份配置
     loadBackupList();

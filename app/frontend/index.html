@@ -688,87 +688,7 @@
                 <div class="clinic-summary" id="clinicSummary">
                     <p class="empty-tip">加载中...</p>
                 </div>
-                <div class="data-management">
-                    <h3 class="section-title">数据管理</h3>
 
-                    <!-- 存储总览卡片 -->
-                    <div class="storage-overview" id="storageOverview">
-                        <div class="storage-overview-header">
-                            <span class="storage-overview-title">存储占用</span>
-                            <button class="btn btn-sm btn-link" id="refreshStorageBtn">刷新</button>
-                        </div>
-                        <div class="storage-disk-bar-wrap">
-                            <div class="storage-disk-bar" id="diskUsageBar"><div class="storage-disk-bar-fill" id="diskUsageFill"></div></div>
-                            <span class="storage-disk-pct" id="diskUsagePct">--</span>
-                        </div>
-                        <div class="storage-grid" id="storageGrid">
-                            <div class="storage-item"><span class="storage-item-label">数据库</span><b id="storageDb">--</b></div>
-                            <div class="storage-item"><span class="storage-item-label">照片</span><b id="storagePhotos">--</b></div>
-                            <div class="storage-item"><span class="storage-item-label">备份</span><b id="storageBackups">--</b></div>
-                            <div class="storage-item"><span class="storage-item-label">日志</span><b id="storageLogs">--</b></div>
-                        </div>
-                        <div class="storage-disk-free" id="diskFreeText">可用空间：--</div>
-                    </div>
-
-                    <!-- 数据库健康 -->
-                    <div class="storage-health" id="storageHealth">
-                        <div class="storage-health-header">
-                            <span class="storage-overview-title">数据库健康</span>
-                            <button class="btn btn-sm btn-link" id="checkDbHealthBtn">检查</button>
-                        </div>
-                        <div class="storage-health-status" id="dbHealthStatus">点击"检查"查看完整性</div>
-                        <div class="storage-health-actions">
-                            <button class="btn btn-sm btn-outline" id="optimizeDbBtn" title="VACUUM 回收空闲页">优化数据库</button>
-                            <button class="btn btn-sm btn-outline" id="cleanOrphanBtn" title="清理磁盘上未被引用照片">清理孤立照片</button>
-                            <button class="btn btn-sm btn-outline" id="cleanLogsBtn" title="清空日志文件释放空间">清空日志</button>
-                        </div>
-                    </div>
-
-                    <!-- 自动备份设置 -->
-                    <div class="auto-backup" id="autoBackup">
-                        <label class="auto-backup-toggle">
-                            <input type="checkbox" id="autoBackupEnabled"> 启用定时自动备份
-                        </label>
-                        <div class="auto-backup-row">
-                            <span>间隔</span>
-                            <select id="autoBackupInterval">
-                                <option value="6">每 6 小时</option>
-                                <option value="12">每 12 小时</option>
-                                <option value="24" selected>每天</option>
-                                <option value="48">每 2 天</option>
-                                <option value="168">每周</option>
-                            </select>
-                            <span>保留</span>
-                            <select id="autoBackupKeep">
-                                <option value="5">5 个</option>
-                                <option value="10" selected>10 个</option>
-                                <option value="20">20 个</option>
-                                <option value="30">30 个</option>
-                            </select>
-                            <button class="btn btn-sm btn-primary" id="saveAutoBackupBtn">保存</button>
-                        </div>
-                        <div class="auto-backup-status" id="autoBackupStatus">未启用</div>
-                    </div>
-
-                    <div class="data-mgmt-actions">
-                        <button class="btn btn-outline" id="createBackupBtn">创建备份</button>
-                        <button class="btn btn-outline" id="exportAllBtn">导出JSON</button>
-                        <button class="btn btn-outline" id="importDataBtn">导入数据</button>
-                        <button class="btn btn-outline" id="triggerAutoBackupBtn">立即自动备份</button>
-                    </div>
-                    <p class="data-mgmt-tip">JSON 备份包含全部数据，自动保留最近 N 个；升级前亦自动做热备份</p>
-                    <input type="file" id="importFileInput" accept=".json" style="display:none">
-                    <input type="file" id="importBackupInput" accept=".json" style="display:none">
-                    <button class="btn btn-sm btn-link" onclick="document.getElementById('importBackupInput').click()" style="margin-top:4px;font-size:11px;color:var(--text-light)">
-                        从备份文件上传恢复
-                    </button>
-                    <div class="backup-history" id="backupHistory">
-                        <div class="backup-history-title">备份历史 <span class="backup-auto-tag" id="backupAutoTag" style="display:none">[含自动]</span></div>
-                        <div class="backup-list" id="backupList">
-                            <p class="backup-empty">暂无备份</p>
-                        </div>
-                    </div>
-                </div>
             </section>
 
 <!-- 出牙追踪页面 -->
@@ -1437,12 +1357,94 @@
                 <div class="settings-card-desc">导出或导入本机备份数据（JSON 格式）</div>
             </div>
         </div>
-        <div class="data-actions">
-            <button type="button" class="btn btn-outline" id="exportDataBtn2">导出数据</button>
-            <button type="button" class="btn btn-outline" id="importDataBtn2">导入数据</button>
+<div class="auto-backup" id="autoBackup">
+            <label class="auto-backup-toggle">
+                <input type="checkbox" id="autoBackupEnabled"> 启用定时自动备份
+            </label>
+            <div class="auto-backup-row">
+                <span>间隔</span>
+                <select id="autoBackupInterval">
+                    <option value="6">每 6 小时</option>
+                    <option value="12">每 12 小时</option>
+                    <option value="24" selected>每天</option>
+                    <option value="48">每 2 天</option>
+                    <option value="168">每周</option>
+                </select>
+                <span>保留</span>
+                <select id="autoBackupKeep">
+                    <option value="5">5 个</option>
+                    <option value="10" selected>10 个</option>
+                    <option value="20">20 个</option>
+                    <option value="30">30 个</option>
+                </select>
+                <button class="btn btn-sm btn-primary" id="saveAutoBackupBtn">保存</button>
+            </div>
+            <div class="auto-backup-status" id="autoBackupStatus">未启用</div>
+        </div>
+
+        <div class="data-mgmt-actions">
+            <button class="btn btn-outline" id="createBackupBtn">创建备份</button>
+            <button class="btn btn-outline" id="exportAllBtn">导出JSON</button>
+            <button class="btn btn-outline" id="importDataBtn">导入数据</button>
+            <button class="btn btn-outline" id="triggerAutoBackupBtn">立即自动备份</button>
+        </div>
+        <p class="data-mgmt-tip">JSON 备份包含全部数据，自动保留最近 N 个；升级前亦自动做热备份</p>
+        <input type="file" id="importFileInput" accept=".json" style="display:none">
+        <input type="file" id="importBackupInput" accept=".json" style="display:none">
+        <button class="btn btn-sm btn-link" onclick="document.getElementById('importBackupInput').click()" style="margin-top:4px;font-size:11px;color:var(--text-light)">
+            从备份文件上传恢复
+        </button>
+        <div class="backup-history" id="backupHistory">
+            <div class="backup-history-title">备份历史 <span class="backup-auto-tag" id="backupAutoTag" style="display:none">[含自动]</span></div>
+            <div class="backup-list" id="backupList">
+                <p class="backup-empty">暂无备份</p>
+            </div>
         </div>
         <p class="data-tip" id="dataTip"></p>
-        <input type="file" id="importFileInput2" accept=".json" style="display:none;">
+    </div>
+
+    <!-- 系统诊断：存储占用与数据库健康（原在看诊摘要页，与就诊信息无关，移此） -->
+    <div class="settings-card">
+        <div class="settings-card-head">
+            <span class="settings-card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+            </span>
+            <div class="settings-card-head-text">
+                <div class="settings-card-title">系统诊断</div>
+                <div class="settings-card-desc">存储占用、数据库健康与空间清理</div>
+            </div>
+        </div>
+<div class="storage-overview" id="storageOverview">
+            <div class="storage-overview-header">
+                <span class="storage-overview-title">存储占用</span>
+                <button class="btn btn-sm btn-link" id="refreshStorageBtn">刷新</button>
+            </div>
+            <div class="storage-disk-bar-wrap">
+                <div class="storage-disk-bar" id="diskUsageBar"><div class="storage-disk-bar-fill" id="diskUsageFill"></div></div>
+                <span class="storage-disk-pct" id="diskUsagePct">--</span>
+            </div>
+            <div class="storage-grid" id="storageGrid">
+                <div class="storage-item"><span class="storage-item-label">数据库</span><b id="storageDb">--</b></div>
+                <div class="storage-item"><span class="storage-item-label">照片</span><b id="storagePhotos">--</b></div>
+                <div class="storage-item"><span class="storage-item-label">备份</span><b id="storageBackups">--</b></div>
+                <div class="storage-item"><span class="storage-item-label">日志</span><b id="storageLogs">--</b></div>
+            </div>
+            <div class="storage-disk-free" id="diskFreeText">可用空间：--</div>
+        </div>
+
+        <!-- 数据库健康 -->
+        <div class="storage-health" id="storageHealth">
+            <div class="storage-health-header">
+                <span class="storage-overview-title">数据库健康</span>
+                <button class="btn btn-sm btn-link" id="checkDbHealthBtn">检查</button>
+            </div>
+            <div class="storage-health-status" id="dbHealthStatus">点击"检查"查看完整性</div>
+            <div class="storage-health-actions">
+                <button class="btn btn-sm btn-outline" id="optimizeDbBtn" title="VACUUM 回收空闲页">优化数据库</button>
+                <button class="btn btn-sm btn-outline" id="cleanOrphanBtn" title="清理磁盘上未被引用照片">清理孤立照片</button>
+                <button class="btn btn-sm btn-outline" id="cleanLogsBtn" title="清空日志文件释放空间">清空日志</button>
+            </div>
+        </div>
     </div>
 
     <!-- 推送通知设置 -->
