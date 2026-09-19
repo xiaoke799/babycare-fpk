@@ -182,7 +182,7 @@
             <section class="page" id="page-growth-hub">
                 <div class="hub-header">
                     <h3 class="section-title">成长</h3>
-                    <p class="hub-desc">身高体重曲线与发育里程碑</p>
+                    <p class="hub-desc">生长曲线、睡眠作息分析与各阶段评估报告（只负责看，录入请到「记录」）</p>
                 </div>
                 <div class="hub-grid" id="hub-growth"></div>
             </section>
@@ -568,11 +568,29 @@
                 </div>
             </section>
 
-            <!-- 里程碑页面 -->
+            <!-- 成长成就页面（原「里程碑」与「第一次」是同一张 milestones 表的两个界面，
+                 后者只加了 is_first 过滤 → 合并成一个入口。2026-09-19 按定位从成长栏
+                 移到记录栏：它是要你填表的记录功能，不是报表。） -->
             <section class="page" id="page-milestones">
                 <div class="record-page-header">
-                    <h3 class="section-title">成长里程碑</h3>
+                    <h3 class="section-title">成长成就</h3>
                     <button class="btn btn-primary btn-sm" id="addMilestoneBtn">＋ 添加</button>
+                </div>
+                <div class="milestones-intro-card">
+                    <div class="milestones-intro-title">宝宝第一次</div>
+                    <p>记录宝宝成长中的每一个重要时刻，点击下方标签可快速添加。</p>
+                    <div class="milestones-templates">
+                        <button class="milestone-template-btn" data-title="第一次微笑" data-cat="social">微笑</button>
+                        <button class="milestone-template-btn" data-title="第一次翻身" data-cat="motor">翻身</button>
+                        <button class="milestone-template-btn" data-title="第一次独坐" data-cat="motor">独坐</button>
+                        <button class="milestone-template-btn" data-title="第一次爬行" data-cat="motor">爬行</button>
+                        <button class="milestone-template-btn" data-title="第一次站立" data-cat="motor">站立</button>
+                        <button class="milestone-template-btn" data-title="第一次走路" data-cat="motor">走路</button>
+                        <button class="milestone-template-btn" data-title="第一次叫妈妈" data-cat="language">叫妈妈</button>
+                        <button class="milestone-template-btn" data-title="第一次叫爸爸" data-cat="language">叫爸爸</button>
+                        <button class="milestone-template-btn" data-title="第一次挥手拜拜" data-cat="social">拜拜</button>
+                        <button class="milestone-template-btn" data-title="第一次拍手" data-cat="motor">拍手</button>
+                    </div>
                 </div>
                 <div class="milestones-categories">
                     <button class="milestone-cat-btn active" data-cat="all">全部</button>
@@ -745,7 +763,7 @@
         <button class="health-tab" data-tab="temperature">体温</button>
         <button class="health-tab" data-tab="vaccine">疫苗</button>
         <button class="health-tab" data-tab="growth">生长</button>
-        <button class="health-tab" data-tab="milestone">里程碑</button>
+        <button class="health-tab" data-tab="milestone">发育里程碑</button>
         <button class="health-tab" data-tab="screening">筛查</button>
         <button class="health-tab" data-tab="indicators">指标</button>
         <button class="health-tab" data-tab="allergy">过敏</button>
@@ -1055,32 +1073,6 @@
     </div>
 </section>
 
-<!-- 成长里程碑页面 -->
-<section class="page" id="page-firsts">
-    <div class="firsts-header">
-        <h3 class="section-title">成长里程碑</h3>
-        <button class="btn btn-primary btn-sm" id="addFirstsBtn">＋ 添加成就</button>
-    </div>
-    <div class="firsts-info-card">
-        <div class="firsts-info-title">宝宝第一次</div>
-        <p>记录宝宝成长中的每一个重要时刻，这些珍贵的第一次值得永远珍藏。</p>
-        <div class="firsts-templates">
-            <button class="firsts-template-btn" data-title="第一次微笑" data-cat="social">微笑</button>
-            <button class="firsts-template-btn" data-title="第一次翻身" data-cat="motor">翻身</button>
-            <button class="firsts-template-btn" data-title="第一次独坐" data-cat="motor">独坐</button>
-            <button class="firsts-template-btn" data-title="第一次爬行" data-cat="motor">爬行</button>
-            <button class="firsts-template-btn" data-title="第一次站立" data-cat="motor">站立</button>
-            <button class="firsts-template-btn" data-title="第一次走路" data-cat="motor">走路</button>
-            <button class="firsts-template-btn" data-title="第一次叫妈妈" data-cat="language">叫妈妈</button>
-            <button class="firsts-template-btn" data-title="第一次叫爸爸" data-cat="language">叫爸爸</button>
-            <button class="firsts-template-btn" data-title="第一次挥手拜拜" data-cat="social">拜拜</button>
-            <button class="firsts-template-btn" data-title="第一次拍手" data-cat="motor">拍手</button>
-        </div>
-    </div>
-    <div class="firsts-list" id="firstsList">
-        <p class="empty-tip">暂无里程碑记录</p>
-    </div>
-</section>
 <!-- 数据报告页面 -->
 <section class="page" id="page-reports">
     <div class="reports-header">
@@ -1403,7 +1395,8 @@
         <p class="data-tip" id="dataTip"></p>
     </div>
 
-    <!-- 系统诊断：存储占用与数据库健康（原在看诊摘要页，与就诊信息无关，移此） -->
+    <!-- 系统诊断：应用信息 / 存储占用 / 数据库健康 / 日志 / 异常记录
+         （存储与健康两块原先误放在看诊摘要页，跟就诊信息无关，2026-09-19 归到设置） -->
     <div class="settings-card">
         <div class="settings-card-head">
             <span class="settings-card-icon">
@@ -1411,10 +1404,23 @@
             </span>
             <div class="settings-card-head-text">
                 <div class="settings-card-title">系统诊断</div>
-                <div class="settings-card-desc">存储占用、数据库健康与空间清理</div>
+                <div class="settings-card-desc">应用信息、存储占用、数据库健康、日志与异常记录</div>
             </div>
         </div>
-<div class="storage-overview" id="storageOverview">
+
+        <!-- 应用信息 -->
+        <div class="diag-group">
+            <div class="diag-group-title">
+                <span>应用信息</span>
+                <button class="btn btn-sm btn-link" id="refreshAppInfoBtn">刷新</button>
+            </div>
+            <div class="diag-info-grid" id="appInfoGrid">
+                <p class="empty-tip">加载中...</p>
+            </div>
+        </div>
+
+        <!-- 存储占用 -->
+        <div class="storage-overview" id="storageOverview">
             <div class="storage-overview-header">
                 <span class="storage-overview-title">存储占用</span>
                 <button class="btn btn-sm btn-link" id="refreshStorageBtn">刷新</button>
@@ -1442,7 +1448,64 @@
             <div class="storage-health-actions">
                 <button class="btn btn-sm btn-outline" id="optimizeDbBtn" title="VACUUM 回收空闲页">优化数据库</button>
                 <button class="btn btn-sm btn-outline" id="cleanOrphanBtn" title="清理磁盘上未被引用照片">清理孤立照片</button>
-                <button class="btn btn-sm btn-outline" id="cleanLogsBtn" title="清空日志文件释放空间">清空日志</button>
+            </div>
+        </div>
+
+        <!-- 日志文件 -->
+        <div class="diag-group">
+            <div class="diag-group-title">
+                <span>日志文件</span>
+                <button class="btn btn-sm btn-link" id="refreshLogBtn">刷新</button>
+            </div>
+            <div class="diag-log-files" id="logFileList">
+                <p class="empty-tip">加载中...</p>
+            </div>
+            <div class="diag-row">
+                <select class="settings-input diag-select" id="logTypeSelect">
+                    <option value="main">主日志</option>
+                    <option value="error">错误日志</option>
+                    <option value="access">访问日志</option>
+                    <option value="sql">SQL 日志</option>
+                </select>
+                <select class="settings-input diag-select" id="logLinesSelect">
+                    <option value="100">最近 100 行</option>
+                    <option value="300" selected>最近 300 行</option>
+                    <option value="1000">最近 1000 行</option>
+                </select>
+                <button class="btn btn-sm btn-outline" id="loadLogBtn">查看</button>
+                <button class="btn btn-sm btn-outline" id="cleanLogsBtn" title="清空全部日志文件释放空间">清空全部</button>
+            </div>
+            <pre class="diag-log-content" id="logContent">点击「查看」加载日志内容</pre>
+        </div>
+
+        <!-- 异常记录 -->
+        <div class="diag-group">
+            <div class="diag-group-title">
+                <span>异常记录</span>
+                <button class="btn btn-sm btn-link" id="refreshErrorsBtn">刷新</button>
+            </div>
+            <div class="diag-error-stats" id="errorStats">
+                <p class="empty-tip">加载中...</p>
+            </div>
+            <div class="diag-row">
+                <select class="settings-input diag-select" id="errorLevelFilter">
+                    <option value="">全部级别</option>
+                    <option value="ERROR">错误</option>
+                    <option value="WARNING">警告</option>
+                    <option value="CRITICAL">严重</option>
+                </select>
+                <select class="settings-input diag-select" id="errorDaysFilter">
+                    <option value="1">今天</option>
+                    <option value="7" selected>近 7 天</option>
+                    <option value="30">近 30 天</option>
+                    <option value="90">近 90 天</option>
+                </select>
+                <button class="btn btn-sm btn-outline" id="loadErrorsBtn">查询</button>
+                <button class="btn btn-sm btn-outline" id="clearOldErrorsBtn" title="删除 30 天前的错误记录">清理旧记录</button>
+                <button class="btn btn-sm btn-outline" id="loadMoreErrorsBtn" style="display:none">加载更多</button>
+            </div>
+            <div class="diag-error-list" id="errorList">
+                <p class="empty-tip">点击「查询」加载异常记录</p>
             </div>
         </div>
     </div>
@@ -1680,10 +1743,11 @@
 
 <!-- BMI追踪页面 -->
 <section class="page" id="page-bmi">
-    <div class="bmi-header">
-        <h3 class="section-title">BMI 追踪</h3>
-        <button class="btn btn-primary btn-sm" id="addBmiBtn">＋ 记录</button>
-    </div>
+        <div class="bmi-header">
+            <h3 class="section-title">BMI 追踪</h3>
+            <!-- BMI 由身高体重算出，这里只是快捷跳到记录页，文案要说清是去录身高体重 -->
+            <button class="btn btn-primary btn-sm" id="addBmiBtn">＋ 记录身高体重</button>
+        </div>
     <div class="bmi-summary" id="bmiSummary">
         <div class="bmi-current">
             <span class="bmi-value" id="bmiCurrentValue">--</span>
@@ -2869,6 +2933,12 @@
                         <label for="milestoneDesc">详细描述</label>
                         <textarea id="milestoneDesc" rows="3" placeholder="记录这个特别的时刻..."></textarea>
                     </div>
+                    <div class="form-group">
+                        <label for="milestoneIsFirst" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" id="milestoneIsFirst" style="width:auto;margin:0;">
+                            标记为「第一次」
+                        </label>
+                    </div>
                     <div class="form-actions">
                         <button type="button" class="btn btn-cancel" id="cancelMilestoneForm">取消</button>
                         <button type="submit" class="btn btn-primary">保存</button>
@@ -2986,20 +3056,6 @@
         <div class="modal-body" id="healthModalBody"></div>
         <div class="modal-footer">
             <button class="btn btn-primary" onclick="submitHealthRecord()">保存</button>
-        </div>
-    </div>
-</div>
-
-<!-- 成长里程碑弹窗 -->
-<div class="modal-overlay" id="firstsModal">
-    <div class="modal modal-large">
-        <div class="modal-header">
-            <h2>添加里程碑</h2>
-            <button class="modal-close" onclick="hideModal('firstsModal')">X</button>
-        </div>
-        <div class="modal-body" id="firstsModalBody"></div>
-        <div class="modal-footer">
-            <button class="btn btn-primary" onclick="submitFirstsRecord()">保存</button>
         </div>
     </div>
 </div>

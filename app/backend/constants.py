@@ -17,6 +17,13 @@ CONFIG_DIR = os.environ.get("BABYCARE_CONFIG_DIR", "/var/apps/babycare-fpk/etc")
 DB_PATH = os.environ.get("BABYCARE_DB_PATH", os.path.join(DATA_DIR, "babycare.db"))
 WHO_DB_PATH = os.environ.get("BABYCARE_WHO_DB_PATH", os.path.join(BASE_DIR, "who_data.db"))
 
+# ==================== 应用信息 ====================
+
+# 与包根 manifest 的 version 字段保持一致（设置页「系统诊断」里展示）。
+# 发布新版本时两处一起改。
+APP_VERSION = os.environ.get("BABYCARE_APP_VERSION", "0.0.1")
+APP_NAME = "育儿宝"
+
 # ==================== 数据库配置 ====================
 
 DB_BUSY_TIMEOUT_MS = 5000

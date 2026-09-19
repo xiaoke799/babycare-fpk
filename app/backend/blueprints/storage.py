@@ -15,17 +15,23 @@
 import datetime
 import glob
 import os
+import platform
 import shutil
 import sqlite3
+import sys
 import threading
 import time
 from flask import Blueprint, request, jsonify, current_app
 
-from constants import DATA_DIR, DB_PATH
+from constants import DATA_DIR, DB_PATH, APP_VERSION, APP_NAME
 from utils import get_db, json_body
 from user_context import require_admin
 
 bp = Blueprint("storage", __name__)
+
+# 进程启动时刻（模块导入 ≈ 进程启动）。gunicorn 多 worker 时每个 worker 各算各的，
+# 用于「系统诊断 → 应用信息」里显示运行时长，够用。
+_PROCESS_START = time.time()
 
 # ---------------------------------------------------------------------------
 # 自动备份调度器（进程内后台线程）
@@ -105,6 +111,21 @@ def _format_size(size):
             return f"{size:.1f} {unit}"
         size /= 1024
     return f"{size:.1f} TB"
+
+
+def _format_uptime(seconds: int) -> str:
+    """人性化运行时长：3 天 4 小时 / 4 小时 12 分 / 12 分 30 秒"""
+    seconds = max(int(seconds), 0)
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    if days:
+        return f"{days} 天 {hours} 小时"
+    if hours:
+        return f"{hours} 小时 {minutes} 分"
+    if minutes:
+        return f"{minutes} 分 {secs} 秒"
+    return f"{secs} 秒"
 
 
 def _ensure_dirs():
@@ -357,6 +378,53 @@ def storage_overview():
         overview["disk"] = {"error": str(e)}
 
     return jsonify(overview)
+
+
+# ---------------------------------------------------------------------------
+# 应用信息（设置页「系统诊断」）
+# ---------------------------------------------------------------------------
+
+@bp.route("/api/storage/app-info", methods=["GET"])
+@require_admin
+def app_info():
+    """应用与运行环境信息：版本、运行时长、解释器/数据库版本、关键路径。
+
+    只读信息，用户遇到问题时要报「版本 + 环境」，这里一次性给全，
+    省得再去翻日志或问东问西。
+    """
+    try:
+        started = datetime.datetime.fromtimestamp(_PROCESS_START)
+        uptime = max(int(time.time() - _PROCESS_START), 0)
+        info = {
+            "success": True,
+            "app_name": APP_NAME,
+            "version": APP_VERSION,
+            "started_at": started.strftime("%Y-%m-%d %H:%M:%S"),
+            "uptime_seconds": uptime,
+            "uptime_human": _format_uptime(uptime),
+            "server_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "python_version": sys.version.split()[0],
+            "sqlite_version": sqlite3.sqlite_version,
+            "platform": platform.platform(),
+            "machine": platform.machine(),
+            "data_dir": DATA_DIR,
+            "db_path": DB_PATH,
+            "pid": os.getpid(),
+        }
+        # 进程内存占用：Linux 下从 /proc 读；读不到就不显示（不报错）
+        try:
+            with open("/proc/self/status", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        rss = int(line.split()[1]) * 1024
+                        info["memory_rss"] = rss
+                        info["memory_rss_human"] = _format_size(rss)
+                        break
+        except Exception:
+            pass
+        return jsonify(info)
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 # ---------------------------------------------------------------------------

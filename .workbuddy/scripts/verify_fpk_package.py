@@ -44,6 +44,8 @@ print('内层条目:', len(it.getnames()))
 noexec = []
 html = None
 js = None
+storage_py = None
+constants_py = None
 for m in it.getmembers():
     if not m.isfile():
         continue
@@ -55,6 +57,10 @@ for m in it.getmembers():
         html = data.decode('utf-8')
     if m.name.endswith('frontend/js/app.js'):
         js = data.decode('utf-8')
+    if m.name.endswith('backend/blueprints/storage.py'):
+        storage_py = data.decode('utf-8')
+    if m.name.endswith('backend/constants.py'):
+        constants_py = data.decode('utf-8')
 
 print('带 shebang 但缺执行位:', noexec if noexec else '无')
 chk('内层带 shebang 脚本都有执行位', not noexec)
@@ -76,6 +82,36 @@ chk('app.js 已移除重复初始化 initDataManagement-2',
     bool(js) and "'initDataManagement-2'" not in js)
 chk('app.js 进入设置页会刷新存储数据',
     bool(js) and "case 'settings':" in js and 'loadStorageOverview(false)' in js)
+
+print()
+print('=== 本轮（导航分层 + 系统诊断集成）===')
+# 系统诊断板块
+for eid in ['appInfoGrid', 'refreshAppInfoBtn', 'logFileList', 'logContent',
+            'errorStats', 'errorList', 'loadErrorsBtn', 'clearOldErrorsBtn',
+            'loadMoreErrorsBtn', 'errorLevelFilter']:
+    chk('index.html 含 #%s' % eid, bool(html) and ('id="%s"' % eid) in html)
+chk('异常级别筛选用大写 value（与后端口径一致）',
+    bool(html) and '<option value="ERROR">错误</option>' in html)
+# 导航分层
+chk('记录栏：有 milestones（成长成就）', bool(js) and "page: 'milestones', label: '成长成就'" in js)
+chk('成长栏：已无 milestones/firsts 记录页面',
+    bool(js) and "\n            { page: 'milestones', label: '里程碑'" not in js
+    and "page: 'firsts'" not in js)
+chk('系统栏：安抚音效已归入', bool(js) and "page: 'sounds', label: '安抚音效'" in js)
+chk('「第一次」页面已从包内移除', bool(html) and 'id="page-firsts"' not in html)
+chk('「第一次」相关 JS 已清干净',
+    bool(js) and 'loadFirstsRecords' not in js and 'initFirstsPage' not in js)
+chk('里程碑页已改名「成长成就」', bool(html) and '成长成就' in html)
+chk('里程碑表单含「标记为第一次」', bool(html) and 'id="milestoneIsFirst"' in html)
+chk('健康档案 Tab 改名「发育里程碑」',
+    bool(html) and 'data-tab="milestone">发育里程碑</button>' in html)
+chk('诊断 JS 已进包（loadAppInfo / loadErrorList）',
+    bool(js) and 'function loadAppInfo(' in js and 'function loadErrorList(' in js)
+# 后端
+chk('包内 storage.py 含 /api/storage/app-info',
+    bool(storage_py) and '/api/storage/app-info' in storage_py)
+chk('包内 constants.py 含 APP_VERSION',
+    bool(constants_py) and 'APP_VERSION' in constants_py)
 
 print()
 print('验货通过' if ok else '验货存在失败项')

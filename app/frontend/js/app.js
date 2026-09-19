@@ -1272,20 +1272,22 @@ const NAV_HUBS = [
             { page: 'diaper-price', label: '比价记账', icon: 'icon-tag' },
             { page: 'diary', label: '日记', icon: 'icon-book' },
             { page: 'photos', label: '相册', icon: 'icon-image' },
+            // 成长成就（原「里程碑」与「第一次」合并）：要填表，是记录不是报表，
+            // 2026-09-19 按定位从「成长」栏移到「记录」栏
+            { page: 'milestones', label: '成长成就', icon: 'icon-trophy' },
             { page: 'leap', label: '飞跃期', icon: 'icon-rocket' },
             { page: 'fontanelle', label: '囟门', icon: 'icon-circle' },
             { page: 'teeth', label: '出牙记录', icon: 'icon-tooth' },
-            { page: 'health', label: '健康档案', icon: 'icon-heart2' },
-            { page: 'sounds', label: '安抚', icon: 'icon-wave' }
+            { page: 'health', label: '健康档案', icon: 'icon-heart2' }
+            // 安抚音效既不是记录也不是报表，属于工具，已移到「系统」栏
         ]
     },
     {
         hub: 'growth', label: '成长', icon: 'icon-chart', page: 'growth-hub',
+        // 本栏只放「看」的报表：凡是需要录入的（里程碑/第一次/囟门/出牙…）都在「记录」栏。
         items: [
             { page: 'growth', label: '成长曲线', icon: 'icon-chart' },
             { page: 'sleep-analysis', label: '睡眠分析', icon: 'icon-wave' },
-            { page: 'milestones', label: '里程碑', icon: 'icon-trophy' },
-            { page: 'firsts', label: '第一次', icon: 'icon-star' },
             { page: 'bmi', label: 'BMI', icon: 'icon-scale' },
             { page: 'asq', label: '发育筛查', icon: 'icon-list' },
             { page: 'pattern', label: '作息节律', icon: 'icon-bar' },
@@ -1305,7 +1307,9 @@ const NAV_HUBS = [
         hub: 'system', label: '系统', icon: 'icon-gear', page: 'system',
         items: [
             { page: 'settings', label: '设置', icon: 'icon-gear' },
-            { page: 'clinic', label: '看诊摘要', icon: 'icon-stethoscope' }
+            { page: 'clinic', label: '看诊摘要', icon: 'icon-stethoscope' },
+            // 安抚音效是「用」的工具，跟记录/报表都无关，放系统栏更顺
+            { page: 'sounds', label: '安抚音效', icon: 'icon-wave' }
             // AI 助手由小萌浮窗承担，不单列页面
         ]
     }
@@ -1558,11 +1562,15 @@ function loadPageData(page) {
             break;
         case 'settings':
             loadSettings();
-            // 「数据管理 / 系统诊断」两块现都在设置页：进页顺手刷新一次，
+            // 「数据管理 / 系统诊断」两块都在设置页：进页顺手刷新一次，
             // 避免显示的是启动时拉的旧数据（此前挂在看诊页时也无此刷新）
             if (typeof loadBackupList === 'function') loadBackupList();
             if (typeof loadStorageOverview === 'function') loadStorageOverview(false);
             if (typeof loadAutoBackupConfig === 'function') loadAutoBackupConfig();
+            // 系统诊断：应用信息 / 日志文件 / 异常记录
+            if (typeof loadAppInfo === 'function') loadAppInfo();
+            if (typeof loadLogFiles === 'function') loadLogFiles();
+            if (typeof loadErrorPanel === 'function') loadErrorPanel();
             break;
         case 'ai':
             initAIChat();
@@ -1595,9 +1603,6 @@ function loadPageData(page) {
         case 'health':
             if (typeof loadOverview === 'function') loadOverview();
             break;
-        case 'firsts':
-            loadFirstsRecords();
-            break;
         case 'allergy-detail':
             loadAllergyTests();
             break;
@@ -1622,8 +1627,8 @@ function refreshCurrentPage() {
 
 // ==================== 相关功能互跳 ====================
 // 哪些页面之间 Actually 有关联：大体分三类
-//   1) 同一份数据的不同看法（成长曲线 ↔ BMI、里程碑 ↔ 第一次）
-//   2) 上下游（体温 → 健康档案、睡眠记录 → 睡眠分析）
+//   1) 同一份数据的不同看法（成长曲线 ↔ BMI）
+//   2) 上下游（体温 → 健康档案、睡眠记录 → 睡眠分析、成长成就 → 成长曲线）
 //   3) 同一场景的相邻动作（喂奶 ↔ 吸奶、疫苗 → 健康档案）
 const PAGE_LINKS = {
     timeline:       ['feeding', 'sleep-record', 'diaper-record', 'growth'],
@@ -1637,14 +1642,13 @@ const PAGE_LINKS = {
     tummytime:      ['milestones', 'leap'],
     vaccines:       ['health'],
     'diaper-price': ['diaper-record'],
-    diary:          ['photos', 'firsts'],
+    diary:          ['photos', 'milestones'],
     leap:           ['milestones', 'sleep-record', 'tummytime'],
     fontanelle:     ['teeth', 'health', 'growth'],
     teeth:          ['fontanelle', 'milestones', 'health'],
     health:         ['temperature', 'med-reminder', 'vaccines', 'teeth', 'growth'],
     sounds:         ['sleep-record'],
 
-    firsts:         ['milestones', 'diary', 'photos'],
     bmi:            ['growth'],
     asq:            ['milestones', 'leap'],
     pattern:        ['feeding', 'sleep-record', 'diaper-record', 'reports'],
@@ -7788,16 +7792,32 @@ function downloadShareCard() {
 let currentMilestoneCategory = 'all';
 
 function initMilestoneModal() {
-    document.getElementById('addMilestoneBtn').addEventListener('click', () => {
+    // 打开「添加」表单。prefill 用于「第一次」快捷模板：预填标题/分类并勾上标记。
+    const openAddForm = (prefill) => {
         document.getElementById('milestoneForm').reset();
         document.getElementById('milestoneId').value = '';
-        document.getElementById('milestoneModalTitle').textContent = '添加里程碑';
+        document.getElementById('milestoneModalTitle').textContent = '添加成就';
         document.getElementById('milestoneDate').value = getToday();
-        document.getElementById('milestoneCategory').value = 'other';
+        document.getElementById('milestoneCategory').value = (prefill && prefill.category) || 'other';
+        if (prefill && prefill.title) document.getElementById('milestoneTitle').value = prefill.title;
+        const firstBox = document.getElementById('milestoneIsFirst');
+        if (firstBox) firstBox.checked = !!(prefill && prefill.isFirst);
         showModal('milestoneModal');
+    };
+
+    document.getElementById('addMilestoneBtn')?.addEventListener('click', () => openAddForm(null));
+
+    // 「第一次」快捷模板：原「第一次」页面已并入本页，这些标签按钮搬过来继续用
+    document.querySelectorAll('.milestone-template-btn').forEach(btn => {
+        btn.addEventListener('click', () => openAddForm({
+            title: btn.dataset.title,
+            category: btn.dataset.cat,
+            isFirst: true,
+        }));
     });
-    document.getElementById('closeMilestoneModal').addEventListener('click', () => hideModal('milestoneModal'));
-    document.getElementById('cancelMilestoneForm').addEventListener('click', () => hideModal('milestoneModal'));
+
+    document.getElementById('closeMilestoneModal')?.addEventListener('click', () => hideModal('milestoneModal'));
+    document.getElementById('cancelMilestoneForm')?.addEventListener('click', () => hideModal('milestoneModal'));
 
     document.getElementById('milestoneForm').addEventListener('submit', function(e) {
         e.preventDefault();
@@ -7808,7 +7828,9 @@ function initMilestoneModal() {
             title: document.getElementById('milestoneTitle').value,
             achieved_date: document.getElementById('milestoneDate').value,
             category: document.getElementById('milestoneCategory').value,
-            description: document.getElementById('milestoneDesc').value
+            description: document.getElementById('milestoneDesc').value,
+            // 「第一次」不再是独立页面，改由这个勾选框标记（milestones.is_first）
+            is_first: document.getElementById('milestoneIsFirst')?.checked ? 1 : 0,
         };
 
         let url, method;
@@ -7824,9 +7846,7 @@ function initMilestoneModal() {
             if (res.success) {
                 showToast(milestoneId ? '已更新' : '添加成功');
                 hideModal('milestoneModal');
-                // 里程碑与「第一次」共用一张表，两边都要跟着刷新
                 loadMilestonesPage();
-                loadFirstsRecords();
             } else {
                 showToast.error(res.message || '保存失败');
             }
@@ -7899,7 +7919,9 @@ function renderMilestones() {
             document.getElementById('milestoneDate').value = m.achieved_date;
             document.getElementById('milestoneCategory').value = m.category || 'other';
             document.getElementById('milestoneDesc').value = m.description || '';
-            document.getElementById('milestoneModalTitle').textContent = '编辑里程碑';
+            const editFirstBox = document.getElementById('milestoneIsFirst');
+            if (editFirstBox) editFirstBox.checked = (m.is_first === 1 || m.is_first === true);
+            document.getElementById('milestoneModalTitle').textContent = '编辑成就';
             showModal('milestoneModal');
         });
     });
@@ -7913,9 +7935,7 @@ function deleteGrowthMilestone(id, event) {
     api(`/api/babies/${App.currentBaby}/milestones/${id}`, { method: 'DELETE' }).then(res => {
         if (res.success) {
             showToast('已删除');
-            // 里程碑与「第一次」共用一张表，两边都要跟着刷新
             loadMilestonesPage();
-            loadFirstsRecords();
         } else {
             showToast.error(res.message || '删除失败');
         }
@@ -10469,8 +10489,7 @@ function mainInit() {
     safeCall(initVaccineModal, 'initVaccineModal');
     safeCall(initVaccinesPage, 'initVaccinesPage');
     safeCall(initShareCard, 'initShareCard');
-    safeCall(initMilestoneModal, 'initMilestoneModal');
-    safeCall(initSleepAnalysis, 'initSleepAnalysis');
+    safeCall(initMilestoneModal, 'initMilestoneModal');    safeCall(initSleepAnalysis, 'initSleepAnalysis');
     safeCall(() => { initDataManagement(); }, 'initDataManagement-1');
     safeCall(initBatchRecord, 'initBatchRecord');
     safeCall(initTemperature, 'initTemperature');
@@ -10490,7 +10509,6 @@ function mainInit() {
     safeCall(initTeethPage, 'initTeethPage');
     safeCall(initHealthPage, 'initHealthPage');
     safeCall(initHealthArchivePage, 'initHealthArchivePage');
-    safeCall(initFirstsPage, 'initFirstsPage');
     safeCall(initTummytimePage, 'initTummytimePage');
     safeCall(initAllergyPage, 'initAllergyPage');
     safeCall(initShoppingPage, 'initShoppingPage');
@@ -10756,12 +10774,19 @@ function showBmiForm() {
 
 // ==================== 数据导出/导入 ====================
 function initDataManagement() {
-    // 设置页「系统诊断」：存储总览 / 数据库健康 / 空间清理
+    // 设置页「系统诊断」：应用信息 / 存储总览 / 数据库健康 / 日志 / 异常记录
+    document.getElementById('refreshAppInfoBtn')?.addEventListener('click', loadAppInfo);
     document.getElementById('refreshStorageBtn')?.addEventListener('click', loadStorageOverview);
     document.getElementById('checkDbHealthBtn')?.addEventListener('click', checkDbHealth);
     document.getElementById('optimizeDbBtn')?.addEventListener('click', optimizeDb);
     document.getElementById('cleanOrphanBtn')?.addEventListener('click', cleanOrphanPhotos);
+    document.getElementById('refreshLogBtn')?.addEventListener('click', loadLogFiles);
+    document.getElementById('loadLogBtn')?.addEventListener('click', loadLogContent);
     document.getElementById('cleanLogsBtn')?.addEventListener('click', cleanupLogs);
+    document.getElementById('refreshErrorsBtn')?.addEventListener('click', loadErrorPanel);
+    document.getElementById('loadErrorsBtn')?.addEventListener('click', loadErrorPanel);
+    document.getElementById('loadMoreErrorsBtn')?.addEventListener('click', () => loadErrorList(false));
+    document.getElementById('clearOldErrorsBtn')?.addEventListener('click', clearOldErrors);
 
     // 设置页「数据管理」：导出 / 导入 / 备份 / 自动备份
     document.getElementById('exportAllBtn')?.addEventListener('click', exportAllData);
@@ -10778,6 +10803,230 @@ function initDataManagement() {
     loadBackupList();
     if (typeof loadStorageOverview === 'function') loadStorageOverview(false);
     if (typeof loadAutoBackupConfig === 'function') loadAutoBackupConfig();
+    // 诊断板块（应用信息/日志/异常记录）不在这里拉：留给进入设置页时刷，
+    // 免得每次启动都白跑三个请求。
+}
+
+// ==================== 系统诊断：应用信息 / 日志 / 异常记录 ====================
+// 后端这套接口（storage/app-info、admin/logs/*）早就写好了，前端一直没有界面，
+// 日志只能看个占用大小。2026-09-19 按用户要求统一收进设置页「系统诊断」一个板块。
+
+const LOG_TYPE_LABELS = { main: '主日志', error: '错误日志', access: '访问日志', sql: 'SQL 日志' };
+// 注意：后端 error_tracker.record_error 写入的 level 是**大写**（ERROR/CRITICAL），
+// 数据库里存的就是大写，所以这里按大写建表，比对时再做大小写归一。
+const ERROR_LEVEL_LABELS = { CRITICAL: '严重', ERROR: '错误', WARNING: '警告', INFO: '信息' };
+
+function errorLevelLabel(level) {
+    const key = String(level || '').toUpperCase();
+    return ERROR_LEVEL_LABELS[key] || level || '错误';
+}
+
+function errorLevelCss(level) {
+    // CSS 类名用小写（.diag-error-level.error / .critical / .warning）
+    return String(level || 'ERROR').toLowerCase();
+}
+
+function loadAppInfo() {
+    const grid = document.getElementById('appInfoGrid');
+    if (!grid) return;
+    api('/api/storage/app-info').then(res => {
+        if (!res || !res.success) {
+            grid.innerHTML = '<p class="empty-tip">应用信息读取失败</p>';
+            return;
+        }
+        const rows = [
+            ['应用版本', `${res.app_name || '育儿宝'} v${res.version || '-'}`],
+            ['运行时长', res.uptime_human || '-'],
+            ['启动时间', res.started_at || '-'],
+            ['服务器时间', res.server_time || '-'],
+            ['Python', res.python_version || '-'],
+            ['SQLite', res.sqlite_version || '-'],
+            ['运行平台', [res.platform, res.machine].filter(Boolean).join(' / ') || '-'],
+            ['内存占用', res.memory_rss_human || '—'],
+            ['进程号', res.pid != null ? String(res.pid) : '-'],
+            ['数据目录', res.data_dir || '-'],
+        ];
+        grid.innerHTML = rows.map(([k, v]) =>
+            `<div class="diag-info-item"><span>${escapeHtml(k)}</span><b>${escapeHtml(String(v))}</b></div>`
+        ).join('');
+    }).catch(() => {
+        grid.innerHTML = '<p class="empty-tip">应用信息读取失败</p>';
+    });
+}
+
+function loadLogFiles() {
+    const box = document.getElementById('logFileList');
+    if (!box) return;
+    api('/api/admin/logs/files').then(res => {
+        if (!res || !res.success || !res.files) {
+            box.innerHTML = '<p class="empty-tip">日志信息读取失败</p>';
+            return;
+        }
+        const items = ['main', 'error', 'access', 'sql']
+            .filter(k => res.files[k])
+            .map(k => {
+                const f = res.files[k];
+                const tail = (f.size_bytes ? (f.last_modified || '') : '空');
+                return `<div class="diag-log-file">
+                    <span class="diag-log-file-name">${escapeHtml(LOG_TYPE_LABELS[k] || k)}</span>
+                    <span class="diag-log-file-meta">${escapeHtml(f.size_human || '0 B')}${tail ? ' · ' + escapeHtml(tail) : ''}</span>
+                </div>`;
+            });
+        box.innerHTML = items.length ? items.join('') : '<p class="empty-tip">暂无日志文件</p>';
+    }).catch(() => {
+        box.innerHTML = '<p class="empty-tip">日志信息读取失败</p>';
+    });
+}
+
+function loadLogContent() {
+    const pre = document.getElementById('logContent');
+    if (!pre) return;
+    const type = document.getElementById('logTypeSelect')?.value || 'main';
+    const lines = document.getElementById('logLinesSelect')?.value || '300';
+    pre.textContent = '加载中...';
+    api(`/api/admin/logs/files/content?type=${encodeURIComponent(type)}&lines=${encodeURIComponent(lines)}`)
+        .then(res => {
+            if (!res || !res.success) {
+                pre.textContent = (res && res.message) || '日志读取失败';
+                return;
+            }
+            const content = res.content || '';
+            pre.textContent = content.trim() ? content : '（该日志暂无内容）';
+            pre.scrollTop = pre.scrollHeight;
+        })
+        .catch(() => { pre.textContent = '日志读取失败'; });
+}
+
+function loadErrorPanel() {
+    loadErrorStats();
+    loadErrorList(true);
+}
+
+function loadErrorStats() {
+    const box = document.getElementById('errorStats');
+    if (!box) return;
+    const days = document.getElementById('errorDaysFilter')?.value || '7';
+    api(`/api/admin/logs/stats?days=${encodeURIComponent(days)}`).then(res => {
+        if (!res || !res.success) {
+            box.innerHTML = '<p class="empty-tip">异常统计读取失败</p>';
+            return;
+        }
+        const byLevel = Array.isArray(res.by_level) ? res.by_level : [];
+        const countOf = lv => {
+            const want = String(lv).toUpperCase();
+            const hit = byLevel.find(x => String(x.level || '').toUpperCase() === want);
+            return hit ? (hit.count || 0) : 0;
+        };
+        const total = res.total || 0;
+        const today = res.today || 0;
+        const cards = [
+            { label: `近 ${res.period_days || days} 天`, value: total, cls: total ? 'is-warning' : 'is-ok' },
+            { label: '今天', value: today, cls: today ? 'is-warning' : 'is-ok' },
+            { label: '错误', value: countOf('ERROR'), cls: 'is-error' },
+            { label: '严重', value: countOf('CRITICAL'), cls: 'is-critical' },
+            { label: '警告', value: countOf('WARNING'), cls: 'is-warning' },
+        ];
+        box.innerHTML = cards.map(c =>
+            `<div class="diag-stat ${c.cls}"><b>${c.value}</b><span>${escapeHtml(c.label)}</span></div>`
+        ).join('');
+    }).catch(() => {
+        box.innerHTML = '<p class="empty-tip">异常统计读取失败</p>';
+    });
+}
+
+let _errorOffset = 0;
+const _ERROR_PAGE_SIZE = 20;
+
+function loadErrorList(reset) {
+    const box = document.getElementById('errorList');
+    if (!box) return;
+    if (reset) _errorOffset = 0;
+    const level = document.getElementById('errorLevelFilter')?.value || '';
+    const days = document.getElementById('errorDaysFilter')?.value || '7';
+    const url = `/api/admin/logs/errors?limit=${_ERROR_PAGE_SIZE}&offset=${_errorOffset}` +
+        (level ? `&level=${encodeURIComponent(level)}` : '') +
+        `&days=${encodeURIComponent(days)}`;
+    api(url).then(res => {
+        if (!res || !res.success) {
+            box.innerHTML = '<p class="empty-tip">异常记录读取失败</p>';
+            return;
+        }
+        const list = Array.isArray(res.errors) ? res.errors : [];
+        if (reset && !list.length) {
+            box.innerHTML = '<p class="empty-tip">这段时间没有异常记录</p>';
+            _setMoreErrorsVisible(false);
+            return;
+        }
+        const html = list.map(e => {
+            const lv = e.level || 'ERROR';
+            const req = e.path ? `${e.method || ''} ${e.path}`.trim() : '';
+            return `<div class="diag-error-item" onclick="showErrorDetail(${e.id})">
+                <span class="diag-error-level ${escapeHtml(errorLevelCss(lv))}">${escapeHtml(errorLevelLabel(lv))}</span>
+                <div class="diag-error-body">
+                    <div class="diag-error-msg">${escapeHtml(e.message || '(无消息)')}</div>
+                    <div class="diag-error-meta">${escapeHtml(e.timestamp || '')}${e.module ? ' · ' + escapeHtml(e.module) : ''}${req ? ' · ' + escapeHtml(req) : ''}</div>
+                </div>
+            </div>`;
+        }).join('');
+        if (reset) box.innerHTML = html;
+        else box.insertAdjacentHTML('beforeend', html);
+        _errorOffset += list.length;
+        _setMoreErrorsVisible(_errorOffset < (res.total || 0));
+    }).catch(() => {
+        box.innerHTML = '<p class="empty-tip">异常记录读取失败</p>';
+    });
+}
+
+function _setMoreErrorsVisible(show) {
+    const btn = document.getElementById('loadMoreErrorsBtn');
+    if (btn) btn.style.display = show ? '' : 'none';
+}
+
+function showErrorDetail(id) {
+    api(`/api/admin/logs/detail/${id}`).then(res => {
+        if (!res || !res.success || !res.data) {
+            showToast.error('详情读取失败');
+            return;
+        }
+        const d = res.data;
+        const esc = v => escapeHtml(v == null || v === '' ? '—' : String(v));
+        const rows = [
+            ['时间', d.timestamp],
+            ['级别', errorLevelLabel(d.level)],
+            ['模块', d.module],
+            ['请求', [d.method, d.path].filter(Boolean).join(' ')],
+            ['请求ID', d.request_id],
+            ['客户端', d.client_ip],
+            ['UA', d.user_agent],
+        ].map(([k, v]) =>
+            `<div class="diag-detail-row"><span class="diag-detail-label">${escapeHtml(k)}</span><span class="diag-detail-value">${esc(v)}</span></div>`
+        ).join('');
+        const extra = d.extra_data
+            ? `<div class="diag-detail-row"><span class="diag-detail-label">附加</span><span class="diag-detail-value"><pre class="diag-detail-pre">${escapeHtml(String(d.extra_data))}</pre></span></div>`
+            : '';
+        const tb = d.traceback
+            ? `<div class="diag-detail-row"><span class="diag-detail-label">堆栈</span><span class="diag-detail-value"><pre class="diag-detail-pre">${escapeHtml(d.traceback)}</pre></span></div>`
+            : '';
+        showModal(
+            `<div class="modal-header"><h2>异常详情</h2><button class="modal-close" onclick="closeModal()">X</button></div>` +
+            `<div class="modal-body">${rows}${extra}${tb}</div>` +
+            `<div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">关闭</button></div>`
+        );
+    }).catch(() => { showToast.error('详情读取失败'); });
+}
+
+function clearOldErrors() {
+    if (!confirm('确定清理 30 天前的异常记录吗？此操作不可恢复。')) return;
+    api('/api/admin/logs/clear', { method: 'POST', body: JSON.stringify({ days: 30 }) })
+        .then(res => {
+            if (res && res.success) {
+                showToast(res.message || '已清理');
+                loadErrorPanel();
+            } else {
+                showToast.error((res && res.message) || '清理失败');
+            }
+        })
+        .catch(() => showToast.error('清理失败'));
 }
 
 function exportData() {
@@ -11048,10 +11297,18 @@ function cleanupLogs() {
     fetch(`${App.apiBase}/api/storage/logs/cleanup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'truncate' }) })
     .then(r => r.json())
     .then(res => {
-        if (res.success) { showDataTip(res.message || '日志已清空', 'success'); loadStorageOverview(false); }
-        else showDataTip('清空失败: ' + (res.message || ''), 'error');
+        if (res.success) {
+            // 用 toast 而不是 dataTip：这个按钮现在挂在「系统诊断」里，
+            // 提示如果还写在「数据管理」卡下面，用户根本看不到。
+            showToast(res.message || '日志已清空');
+            loadStorageOverview(false);
+            loadLogFiles();
+            const pre = document.getElementById('logContent');
+            if (pre) pre.textContent = '点击「查看」加载日志内容';
+        }
+        else showToast.error('清空失败: ' + (res.message || ''));
     })
-    .catch(err => showDataTip('清空失败: ' + err.message, 'error'));
+    .catch(err => showToast.error('清空失败: ' + err.message));
 }
 
 function triggerAutoBackup() {
@@ -15034,117 +15291,6 @@ function deleteFeedingSummary(id) {
     if (!confirm('确定删除这条喂养摘要吗？')) return;
     api(`/api/health/feeding_summary/detail/${id}`, { method: 'DELETE' }).then(res => {
         if (res.success) { loadFeedingSummary(); loadOverview(); }
-    });
-}
-
-// ==================== 成长里程碑页面（现有独立页面） ====================
-function initFirstsPage() {
-    document.getElementById('addFirstsBtn')?.addEventListener('click', showAddFirstsModal);
-    document.querySelectorAll('.firsts-template-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            showAddFirstsModal(btn.dataset.title, btn.dataset.cat);
-        });
-    });
-}
-
-function loadFirstsRecords() {
-    if (!App.currentBaby) return;
-    // 「第一次」与里程碑共用 milestones 表，只取 is_first = 1 的记录
-    api(`/api/babies/${App.currentBaby}/milestones?first=1`).then(res => {
-        if (res.success) {
-            App.firstsRecords = res.data;
-            renderFirstsList(res.data);
-        }
-    });
-}
-
-function renderFirstsList(records) {
-    const container = document.getElementById('firstsList');
-    if (!container) return;
-
-    if (records.length === 0) {
-        container.innerHTML = '<p class="empty-tip">暂无里程碑记录，点击上方模板快速添加</p>';
-        return;
-    }
-
-    const catNames = { motor: '运动', language: '语言', social: '社交', cognitive: '认知', other: '其他' };
-    container.innerHTML = records.map(r => `
-        <div class="firsts-item-card">
-            <div class="firsts-item-info">
-                <div class="firsts-item-title">${escapeHtml(r.title)}</div>
-                <div class="firsts-item-date">${escapeHtml(r.achieved_date)}${catNames[r.category] ? ' · ' + catNames[r.category] : ''}</div>
-                ${r.description ? `<div class="firsts-item-note">${escapeHtml(r.description)}</div>` : ''}
-            </div>
-            <button class="firsts-delete" onclick="deleteFirstsRecord(${r.id})">X</button>
-        </div>
-    `).join('');
-}
-
-function showAddFirstsModal(title = '', category = '') {
-    const today = getToday();
-    const formHtml = `
-        <div class="form-group">
-            <label>成就名称</label>
-            <input type="text" id="firstsTitle" value="${title}" placeholder="如: 第一次翻身">
-        </div>
-        <div class="form-group">
-            <label>类别</label>
-            <select id="firstsCategory">
-                <option value="motor" ${category === 'motor' ? 'selected' : ''}>运动</option>
-                <option value="language" ${category === 'language' ? 'selected' : ''}>语言</option>
-                <option value="social" ${category === 'social' ? 'selected' : ''}>社交</option>
-                <option value="cognitive" ${category === 'cognitive' ? 'selected' : ''}>认知</option>
-                <option value="other" ${category === 'other' ? 'selected' : ''}>其他</option>
-            </select>
-        </div>
-        <div class="form-group">
-            <label>达成日期</label>
-            <input type="date" id="firstsDate" value="${today}">
-        </div>
-        <div class="form-group">
-            <label>备注</label>
-            <textarea id="firstsNote" rows="2" placeholder="记录这个特别的时刻..."></textarea>
-        </div>
-    `;
-
-    showModal('firstsModal');
-    const body = document.getElementById('firstsModalBody');
-    if (body) body.innerHTML = formHtml;
-}
-
-function submitFirstsRecord() {
-    const data = {
-        title: document.getElementById('firstsTitle')?.value,
-        category: document.getElementById('firstsCategory')?.value || 'other',
-        achieved_date: document.getElementById('firstsDate')?.value,
-        description: document.getElementById('firstsNote')?.value || '',
-        photo_url: '',
-        is_first: 1,
-    };
-
-    if (!data.title) {
-        alert('请输入成就名称');
-        return;
-    }
-
-    api(`/api/babies/${App.currentBaby}/milestones`, { method: 'POST', body: JSON.stringify(data) }).then(res => {
-        if (res.success) {
-            hideModal('firstsModal');
-            // 里程碑与「第一次」共用一张表，两边都要跟着刷新
-            loadFirstsRecords();
-            loadMilestonesPage();
-        }
-    });
-}
-
-function deleteFirstsRecord(id) {
-    if (!confirm('确定要删除这条记录吗？')) return;
-    api(`/api/babies/${App.currentBaby}/milestones/${id}`, { method: 'DELETE' }).then(res => {
-        if (res.success) {
-            // 里程碑与「第一次」共用一张表，两边都要跟着刷新
-            loadFirstsRecords();
-            loadMilestonesPage();
-        }
     });
 }
 

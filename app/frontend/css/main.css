@@ -9410,15 +9410,8 @@ body {
 }
 .feeding-card-actions { display: flex; gap: 6px; }
 
-/* ==================== 成长里程碑 ==================== */
-.firsts-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-}
-
-.firsts-info-card {
+/* ==================== 成长成就（快捷模板，原「第一次」页并入里程碑页） ==================== */
+.milestones-intro-card {
     background: #FFF8E1;
     border-radius: var(--radius);
     padding: 12px 16px;
@@ -9428,20 +9421,24 @@ body {
     line-height: 1.6;
 }
 
-.firsts-info-title {
+.milestones-intro-card p {
+    margin: 0;
+}
+
+.milestones-intro-title {
     font-weight: 600;
     margin-bottom: 6px;
     font-size: 14px;
 }
 
-.firsts-templates {
+.milestones-templates {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
     margin-top: 10px;
 }
 
-.firsts-template-btn {
+.milestone-template-btn {
     padding: 4px 10px;
     border: 1px solid #FFD54F;
     border-radius: 14px;
@@ -9452,68 +9449,9 @@ body {
     transition: all 0.2s ease;
 }
 
-.firsts-template-btn:hover {
+.milestone-template-btn:hover {
     background: #FFD54F;
     color: #fff;
-}
-
-.firsts-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.firsts-item-card {
-    background: var(--card-bg);
-    border-radius: var(--radius);
-    padding: 14px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    position: relative;
-}
-
-.firsts-item-icon {
-    font-size: 28px;
-}
-
-.firsts-item-info {
-    flex: 1;
-}
-
-.firsts-item-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-.firsts-item-date {
-    font-size: 12px;
-    color: var(--text-light);
-}
-
-.firsts-item-note {
-    font-size: 12px;
-    color: var(--text-secondary);
-    margin-top: 4px;
-}
-
-.firsts-delete {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    width: 44px;
-    height: 44px;
-    border: none;
-    border-radius: 50%;
-    background: var(--bg-color);
-    color: var(--text-light);
-    cursor: pointer;
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
 }
 
 /* ==================== 数据报告 ==================== */
@@ -12218,4 +12156,253 @@ input:checked + .toggle-slider:before {
 
 .care-day-header .care-day-sum {
     font-size: 12px;
+}
+
+/* ==================== 系统诊断（设置页） ==================== */
+.diag-group {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-color);
+}
+
+.diag-group:first-of-type {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+.diag-group-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    letter-spacing: 0.4px;
+    margin-bottom: 10px;
+}
+
+/* 应用信息网格 */
+.diag-info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 8px;
+}
+
+.diag-info-item {
+    background: var(--bg-color);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    min-width: 0;
+}
+
+.diag-info-item > span {
+    display: block;
+    font-size: 11px;
+    color: var(--text-light);
+    margin-bottom: 2px;
+}
+
+.diag-info-item > b {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    word-break: break-all;
+    line-height: 1.35;
+}
+
+/* 日志文件列表 */
+.diag-log-files {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.diag-log-file {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    background: var(--bg-color);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    font-size: 12px;
+}
+
+.diag-log-file-name {
+    color: var(--text-primary);
+    font-weight: 600;
+    word-break: break-all;
+}
+
+.diag-log-file-meta {
+    color: var(--text-light);
+    font-size: 11px;
+    white-space: nowrap;
+    flex: 0 0 auto;
+}
+
+/* 操作行与下拉 */
+.diag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.diag-select {
+    width: auto;
+    min-width: 104px;
+    flex: 0 1 auto;
+}
+
+/* 日志内容（深底等宽，便于读堆栈） */
+.diag-log-content {
+    margin: 10px 0 0;
+    max-height: 260px;
+    overflow: auto;
+    background: #23262E;
+    color: #D8DEE9;
+    font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    font-size: 11px;
+    line-height: 1.55;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    white-space: pre-wrap;
+    word-break: break-all;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* 异常统计 */
+.diag-error-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 8px;
+}
+
+.diag-stat {
+    background: var(--bg-color);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    text-align: center;
+}
+
+.diag-stat > b {
+    display: block;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+}
+
+.diag-stat > span {
+    display: block;
+    font-size: 11px;
+    color: var(--text-light);
+    margin-top: 2px;
+}
+
+.diag-stat.is-error > b { color: #E4573D; }
+.diag-stat.is-warning > b { color: #E0A33E; }
+.diag-stat.is-critical > b { color: #B3321F; }
+.diag-stat.is-ok > b { color: var(--success-color); }
+
+/* 异常列表 */
+.diag-error-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 10px;
+    max-height: 320px;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.diag-error-item {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    background: var(--bg-color);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.diag-error-item:hover {
+    background: #FFEFE4;
+}
+
+.diag-error-level {
+    flex: 0 0 auto;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 6px;
+    color: #fff;
+    background: var(--text-light);
+    line-height: 1.4;
+}
+
+.diag-error-level.error { background: #E4573D; }
+.diag-error-level.warning { background: #E0A33E; }
+.diag-error-level.critical { background: #B3321F; }
+.diag-error-level.info { background: #7A9BC4; }
+
+.diag-error-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.diag-error-msg {
+    font-size: 12px;
+    color: var(--text-primary);
+    word-break: break-all;
+    line-height: 1.45;
+}
+
+.diag-error-meta {
+    font-size: 11px;
+    color: var(--text-light);
+    margin-top: 2px;
+    word-break: break-all;
+}
+
+/* 错误详情（通用弹窗内） */
+.diag-detail-row {
+    display: flex;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 12px;
+}
+
+.diag-detail-row:last-child { border-bottom: none; }
+
+.diag-detail-label {
+    flex: 0 0 76px;
+    color: var(--text-light);
+}
+
+.diag-detail-value {
+    flex: 1;
+    color: var(--text-primary);
+    word-break: break-all;
+}
+
+.diag-detail-pre {
+    margin: 6px 0 0;
+    background: var(--bg-color);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 240px;
+    overflow: auto;
+    color: var(--text-primary);
 }
