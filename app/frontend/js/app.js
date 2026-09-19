@@ -13509,7 +13509,14 @@ function toggleActivityFavorite(activityId) {
     const method = isFavorited ? 'DELETE' : 'POST';
     const data = { baby_id: App.currentBaby, activity_id: activityId };
 
-    api(url, method, isFavorited ? null : data).then(res => {
+    // ⚠️ api 只接受 (url, options) 两个参数。原先写成三参 api(url, method, data)：
+    // method 字符串会被对象展开成 {0:'P',1:'O',2:'S',3:'T'}，method 和 body 双双丢失、
+    // 请求退化成 GET；而 /api/activities/favorite 只注册了 POST/DELETE
+    // → 每次都是 405，收藏功能从来没成功过（前端只提示"操作失败"）。
+    api(url, {
+        method: method,
+        body: isFavorited ? undefined : JSON.stringify(data),
+    }).then(res => {
         if (res.success) {
             showToast(isFavorited ? '已取消收藏' : '收藏成功');
             if (btn) {
