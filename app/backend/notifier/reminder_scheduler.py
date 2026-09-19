@@ -7,11 +7,30 @@
 检查喂奶、换尿布、睡眠、用药、疫苗等提醒。
 """
 
+import os
 import time
 import logging
 import threading
 from typing import Dict, Any, List, Optional, Callable
 from datetime import datetime, timedelta
+
+# 跨进程锁：生产启动是 gunicorn --workers 2（见 start_production.sh），
+# 两个进程都会初始化调度器；而 _last_reminders 只是**进程内内存**，
+# 不做互斥的话同一时刻两个调度线程各查各的、各发一遍 —— 用户每条提醒收两遍。
+# storage.py 的自动备份循环已用同样手法处理过这个场景。
+try:
+    import fcntl
+    _HAS_FCNTL = True
+except ImportError:          # Windows 默认没有 fcntl，走下面的 msvcrt
+    fcntl = None
+    _HAS_FCNTL = False
+
+try:
+    import msvcrt            # Windows 的等价物：本地开发时也能真正互斥，便于验证
+    _HAS_MSVCRT = True
+except ImportError:
+    msvcrt = None
+    _HAS_MSVCRT = False
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +65,14 @@ def _row_get(row, key, default=""):
 class ReminderScheduler:
     """定时提醒调度器"""
 
-    def __init__(self, notifier, db_getter: Callable, config: Dict[str, Any]):
+    def __init__(self, notifier, db_getter: Callable, config: Dict[str, Any],
+                 lock_dir: str = ""):
         """
         Args:
             notifier: UnifiedNotifier 实例
             db_getter: 获取数据库连接的回调函数
             config: 配置字典
+            lock_dir: 跨进程锁文件目录（默认取推送历史库所在目录）
         """
         self.notifier = notifier
         self.db_getter = db_getter
@@ -61,12 +82,65 @@ class ReminderScheduler:
         self._stop_event = threading.Event()
         self._check_interval = config.get("reminder_check_interval", 60)  # 默认 60 秒检查一次
 
-        # 上次提醒时间（用于去重）
+        # 上次提醒时间（用于去重）。注意：**只在进程内有效** ——
+        # 跨 worker 的去重靠下面 _acquire_lock()：同一时刻只有一个进程在跑调度。
         self._last_reminders: Dict[str, float] = {}
 
+        self._lock_handle = None
+        self._lock_dir = lock_dir or os.path.dirname(
+            getattr(notifier, "db_path", "") or "") or "."
+
+    def _acquire_lock(self):
+        """抢跨进程调度锁。拿到返回文件句柄，没拿到返回 None（本进程不跑调度）。
+
+        多 worker 会同时启动并同时走到这里，flock 的 LOCK_NB 保证只有一个成功，
+        否则两个进程会各发一遍提醒。
+        """
+        try:
+            os.makedirs(self._lock_dir, exist_ok=True)
+            fh = open(os.path.join(self._lock_dir, ".reminder_scheduler.lock"), "w")
+        except OSError as e:
+            logger.warning("[Scheduler] 无法创建调度锁文件: %s", e)
+            return None
+
+        def _give_up():
+            # Windows 上被别的进程锁住后，close() 本身也可能抛 PermissionError，
+            # 不包起来会把「抢不到锁」升级成整个初始化失败。
+            try:
+                fh.close()
+            except OSError:
+                pass
+            return None
+
+        if _HAS_FCNTL:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return _give_up()       # 其他 worker 已持有 → 本进程不参与调度
+        elif _HAS_MSVCRT:
+            try:
+                fh.seek(0)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError:
+                return _give_up()
+
+        # 拿到锁之后再写 pid（msvcrt 锁的是字节区间，空文件也能锁）
+        try:
+            fh.seek(0)
+            fh.write(str(os.getpid()))
+            fh.truncate()
+            fh.flush()
+        except OSError:
+            pass
+        return fh
+
     def start(self):
-        """启动调度器"""
+        """启动调度器。多 worker 下只有一个进程真正跑，避免提醒重复。"""
         if self._running:
+            return
+        self._lock_handle = self._acquire_lock()
+        if self._lock_handle is None:
+            logger.info("[Scheduler] 另一进程已持有调度锁，本进程不启动调度线程（避免重复提醒）")
             return
         self._running = True
         self._stop_event.clear()
@@ -80,6 +154,12 @@ class ReminderScheduler:
         self._stop_event.set()
         if self._thread:
             self._thread.join(timeout=5)
+        if self._lock_handle:
+            try:
+                self._lock_handle.close()   # 关闭即释放 flock
+            except OSError:
+                pass
+            self._lock_handle = None
         logger.info("[Scheduler] 定时提醒调度器已停止")
 
     def _run(self):

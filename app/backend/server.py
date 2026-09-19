@@ -181,7 +181,11 @@ def _init_notifier():
             from database import get_db as _get_db
             return _get_db()
 
-        _scheduler = ReminderScheduler(_notifier, get_db, config)
+        # 初始化调度器。
+        # lock_dir 传数据目录：生产是 gunicorn --workers 2，两个 worker 都会初始化，
+        # 调度器靠该目录下的文件锁保证同一时刻只有一个进程真正发提醒
+        # （没有它，用户每条提醒会收到两遍）。
+        _scheduler = ReminderScheduler(_notifier, get_db, config, lock_dir=data_dir)
         _scheduler.start()
 
         # 注入到 notifications blueprint
