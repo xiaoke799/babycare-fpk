@@ -1259,7 +1259,6 @@ const NAV_HUBS = [
     {
         hub: 'record', label: '记录', icon: 'icon-clipboard', page: 'record',
         items: [
-            { page: 'timeline', label: '时间线', icon: 'icon-clock' },
             { page: 'feeding', label: '喂奶', icon: 'icon-bottle' },
             { page: 'pumping', label: '吸奶', icon: 'icon-pumping' },
             { page: 'sleep-record', label: '睡眠记录', icon: 'icon-moon' },
@@ -1272,9 +1271,6 @@ const NAV_HUBS = [
             { page: 'diaper-price', label: '比价记账', icon: 'icon-tag' },
             { page: 'diary', label: '日记', icon: 'icon-book' },
             { page: 'photos', label: '相册', icon: 'icon-image' },
-            // 成长成就（原「里程碑」与「第一次」合并）：要填表，是记录不是报表，
-            // 2026-09-19 按定位从「成长」栏移到「记录」栏
-            { page: 'milestones', label: '成长成就', icon: 'icon-trophy' },
             { page: 'leap', label: '飞跃期', icon: 'icon-rocket' },
             { page: 'fontanelle', label: '囟门', icon: 'icon-circle' },
             { page: 'teeth', label: '出牙记录', icon: 'icon-tooth' },
@@ -1284,9 +1280,14 @@ const NAV_HUBS = [
     },
     {
         hub: 'growth', label: '成长', icon: 'icon-chart', page: 'growth-hub',
-        // 本栏只放「看」的报表：凡是需要录入的（里程碑/第一次/囟门/出牙…）都在「记录」栏。
+        // 本栏放「看结果」的报表与回顾视图。注意：带＋添加按钮不等于必须放记录栏
+        // ——「成长成就」虽然能录入，但它本质是"宝宝成长历程"的回顾/报表（2026-09-19 二次修正）。
+        // 纯逐条录入的（喂奶/睡眠/尿布/囟门/出牙…）仍在「记录」栏。
         items: [
             { page: 'growth', label: '成长曲线', icon: 'icon-chart' },
+            // 成长成就（原「里程碑」+「第一次」合并）与时间线都属「回顾」性质
+            { page: 'milestones', label: '成长成就', icon: 'icon-trophy' },
+            { page: 'timeline', label: '时间线', icon: 'icon-clock' },
             { page: 'sleep-analysis', label: '睡眠分析', icon: 'icon-wave' },
             { page: 'bmi', label: 'BMI', icon: 'icon-scale' },
             { page: 'asq', label: '发育筛查', icon: 'icon-list' },

@@ -2,9 +2,10 @@
 # -*- coding: utf-8 -*-
 """导航分层与「系统诊断」板块的静态校验。
 
-背景（2026-09-19 用户定的规则）：
-  1. 记录栏只放「要你填表」的记录功能；成长栏只放「看」的报表。
-     凡是录入选成长栏，或报表混进记录栏，都算越界。
+背景（2026-09-19 用户定的规则，同日二次修正）：
+  1. 记录栏只放「逐条录入」的记录功能；成长栏放「看结果」的报表与回顾视图。
+     注意：**带＋添加按钮不等于必须放记录栏** —— 「成长成就」能录入，但它本质是
+     宝宝成长历程的回顾/报表，2026-09-19 用户二次修正后与「时间线」一起归成长栏。
   2. 应用信息 / 存储 / 数据库健康 / 日志 / 异常记录，统一收在
      设置页的「系统诊断」一个板块里，不散落别处。
 
@@ -57,25 +58,31 @@ def pages_in(block):
     return re.findall(r"page:\s*'([a-z0-9\-]+)'", block)
 
 
-print("=== 一、记录栏：只放记录（要填表的）===")
+print("=== 一、记录栏：只放逐条录入的记录 ===")
 rec = hub_block("record")
 rec_pages = pages_in(rec)
-chk("记录栏含「成长成就」(milestones)", "milestones" in rec_pages)
 chk("记录栏含身高体重的「录」入口 (growth)", "growth" in rec_pages)
 chk("记录栏不再是安抚音效的入口 (sounds)", "sounds" not in rec_pages)
+# 2026-09-19 用户二次修正：成长成就/时间线属「回顾/报表」，已从记录栏移到成长栏
+chk("记录栏已无「成长成就」(milestones)", "milestones" not in rec_pages)
+chk("记录栏已无「时间线」(timeline)", "timeline" not in rec_pages)
 for p in ["feeding", "pumping", "sleep-record", "diaper-record", "solidfood",
           "tummytime", "diaper-price", "diary", "photos", "leap",
-          "fontanelle", "teeth", "health", "timeline"]:
+          "fontanelle", "teeth", "health"]:
     chk("记录栏保留 %s" % p, p in rec_pages)
 
 print()
-print("=== 二、成长栏：只放报表（看结果的）===")
+print("=== 二、成长栏：报表与回顾视图 ===")
 gro = hub_block("growth")
 gro_pages = pages_in(gro)
-for p in ["growth", "sleep-analysis", "bmi", "asq", "pattern", "reports"]:
-    chk("成长栏保留报表 %s" % p, p in gro_pages)
-for p in ["milestones", "firsts"]:
-    chk("成长栏不再有记录功能 %s" % p, p not in gro_pages)
+for p in ["growth", "milestones", "timeline", "sleep-analysis", "bmi", "asq",
+          "pattern", "reports"]:
+    chk("成长栏含 %s" % p, p in gro_pages)
+chk("成长栏没有混进逐条录入页",
+    not any(p in gro_pages for p in ["feeding", "diaper-record", "sleep-record",
+                                     "fontanelle", "teeth"]))
+chk("已删的 firsts 页面没有复活（两栏都无）",
+    "firsts" not in gro_pages and "firsts" not in rec_pages)
 
 print()
 print("=== 三、系统栏：工具与设置 ===")

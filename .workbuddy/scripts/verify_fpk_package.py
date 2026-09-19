@@ -125,10 +125,25 @@ for eid in ['appInfoGrid', 'refreshAppInfoBtn', 'logFileList', 'logContent',
 chk('异常级别筛选用大写 value（与后端口径一致）',
     bool(html) and '<option value="ERROR">错误</option>' in html)
 # 导航分层
-chk('记录栏：有 milestones（成长成就）', bool(js) and "page: 'milestones', label: '成长成就'" in js)
-chk('成长栏：已无 milestones/firsts 记录页面',
-    bool(js) and "\n            { page: 'milestones', label: '里程碑'" not in js
-    and "page: 'firsts'" not in js)
+def _hub_block(src, name):
+    """截出 NAV_HUBS 里某个 hub 的段落（到下一个 hub: 为止）。"""
+    i = src.index("hub: '%s'" % name)
+    nxt = src.find("hub: '", i + 5)
+    return src[i: nxt if nxt != -1 else len(src)]
+
+
+js_rec = js_gro = ''
+if js:
+    js_rec = _hub_block(js, 'record')
+    js_gro = _hub_block(js, 'growth')
+# 2026-09-19 二次修正：成长成就(回顾/报表)与时间线从「记录」栏移到「成长」栏
+chk('成长栏：含「成长成就」(milestones)',
+    "page: 'milestones', label: '成长成就'" in js_gro)
+chk('成长栏：含「时间线」(timeline)',
+    "page: 'timeline', label: '时间线'" in js_gro)
+chk('记录栏：已移出 milestones 与 timeline',
+    bool(js_rec) and 'milestones' not in js_rec and 'timeline' not in js_rec)
+chk('已删的 firsts 页面没有复活', bool(js) and "page: 'firsts'" not in js)
 chk('系统栏：安抚音效已归入', bool(js) and "page: 'sounds', label: '安抚音效'" in js)
 chk('「第一次」页面已从包内移除', bool(html) and 'id="page-firsts"' not in html)
 chk('「第一次」相关 JS 已清干净',
