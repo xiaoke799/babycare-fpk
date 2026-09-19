@@ -1,7 +1,7 @@
 appname=babycare-fpk
 version=0.0.1
 display_name=育儿宝
-desc=<p>育儿宝是部署在你自己的 NAS 上的本地优先育儿记录应用：多宝宝管理、WHO 生长曲线、喂奶/睡眠/尿布记录、成长里程碑、育儿日记与知识库，数据全部保存在你的 NAS 内，不依赖第三方云服务。</p><p>核心功能：一键切换宝宝，喂养与睡眠尿布随手记，生长曲线与发育里程碑，疫苗与用药提醒，AI 育儿问答，看诊摘要与数据导出备份。</p><p>项目主页：https://gitee.com/xiaoke799/babycare-fpk</p>
+desc=<p><b>育儿宝 BabyCare</b> · 飞牛 fnOS 本地优先育儿记录应用<br>数据全部留在你自己的 NAS 里，不上传任何第三方云端</p><p><b>简体中文</b><br>多宝宝一键切换<br>喂奶 · 睡眠 · 尿布 · 辅食随手记<br>WHO 生长曲线 · 身高体重头围百分位 · BMI<br>成长里程碑 · ASQ 发育筛查 · 发育飞跃期<br>疫苗 · 用药提醒 · 体温 · 体检 · 看诊摘要<br>育儿日记 · 成长对比照片 · 育儿知识库<br>AI 育儿问答（本地规则引擎 + 可选大模型）<br>数据导出导入 · 自动备份</p><p><b>English</b><br>BabyCare is a local-first parenting tracker for your fnOS NAS — all data stays on your device, never uploaded to any third-party cloud<br>Multi-baby profiles<br>Feeding, sleep, diaper and solids logging<br>WHO growth curves · Height / weight / head percentiles · BMI<br>Milestones · ASQ screening · Developmental leaps<br>Vaccines · Medication reminders · Temperature · Checkups · Clinic summary<br>Diary · Growth photos · Knowledge base<br>AI assistant (on-device rule engine + optional LLM)<br>Data export / import · Auto backup</p><p><b>隐私 Privacy</b><br>默认全部本地处理。AI 可接本地 Ollama，也可接 OpenAI 兼容接口（联网模式下宝宝数据会发往对应服务商，详见隐私政策）。</p><p>项目主页 / Project · https://gitee.com/xiaoke799/babycare-fpk</p>
 source=thirdparty
 platform=all
 maintainer=xiaoke799
