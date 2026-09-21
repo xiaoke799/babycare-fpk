@@ -12529,8 +12529,15 @@ input:checked + .toggle-slider:before {
        color: var(--text-primary);
    }
 
-/* 选择宝宝弹窗里的宝宝列表（多宝宝时可直接任选） */
-.baby-list { display: flex; flex-direction: column; gap: 8px; }
+/* 选择宝宝弹窗里的宝宝列表（多宝宝时可直接任选）。
+   max-height + 滚动：宝宝再多也不会把弹窗顶破（实测 5 个正常，留足余量给更多）。 */
+.baby-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 46vh;
+    overflow-y: auto;
+}
 .baby-list-item {
     display: flex;
     align-items: center;
