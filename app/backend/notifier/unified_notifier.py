@@ -148,6 +148,7 @@ class UnifiedNotifier:
         content: str,
         channels: Optional[List[str]] = None,
         skip_dedup: bool = False,
+        respect_dnd: bool = True,
     ) -> NotificationResult:
         """
         发送通知。
@@ -157,12 +158,18 @@ class UnifiedNotifier:
             content: 内容
             channels: 指定渠道，None 表示所有
             skip_dedup: 跳过去重
+            respect_dnd: 是否遵守勿扰时段。默认遵守；只有「发送测试」才传 False
+                （否则用户在勿扰时段点测试会收不到，误以为配置坏了）。
 
         Returns:
             发送结果
         """
-        # 勿扰模式检查
-        if self._in_dnd_window() and not skip_dedup:
+        # 勿扰模式检查。
+        # ⚠️ 只看 respect_dnd，**不要**和 skip_dedup 挂钩：那是两个完全不相干的开关。
+        # 2026-09-21 修：原先写成 `if self._in_dnd_window() and not skip_dedup`，
+        # 而提醒调度器恰恰传的是 skip_dedup=True（提醒本就不能被"去重"掉），
+        # 结果**勿扰时段形同虚设** —— 设了 22:00-07:00 免打扰，深夜照样推送。
+        if respect_dnd and self._in_dnd_window():
             logger.info("[Notifier] 勿扰时段，跳过推送: %s", title)
             return NotificationResult(
                 success=True,
@@ -201,6 +208,9 @@ class UnifiedNotifier:
             f"这是一条测试推送，发送时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             channels=[channel] if channel else None,
             skip_dedup=True,
+            # 测试推送刻意绕过勿扰：否则用户在自己设的免打扰时段点「发送测试」
+            # 会一条都收不到，反而误以为推送配错了。
+            respect_dnd=False,
         )
 
     def get_history(self, limit: int = 50, offset: int = 0) -> List[Dict]:
