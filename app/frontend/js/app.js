@@ -1165,16 +1165,23 @@ function initBabySelector() {
     selector.addEventListener('click', () => {
         if (App.babies.length === 0) {
             showAddBabyModal();
+        } else if (App.babies.length === 1) {
+            showToast('目前只有 1 个宝宝，点旁边「＋」可以添加');
         } else {
-            // 切换宝宝功能
-            const currentIndex = App.babies.findIndex(b => b.id === App.currentBaby);
-            const nextIndex = (currentIndex + 1) % App.babies.length;
-            selectBaby(App.babies[nextIndex].id);
+            // 多宝宝：弹列表直接任选（原先只能切到下一个）
+            showBabyListModal();
         }
     });
 
     addBtn.addEventListener('click', showAddBabyModal);
     document.getElementById('closeBabyModal').addEventListener('click', () => hideModal('addBabyModal'));
+    // 选择宝宝弹窗的按钮（元素可能被精简掉，一律用 ?. 兜底）
+    document.getElementById('closeBabyListModal')?.addEventListener('click', () => hideModal('babyListModal'));
+    document.getElementById('cancelBabyList')?.addEventListener('click', () => hideModal('babyListModal'));
+    document.getElementById('addBabyFromList')?.addEventListener('click', () => {
+        hideModal('babyListModal');
+        showAddBabyModal();
+    });
     document.getElementById('cancelBabyForm').addEventListener('click', () => hideModal('addBabyModal'));
     document.getElementById('babyModalTitle').textContent = '添加宝宝';
 
@@ -1206,6 +1213,48 @@ function initBabySelector() {
     });
 }
 
+// ==================== 多宝宝：当前宝宝持久化 + 任选列表 ====================
+// ① 刷新页面后仍停在原来那个宝宝，否则每次都跳回列表第一个 —— 多宝宝家庭很别扭。
+// ② 点顶部选择器弹列表任选。原先只能「切到下一个」，3 个宝宝要连点 3 次才绕回来，
+//    而且一眼看不出家里登记了几个宝宝。
+// localStorage 在隐私模式下可能不可用，读写一律包 try（项目既有惯例）。
+const CURRENT_BABY_KEY = 'babycare_current_baby';
+
+function saveCurrentBaby(babyId) {
+    try { localStorage.setItem(CURRENT_BABY_KEY, String(babyId)); } catch (e) { /* 忽略 */ }
+}
+
+function loadCurrentBaby() {
+    try {
+        const v = parseInt(localStorage.getItem(CURRENT_BABY_KEY), 10);
+        return Number.isFinite(v) ? v : null;
+    } catch (e) { return null; }
+}
+
+/** 列出所有宝宝供选择（只有一个时调用方不弹，没什么可选的）。 */
+function showBabyListModal() {
+    const box = document.getElementById('babyListItems');
+    if (!box) return;
+    box.innerHTML = (App.babies || []).map(b => {
+        const isCur = b.id === App.currentBaby;
+        return '<button type="button" class="baby-list-item' + (isCur ? ' active' : '') +
+            '" data-baby-id="' + b.id + '">' +
+            '<span class="bli-name">' + escapeHtml(b.name) + '</span>' +
+            '<span class="bli-meta">' + escapeHtml(b.age || '') + '</span>' +
+            (isCur ? '<span class="bli-check">✓</span>' : '') +
+            '</button>';
+    }).join('');
+
+    box.querySelectorAll('.baby-list-item').forEach(el => {
+        el.addEventListener('click', () => {
+            const id = parseInt(el.dataset.babyId, 10);
+            hideModal('babyListModal');
+            if (id !== App.currentBaby) selectBaby(id);
+        });
+    });
+    showModal('babyListModal');
+}
+
 function showAddBabyModal() {
     document.getElementById('babyForm').reset();
     document.getElementById('babyModalTitle').textContent = '添加宝宝';
@@ -1219,8 +1268,12 @@ function loadBabies() {
 
             if (App.babies.length > 0) {
                 if (!App.currentBaby || !App.babies.find(b => b.id === App.currentBaby)) {
-                    App.currentBaby = App.babies[0].id;
+                    // 优先恢复上次选的宝宝（刷新后别跳回第一个）；它若已被删除则退回第一个
+                    const saved = loadCurrentBaby();
+                    App.currentBaby = (saved && App.babies.find(b => b.id === saved))
+                        ? saved : App.babies[0].id;
                 }
+                saveCurrentBaby(App.currentBaby);
                 const baby = App.babies.find(b => b.id === App.currentBaby);
                 document.getElementById('currentBabyName').textContent = `${baby.name} (${baby.age})`;
                 if (App.currentPage) { refreshCurrentPage(); } else { loadDashboard(); }
@@ -1233,6 +1286,7 @@ function loadBabies() {
 
 function selectBaby(babyId) {
     App.currentBaby = babyId;
+    saveCurrentBaby(babyId);          // 记下来，刷新页面后还在同一个宝宝
     const baby = App.babies.find(b => b.id === babyId);
     document.getElementById('currentBabyName').textContent = `${baby.name} (${baby.age})`;
     if (App.currentPage) { refreshCurrentPage(); } else { loadDashboard(); }

@@ -2284,6 +2284,24 @@
         </div>
     </div>
 
+    <!-- 选择宝宝弹窗：多宝宝时直接任选。
+         原来点选择器只能「切到下一个」，3 个宝宝要连点 3 次才绕回来，也看不到一共有几个。 -->
+    <div class="modal-overlay" id="babyListModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>选择宝宝</h2>
+                <button class="modal-close" id="closeBabyListModal">X</button>
+            </div>
+            <div class="modal-body">
+                <div class="baby-list" id="babyListItems"></div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-cancel" id="cancelBabyList">取消</button>
+                    <button type="button" class="btn btn-primary" id="addBabyFromList">＋ 添加宝宝</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 快捷记录弹窗 -->
     <div class="modal-overlay" id="recordModal">
         <div class="modal">

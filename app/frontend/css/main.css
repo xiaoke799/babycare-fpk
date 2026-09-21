@@ -12514,17 +12514,41 @@ input:checked + .toggle-slider:before {
     word-break: break-all;
 }
 
-.diag-detail-pre {
-    margin: 6px 0 0;
-    background: var(--bg-color);
+   .diag-detail-pre {
+       margin: 6px 0 0;
+       background: var(--bg-color);
+       border-radius: var(--radius-sm);
+       padding: 8px 10px;
+       font-family: ui-monospace, Consolas, monospace;
+       font-size: 11px;
+       line-height: 1.5;
+       white-space: pre-wrap;
+       word-break: break-all;
+       max-height: 240px;
+       overflow: auto;
+       color: var(--text-primary);
+   }
+
+/* 选择宝宝弹窗里的宝宝列表（多宝宝时可直接任选） */
+.baby-list { display: flex; flex-direction: column; gap: 8px; }
+.baby-list-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
-    padding: 8px 10px;
-    font-family: ui-monospace, Consolas, monospace;
-    font-size: 11px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-break: break-all;
-    max-height: 240px;
-    overflow: auto;
+    background: var(--card-bg);
     color: var(--text-primary);
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
 }
+.baby-list-item.active {
+    border-color: var(--primary-color);
+    background: rgba(255, 173, 122, 0.12);
+}
+.bli-name { flex: 1; font-size: 15px; font-weight: 500; }
+.bli-meta { font-size: 12px; color: var(--text-light); }
+.bli-check { color: var(--primary-strong); font-size: 14px; }
