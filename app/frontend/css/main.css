@@ -1226,6 +1226,22 @@ body {
 #page-milestones.only-view .milestones-intro-card { display: none !important; }
 #page-milestones.only-view .milestone-card { cursor: default; }
 
+/* 成长页双形态（见 NAV_HUBS）：记录栏「身高体重」可录入，成长栏/分析 Tab 只读 */
+#page-growth .only-view-hint { display: none; }
+#page-growth.only-view #addGrowthBtnPage,
+#page-growth.only-view .care-edit { display: none !important; }
+#page-growth.only-view .only-view-hint {
+    display: block;
+    margin: 0 0 12px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: #F7F0F4;
+    color: #8A6B78;
+    font-size: 12px;
+}
+#page-growth.only-view .record-list .care-item,
+#page-growth.only-view .record-list > div { cursor: default; }
+
 /* 只读形态的说明行：默认藏着，挂 .only-view 才出现 */
 #page-milestones .only-view-hint { display: none; }
 #page-milestones.only-view .only-view-hint {
@@ -1239,6 +1255,17 @@ body {
    默认藏着（记录形态不需要），挂 .only-view 才出。 */
 #page-milestones .milestone-overview { display: none; }
 #page-milestones.only-view .milestone-overview { display: block; margin-bottom: 16px; }
+
+/* 发育筛查 / BMI 在成长栏只看结果，列表项不提供删除/编辑 */
+#page-asq .asq-delete { display: none !important; }
+#page-asq .only-view-hint,
+#page-bmi .only-view-hint {
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: #F7F0F4;
+    color: #8A6B78;
+    font-size: 12px;
+}
 
 .mo-cards { display: flex; gap: 8px; margin-bottom: 12px; }
 .mo-card {
@@ -10642,7 +10669,7 @@ input:checked + .toggle-slider:before {
     height: 20px;
     fill: none;
     stroke: currentColor;
-    stroke-width: 2;
+    stroke-width: 1.85;
     stroke-linecap: round;
     stroke-linejoin: round;
     flex: none;

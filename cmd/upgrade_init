@@ -30,8 +30,13 @@ fi
 echo "Application stopped for upgrade."
 
 # 重装 Python 依赖（新版本可能引入新的依赖）
+# 安装布局与 install_init 一致：解压后 backend 在 APP_DEST/backend
+# （不是 APP_DEST/app/backend——后者会让升级时永远找不到 requirements.txt）
 APP_DEST="${TRIM_APPDEST:-/var/apps/babycare-fpk/target}"
-BACKEND_DIR="$APP_DEST/app/backend"
+BACKEND_DIR="$APP_DEST/backend"
+if [ ! -f "$BACKEND_DIR/requirements.txt" ] && [ -f "$APP_DEST/app/backend/requirements.txt" ]; then
+    BACKEND_DIR="$APP_DEST/app/backend"
+fi
 if [ -f "$BACKEND_DIR/requirements.txt" ]; then
     echo "Reinstalling Python dependencies..."
     PIP_LOG="${TRIM_TEMP_LOGFILE:-$APP_DEST/install.log}"

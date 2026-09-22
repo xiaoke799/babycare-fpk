@@ -6,17 +6,36 @@ DATA_ACTION="${data_action:-keep}"
 
 echo "育儿宝 has been uninstalled."
 
+# 与 server.py / constants.py / cmd/main 保持一致：
+#   主库  ${TRIM_PKGVAR}/babycare.db
+#   会话密钥 ${TRIM_PKGVAR}/secret_key
+#   LLM 加密密钥/密文 ${TRIM_PKGVAR}/secrets/
+#   照片 ${TRIM_PKGVAR}/photos
+#   备份 ${TRIM_PKGVAR}/backups
 if [ "$DATA_ACTION" = "delete" ]; then
     echo "正在删除所有数据..."
-    # 删除数据库文件
+    # 主库及 WAL/SHM 附属文件
+    rm -f "${TRIM_PKGVAR}/babycare.db" \
+          "${TRIM_PKGVAR}/babycare.db-wal" \
+          "${TRIM_PKGVAR}/babycare.db-shm" 2>/dev/null
+    # 历史错误命名的库（旧版本可能写过）
     rm -f "${TRIM_PKGVAR}/babycare-fpk.db" 2>/dev/null
-    rm -f "${TRIM_PKGVAR}/who_data.db" 2>/dev/null
-    # 删除上传的照片
+    # 推送历史
+    rm -f "${TRIM_PKGVAR}/push_history.db" 2>/dev/null
+    # 上传的照片
     rm -rf "${TRIM_PKGVAR}/photos" 2>/dev/null
-    # 删除配置文件
+    # 备份
+    rm -rf "${TRIM_PKGVAR}/backups" 2>/dev/null
+    # 配置文件
     rm -f "${TRIM_PKGVAR}/config.json" 2>/dev/null
-    # 删除密钥文件
+    # 会话密钥（实际文件名是 secret_key，不是 secret.key）
+    rm -f "${TRIM_PKGVAR}/secret_key" \
+          "${TRIM_PKGVAR}/.secret_key.lock" 2>/dev/null
     rm -f "${TRIM_PKGVAR}/secret.key" 2>/dev/null
+    # LLM API Key 加密材料
+    rm -rf "${TRIM_PKGVAR}/secrets" 2>/dev/null
+    # 日志
+    rm -rf "${TRIM_PKGVAR}/logs" 2>/dev/null
     echo "所有数据已永久删除。"
 else
     echo "数据已保留在: ${TRIM_PKGVAR}"

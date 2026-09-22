@@ -9,7 +9,7 @@
 import datetime
 from flask import Blueprint, request, jsonify
 
-from utils import get_db, row_to_dict
+from utils import get_db, json_body, row_to_dict
 from validators import validate_height, validate_weight, validate_bmi, validate_head_circumference, validate_text_length, NOTE_MAX_LENGTH
 import growth_utils
 
@@ -19,8 +19,8 @@ bp = Blueprint("growth", __name__)
 @bp.route("/api/babies/<int:baby_id>/growth", methods=["POST"])
 def add_growth_record(baby_id):
     """添加成长记录"""
-    data = request.get_json()
-    if not data or not data.get("record_date"):
+    data = json_body()
+    if not data.get("record_date"):
         return jsonify({"success": False, "message": "请填写记录日期"}), 400
 
     # 校验数值字段
@@ -103,7 +103,7 @@ def get_growth_record(baby_id, record_id):
 @bp.route("/api/babies/<int:baby_id>/growth/<int:record_id>", methods=["PUT"])
 def update_growth_record(baby_id, record_id):
     """更新成长记录"""
-    data = request.get_json()
+    data = json_body()
     if not data:
         return jsonify({"success": False, "message": "无效数据"}), 400
 

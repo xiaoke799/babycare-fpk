@@ -24,10 +24,25 @@ logger = logging.getLogger(__name__)
 # ==================== API Key 加密 ====================
 
 def _encryption_key_path():
-    """获取加密密钥文件路径"""
-    data_dir = os.path.dirname(os.path.abspath(__file__))
+    """获取加密密钥文件路径。
+
+    放在 DATA_DIR/secrets（可写数据目录），而不是包安装目录 backend/secrets——
+    后者随应用目录走，升级/重装可能丢失或被覆盖。
+    """
+    try:
+        from constants import DATA_DIR
+        data_dir = DATA_DIR
+    except Exception:
+        data_dir = os.environ.get("BABYCARE_DATA_DIR") or os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "data"
+        )
+        data_dir = os.path.abspath(data_dir)
     secrets_dir = os.path.join(data_dir, "secrets")
     os.makedirs(secrets_dir, exist_ok=True)
+    try:
+        os.chmod(secrets_dir, 0o700)
+    except OSError:
+        pass
     return os.path.join(secrets_dir, "api-key.key")
 
 
@@ -43,10 +58,52 @@ def _get_encryption_key():
         return f.read()
 
 
+def _obfuscate_api_key(plaintext: str) -> str:
+    """无 cryptography 时的本地混淆（非强加密，仅避免明文入库/进导出）。
+
+    格式: "bcob1:" + base64(iv + (pt XOR HMAC-SHA256 keystream) + mac)
+    依赖 DATA_DIR 下的本地密钥文件，不可跨机还原。
+    """
+    import hashlib
+    import hmac
+    key = _get_encryption_key()
+    iv = os.urandom(16)
+    pt = plaintext.encode("utf-8")
+    out = bytearray()
+    counter = 0
+    while len(out) < len(pt):
+        block = hmac.new(key, iv + counter.to_bytes(4, "big"), hashlib.sha256).digest()
+        out.extend(block)
+        counter += 1
+    ct = bytes(a ^ b for a, b in zip(pt, out))
+    mac = hmac.new(key, iv + ct, hashlib.sha256).digest()
+    return "bcob1:" + b64encode(iv + ct + mac).decode("ascii")
+
+
+def _deobfuscate_api_key(token: str) -> str:
+    import hashlib
+    import hmac
+    key = _get_encryption_key()
+    raw = b64decode(token[len("bcob1:"):].encode("ascii"))
+    iv, ct, mac = raw[:16], raw[16:-32], raw[-32:]
+    expect = hmac.new(key, iv + ct, hashlib.sha256).digest()
+    if not hmac.compare_digest(mac, expect):
+        raise ValueError("API Key 校验失败")
+    out = bytearray()
+    counter = 0
+    while len(out) < len(ct):
+        block = hmac.new(key, iv + counter.to_bytes(4, "big"), hashlib.sha256).digest()
+        out.extend(block)
+        counter += 1
+    return bytes(a ^ b for a, b in zip(ct, out)).decode("utf-8")
+
+
 def encrypt_api_key(plaintext: str) -> str:
     """
-    使用 AES-256-GCM 加密 API Key
-    格式: base64(iv + authTag + ciphertext)
+    加密 API Key。
+    优先 AES-256-GCM（cryptography），否则本地混淆存储。
+    **绝不再明文回退**——API Key 会进备份/导出，明文等于凭据外泄。
+    格式: AESGCM → base64(iv + ciphertext)；fallback → bcob1:...
     """
     if not plaintext:
         return ""
@@ -58,24 +115,31 @@ def encrypt_api_key(plaintext: str) -> str:
         ciphertext = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
         return b64encode(iv + ciphertext).decode("ascii")
     except ImportError:
-        # 降级: 无 cryptography 库时回退 Fernet
-        try:
-            from cryptography.fernet import Fernet
-            # 从 AES 密钥派生 Fernet 密钥
-            import hashlib
-            fernet_key = b64encode(hashlib.sha256(_get_encryption_key()).digest())
-            f = Fernet(fernet_key)
-            return f.encrypt(plaintext.encode("utf-8")).decode("ascii")
-        except ImportError:
-            # 最终降级: 明文存储 (开发环境)
-            logger.warning("cryptography 库不可用，API Key 明文存储")
-            return plaintext
+        logger.warning("cryptography 不可用，API Key 使用本地混淆存储（非 AES）")
+        return _obfuscate_api_key(plaintext)
 
 
 def decrypt_api_key(ciphertext: str) -> str:
-    """解密 AES-256-GCM 加密的 API Key"""
+    """解密 API Key（AES-GCM / 本地混淆 / 兼容旧 Fernet）。"""
     if not ciphertext:
         return ""
+    # 兼容旧 Fernet（以 gAAAAA 开头）
+    if ciphertext.startswith("gAAAAA"):
+        try:
+            from cryptography.fernet import Fernet
+            import hashlib
+            fernet_key = b64encode(hashlib.sha256(_get_encryption_key()).digest())
+            f = Fernet(fernet_key)
+            return f.decrypt(ciphertext.encode("ascii")).decode("utf-8")
+        except Exception as e:
+            logger.error(f"解密 Fernet API Key 失败: {e}")
+            return ""
+    if ciphertext.startswith("bcob1:"):
+        try:
+            return _deobfuscate_api_key(ciphertext)
+        except Exception as e:
+            logger.error(f"解密混淆 API Key 失败: {e}")
+            return ""
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
         key = _get_encryption_key()
@@ -86,12 +150,10 @@ def decrypt_api_key(ciphertext: str) -> str:
         return aesgcm.decrypt(iv, ct, None).decode("utf-8")
     except ImportError:
         try:
-            from cryptography.fernet import Fernet
-            import hashlib
-            fernet_key = b64encode(hashlib.sha256(_get_encryption_key()).digest())
-            f = Fernet(fernet_key)
-            return f.decrypt(ciphertext.encode("ascii")).decode("utf-8")
-        except ImportError:
+            return _deobfuscate_api_key(ciphertext)
+        except Exception:
+            # 极旧版本曾明文存储：能读则读，但不再写回明文
+            logger.warning("API Key 疑似旧明文格式，仅本次进程内使用，请在设置页重新保存以完成加密")
             return ciphertext
     except Exception as e:
         logger.error(f"解密 API Key 失败: {e}")
@@ -1633,7 +1695,6 @@ def get_llm_status():
     api_key_stored = LLM.get('api_key', '')
     api_key_plain = decrypt_api_key(api_key_stored) if api_key_stored else ''
     api_key_configured = bool(api_key_plain)
-    api_key_masked = mask_api_key(api_key_plain) if api_key_configured else ''
     
     # 获取当前提供商的自定义模型
     custom_models_dict = LLM.get('custom_models', {})
@@ -1650,8 +1711,9 @@ def get_llm_status():
         'vision_enabled': LLM.get('vision_enabled', False),
         'api_url': LLM.get('api_url', ''),
         'base_url': LLM.get('base_url', ''),
+        # 只暴露「是否已配置」，不再返回前后缀掩码——掩码仍泄露 key 前缀/后缀
         'api_key_configured': api_key_configured,
-        'api_key_masked': api_key_masked,
+        'api_key_masked': '****' if api_key_configured else '',
         'custom_models': current_custom,
     }
     if not provider:

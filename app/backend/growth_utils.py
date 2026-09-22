@@ -144,6 +144,8 @@ def classify_percentile(value: float, ref: dict) -> str:
 def z_score_approx(value: float, ref: dict) -> float | None:
     """对称 SD 近似 z-score：sd ≈ (p85 - p15) / 2。
 
+    **不是** WHO LMS，仅用于趋势/文案提示；UI 必须标注「估算」。极端百分位会偏差。
+
     注：WHO 官方 z-score 基于 LMS(Box-Cox)，此处为工程近似，
     在 ±2SD 内误差可接受，超出后仅供参考。
     """

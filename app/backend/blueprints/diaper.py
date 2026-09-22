@@ -330,7 +330,7 @@ def get_diaper_report(baby_id):
 @bp.route("/api/babies/<int:baby_id>/diaper/batch", methods=["POST"])
 def batch_add_diaper_records(baby_id):
     """批量添加换尿布记录"""
-    data = request.get_json()
+    data = json_body()
     if not data or not data.get("records"):
         return jsonify({"success": False, "message": "请提供记录数据"}), 400
 

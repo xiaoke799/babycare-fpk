@@ -9,6 +9,7 @@
 from flask import Blueprint, request, jsonify
 from utils import get_db, get_baby_age, get_baby_age_months, row_to_dict, rows_to_list
 from user_context import require_admin
+from constants import BABY_SCOPED_TABLES
 
 bp = Blueprint("babies", __name__, url_prefix="/api/babies")
 
@@ -22,7 +23,9 @@ def get_babies():
     for b in babies:
         baby = dict(b)
         baby["age"] = get_baby_age(baby.get("birthday", ""))
-        baby["age_months"] = get_baby_age_months(baby.get("birthday", ""))
+        baby["age_months"] = get_baby_age_months(
+            baby.get("birthday", ""), baby.get("due_date")
+        )
         result.append(baby)
     return jsonify({"success": True, "data": result})
 
@@ -40,7 +43,9 @@ def get_baby(baby_id):
         return jsonify({"success": False, "message": "宝宝不存在"}), 404
     result = row_to_dict(baby)
     result["age"] = get_baby_age(result.get("birthday", ""))
-    result["age_months"] = get_baby_age_months(result.get("birthday", ""))
+    result["age_months"] = get_baby_age_months(
+        result.get("birthday", ""), result.get("due_date")
+    )
     return jsonify({"success": True, "data": result})
 
 
@@ -86,17 +91,9 @@ def export_baby_data(baby_id):
     if not baby:
         return jsonify({"success": False, "message": "宝宝不存在"}), 404
 
-    # 按 baby_id 关联的表（表名必须与 server.py init_db() 一致）
-    baby_scoped_tables = [
-        'growth_records', 'feeding_records', 'sleep_records', 'diaper_records',
-        'pumping_records', 'milestones', 'diary_entries', 'vaccines',
-        'tummy_time_records', 'temperature_records', 'medication_records',
-        'allergy_tests', 'baby_teeth', 'asq_screenings',
-        'photos', 'timers', 'solid_food_records', 'leap_records',
-        'fontanelle_records', 'growth_photos',
-        'health_records', 'medication_reminders',
-        'chat_history', 'feeding_summary', 'milestone_details',
-    ]
+    # 统一用 constants.BABY_SCOPED_TABLES（此前手写清单漏了 vaccine_details、
+    # allergy_history、health_indicators 等，单宝宝导出会静默丢数据）
+    baby_scoped_tables = sorted(BABY_SCOPED_TABLES)
 
     existing_tables = set(
         row[0] for row in db.execute(

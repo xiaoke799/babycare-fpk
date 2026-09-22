@@ -96,7 +96,16 @@ class GatewayPrefixMiddleware:
             environ['SCRIPT_NAME'] = self.prefix
             # 标记：本请求确实带了网关前缀，说明来自 fnOS 统一网关转发，
             # 只有此时 X-Trim-* 身份头才可信（防止直连 socket 伪造头部提权）。
-            environ['BABYCARE_GATEWAY_TRUSTED'] = '1'
+            # 可选加固：若设置了 BABYCARE_GATEWAY_SECRET，还要求请求携带
+            # X-Babycare-Gateway-Secret（由网关或反代注入），否则不采信身份头。
+            secret = os.environ.get('BABYCARE_GATEWAY_SECRET', '').strip()
+            if secret:
+                provided = environ.get('HTTP_X_BABYCARE_GATEWAY_SECRET', '')
+                if provided == secret:
+                    environ['BABYCARE_GATEWAY_TRUSTED'] = '1'
+                # 不匹配则保持未信任，X-Trim-* 会被忽略
+            else:
+                environ['BABYCARE_GATEWAY_TRUSTED'] = '1'
 
         return self.app(environ, start_response)
 

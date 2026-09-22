@@ -225,9 +225,12 @@ def export_all_data():
                         db.execute(f'SELECT * FROM {table} WHERE baby_id = ?', (baby_id,)).fetchall()
                     )
                 else:
-                    baby_data[table] = rows_to_list(
-                        db.execute(f'SELECT * FROM {table}').fetchall()
-                    )
+                    items = rows_to_list(db.execute(f'SELECT * FROM {table}').fetchall())
+                    # 剥离凭据：app_settings 内含 llm api_key / notify webhook
+                    if table == 'app_settings':
+                        from utils import scrub_secrets_from_settings_rows
+                        items = scrub_secrets_from_settings_rows(items)
+                    baby_data[table] = items
             except Exception:
                 baby_data[table] = []
         all_data['babies'].append(baby_data)

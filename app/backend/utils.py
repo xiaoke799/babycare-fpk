@@ -85,15 +85,25 @@ def get_baby_age(birthday_str):
         return "未知"
 
 
-def get_baby_age_months(birthday_str):
-    """计算宝宝月龄（数值型，供逻辑判断用）"""
+def get_baby_age_months(birthday_str, due_date_str=None):
+    """计算宝宝月龄（数值型，供逻辑判断用）。
+
+    与 growth_utils.corrected_age_months 同一口径：30.4375 天/月，
+    预产期未满 24 月龄时用纠正月龄。此前这里用 days//30 且忽略预产期，
+    早产儿百分位/疫苗/ASQ 会和成长模块差好几周。
+    """
     try:
-        birthday = datetime.datetime.strptime(birthday_str, '%Y-%m-%d').date()
-        today = datetime.date.today()
-        days = (today - birthday).days
-        return max(0, days // 30)
-    except (ValueError, TypeError):
-        return 0
+        from growth_utils import corrected_age_months
+        months, _ = corrected_age_months(birthday_str, due_date_str)
+        return int(months) if months else 0
+    except Exception:
+        try:
+            birthday = datetime.datetime.strptime(birthday_str, '%Y-%m-%d').date()
+            today = datetime.date.today()
+            days = (today - birthday).days
+            return max(0, int(days / 30.4375))
+        except (ValueError, TypeError):
+            return 0
 
 
 def _get_int_arg(name, default, minimum=None, maximum=None):
@@ -127,6 +137,38 @@ def _set_app_setting(key, value):
     db = get_db()
     db.execute('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', (key, value))
     db.commit()
+
+
+# 备份/导出时必须剥离的凭据形态（llm_config JSON 内 api_key、notify_* webhook/token）
+_SECRET_SETTING_KEY_RE = None
+
+
+def scrub_secrets_from_settings_rows(rows):
+    """从 app_settings 行列表中剥离凭据，避免 API Key / webhook 进备份/导出。"""
+    import json as _json
+    import re as _re
+    global _SECRET_SETTING_KEY_RE
+    if _SECRET_SETTING_KEY_RE is None:
+        _SECRET_SETTING_KEY_RE = _re.compile(
+            r'(^llm_config$|^notify_|api_key|webhook|token|secret|password|pushplus)', _re.I
+        )
+    scrubbed = []
+    for row in rows:
+        item = dict(row)
+        key = str(item.get('key') or '')
+        if _SECRET_SETTING_KEY_RE.search(key):
+            if key == 'llm_config':
+                try:
+                    cfg = _json.loads(item.get('value') or '{}')
+                    if isinstance(cfg, dict) and cfg.get('api_key'):
+                        cfg['api_key'] = ''
+                    item['value'] = _json.dumps(cfg, ensure_ascii=False)
+                except Exception:
+                    item['value'] = ''
+            else:
+                item['value'] = ''
+        scrubbed.append(item)
+    return scrubbed
 
 
 # 为了向后兼容：从 server.py 导出的函数名称相同

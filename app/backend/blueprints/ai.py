@@ -261,8 +261,9 @@ def _safe_max_tool_rounds(v) -> int:
 # ==================== LLM 状态与配置 API ====================
 
 @bp.route('/api/ai/llm/status', methods=['GET'])
+@require_admin
 def ai_llm_status():
-    """获取 LLM 状态"""
+    """获取 LLM 状态（含 api_url / system_prompt 等配置细节，仅管理员）"""
     try:
         _ensure_llm_applied()
         from ai_engine import get_llm_status
@@ -296,21 +297,50 @@ def ai_llm_providers():
 
 
 def _is_safe_url(url):
-    """检查 URL 是否安全（防止 SSRF）：禁止内网/私有地址（除 localhost 本地服务）"""
+    """检查 URL 是否安全（防止 SSRF）。
+
+    禁止链路本地/元数据/私有网段；仅放行 localhost 给 Ollama/LM Studio。
+    此前 172.* 会误伤 172.16–172.31 以外的公网 172.x，同时又漏掉
+    169.254.169.254（云元数据）、0.0.0.0、IPv6 ULA/link-local。
+    """
     if not url:
         return True
+    import ipaddress
+    import socket
     import urllib.parse
     try:
         parsed = urllib.parse.urlparse(str(url))
-        hostname = parsed.hostname or ''
+        if parsed.scheme not in ('http', 'https'):
+            return False
+        hostname = (parsed.hostname or '').lower()
+        if not hostname:
+            return False
         # 本地服务（ollama/lmstudio）允许 localhost
         if hostname in ('localhost', '127.0.0.1', '::1'):
             return True
-        # 禁止私有/内网 IP
-        if hostname.startswith('10.') or hostname.startswith('192.168.') or hostname.startswith('172.'):
-            return False
-        # 必须是 http 或 https
-        return parsed.scheme in ('http', 'https')
+        # 解析为 IP 后按网段判定（覆盖十进制/编码 IP 与多数直接 IP）
+        try:
+            infos = socket.getaddrinfo(hostname, None)
+            addrs = {item[4][0] for item in infos}
+        except socket.gaierror:
+            addrs = set()
+        if not addrs:
+            # 无法解析则退回字面量规则
+            addrs = {hostname}
+        for addr in addrs:
+            try:
+                ip = ipaddress.ip_address(addr.split('%')[0])
+            except ValueError:
+                return False
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+                return False
+            if ip.version == 6 and (ip.is_site_local or ip.ipv4_mapped):
+                mapped = ip.ipv4_mapped
+                if mapped and (mapped.is_private or mapped.is_link_local or mapped.is_loopback):
+                    return False
+                if ip.is_site_local:
+                    return False
+        return True
     except Exception:
         return False
 

@@ -52,7 +52,7 @@
 
 2.1 **本地存储**：所有数据均存储在您 NAS 设备的本地 SQLite 数据库中，不会自动上传至任何服务器。
 
-2.2 **无云服务**：应用不包含云同步、云备份或远程数据访问功能（除用户主动配置的联网 AI 功能外）。
+2.2 **无云服务**：应用不包含云同步、云备份或远程数据访问功能（除用户主动配置的联网 AI 或推送通知外）。
 
 2.3 **数据控制**：您随时可以查看、编辑、删除所有数据，也可以通过导出功能备份数据。
 
@@ -63,7 +63,11 @@
 #### 3.1 默认情况
 默认情况下，应用不会与任何第三方共享您的数据。
 
-#### 3.2 AI 大模型功能（需用户主动启用）
+#### 3.2 推送通知（需用户主动配置）
+
+若在「通知设置」中填入企业微信 / 钉钉 / 飞书 / Bark / PushPlus 等 webhook 或 token，**提醒标题与内容会离开 NAS**，发送到对应第三方推送服务。请按需开启，并避免在推送正文中包含高度敏感的健康细节。
+
+#### 3.3 AI 大模型功能（需用户主动启用）
 
 育儿宝提供两种大模型使用模式：
 
@@ -188,7 +192,7 @@ BabyCare is a locally-run NAS application. We collect the following information 
 
 2.1 **Local Storage**: All data is stored in a local SQLite database on your NAS device and is not automatically uploaded to any server.
 
-2.2 **No Cloud Services**: The App does not include cloud synchronization, cloud backup, or remote data access features (except for online AI features actively configured by the user).
+2.2 **No Cloud Services**: The App does not include cloud synchronization, cloud backup, or remote data access features (except for online AI features or push notifications actively configured by the user).
 
 2.3 **Data Control**: You can view, edit, and delete all data at any time, and export data for backup.
 
@@ -199,7 +203,11 @@ BabyCare is a locally-run NAS application. We collect the following information 
 #### 3.1 Default
 By default, the App does not share your data with any third party.
 
-#### 3.2 AI LLM Features (Requires User Active Enumeration)
+#### 3.2 Push Notifications (Requires User Active Configuration)
+
+If you enter WeChat Work / DingTalk / Feishu / Bark / PushPlus webhook URLs or tokens in notification settings, **reminder titles and content leave your NAS** and are delivered to those third-party push services. Enable only as needed and avoid including highly sensitive health details in push bodies.
+
+#### 3.3 AI LLM Features (Requires User Active Configuration)
 
 The App provides two LLM usage modes:
 

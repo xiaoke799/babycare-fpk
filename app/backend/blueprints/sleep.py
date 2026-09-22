@@ -42,6 +42,10 @@ def _calc_duration(start_dt, end_dt):
     if e == s:
         return 0
     if e < s:
+        # 仅晚间入睡允许跨夜 +1 天。白天记录「结束早于开始」多半是填反了，
+        # 若一律 +1 天会把 10:00–09:00 静默记成 23 小时睡眠。
+        if NAP_START_HOUR <= s.hour < NAP_END_HOUR:
+            return None
         e += datetime.timedelta(days=1)
     return int((e - s).total_seconds() // 60)
 

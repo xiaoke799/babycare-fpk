@@ -20,6 +20,7 @@ from constants import (
     HTTP_NOT_FOUND,
     HTTP_METHOD_NOT_ALLOWED,
     HTTP_UNSUPPORTED_MEDIA_TYPE,
+    HTTP_REQUEST_ENTITY_TOO_LARGE,
     HTTP_TOO_MANY_REQUESTS,
     HTTP_SERVER_ERROR,
     HTTP_SERVICE_UNAVAILABLE,
@@ -149,8 +150,8 @@ def handle_405_error(error) -> Tuple[Dict[str, Any], int]:
 
 
 def handle_413_error(error) -> Tuple[Dict[str, Any], int]:
-    """处理 413 请求体过大"""
-    return _error_body("上传文件过大"), HTTP_BAD_REQUEST
+    """处理 413 请求体过大（返回真实 413，便于前端/网关区分「参数错」和「文件过大」）"""
+    return _error_body("上传文件过大"), HTTP_REQUEST_ENTITY_TOO_LARGE
 
 
 def handle_429_error(error) -> Tuple[Dict[str, Any], int]:
@@ -203,7 +204,7 @@ def handle_sqlite_error(error) -> Tuple[Dict[str, Any], int]:
     from sqlite3 import OperationalError, IntegrityError
     if isinstance(error, IntegrityError):
         logger.warning("数据库完整性错误: %s", error)
-        return {"status": "error", "message": "数据冲突，请检查输入"}, HTTP_BAD_REQUEST
+        return _error_body("数据冲突，请检查输入"), HTTP_BAD_REQUEST
     if isinstance(error, OperationalError):
         logger.error("数据库操作错误: %s", error)
         # 记录数据库操作错误
@@ -218,7 +219,7 @@ def handle_sqlite_error(error) -> Tuple[Dict[str, Any], int]:
             )
         except Exception:
             pass
-        return {"status": "error", "message": "数据库操作失败，请稍后重试"}, HTTP_SERVER_ERROR
+        return _error_body("数据库操作失败，请稍后重试"), HTTP_SERVER_ERROR
     tb = traceback.format_exc()
     logger.error("数据库错误: %s\n%s", error, tb)
     try:
@@ -232,7 +233,7 @@ def handle_sqlite_error(error) -> Tuple[Dict[str, Any], int]:
         )
     except Exception:
         pass
-    return {"status": "error", "message": "数据库错误"}, HTTP_SERVER_ERROR
+    return _error_body("数据库错误"), HTTP_SERVER_ERROR
 
 
 def handle_generic_error(error) -> Tuple[Dict[str, Any], int]:

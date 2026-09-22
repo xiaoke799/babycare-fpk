@@ -40,7 +40,8 @@ DURATION_MAX = 1440
 VALID_FEEDING_TYPES = {"breast", "bottle", "solid", "mixed"}
 VALID_DIAPER_TYPES = {"wet", "dirty", "both", "dry"}
 VALID_SLEEP_QUALITY = {"good", "normal", "poor"}
-VALID_BABY_GENDERS = {"boy", "girl"}
+# babies API 允许 other（未指定/不愿透露），枚举与写入接口保持一致
+VALID_BABY_GENDERS = {"boy", "girl", "other"}
 VALID_FEEDING_SIDES = {"left", "right", "both"}
 
 # 秒级时长（左右侧哺乳计时器用）：上限 24 小时

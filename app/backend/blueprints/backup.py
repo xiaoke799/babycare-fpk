@@ -13,7 +13,7 @@ import glob
 import shutil
 from flask import Blueprint, request, jsonify, send_file, current_app
 
-from utils import get_db, json_body
+from utils import get_db, json_body, scrub_secrets_from_settings_rows as _scrub_secrets_from_settings_rows
 from user_context import require_admin
 from constants import EXPORT_TABLES, BABY_SCOPED_TABLES as _BABY_SCOPED_TABLES
 
@@ -121,7 +121,7 @@ def _safe_cols_and_values(row):
 def _collect_all_data(baby_id=None):
     """收集所有数据（用于备份）"""
     db = get_db()
-    
+
     # 获取实际存在的表
     existing_tables = set(
         row[0] for row in db.execute(
@@ -169,7 +169,10 @@ def _collect_all_data(baby_id=None):
         if table == 'babies' or table in _BABY_SCOPED_TABLES or table not in existing_tables:
             continue
         rows = db.execute(f'SELECT * FROM {table}').fetchall()
-        all_data['global'][table] = [dict(r) for r in rows]
+        items = [dict(r) for r in rows]
+        if table == 'app_settings':
+            items = _scrub_secrets_from_settings_rows(items)
+        all_data['global'][table] = items
     
     return all_data
 

@@ -120,13 +120,10 @@ def add_asq_screening(baby_id):
     pers = data.get("personal_social_score", 0)
     total = comm + gross + fine + prob + pers
 
-    # 简单评估：总分>=150正常，100-149需关注，<100建议转介
-    if total >= 150:
-        result = "normal"
-    elif total >= 100:
-        result = "monitor"
-    else:
-        result = "refer"
+    # 不做临床结论。标准 ASQ-3 按月龄分区、分维度对照常模（观察区上下限），
+    # 绝不是五维求和卡 150/100——此前的 normal/monitor/refer 会误导家长。
+    # 这里只保存原始分，result 固定 score_only，UI 展示免责声明。
+    result = "score_only"
 
     db = get_db()
     db.execute(
@@ -138,7 +135,15 @@ def add_asq_screening(baby_id):
          data["age_months"], comm, gross, fine, prob, pers, total, result, data.get("note", ""))
     )
     db.commit()
-    return jsonify({"success": True, "message": "筛查记录已添加", "data": {"total_score": total, "result": result}})
+    return jsonify({
+        "success": True,
+        "message": "筛查记录已添加",
+        "data": {
+            "total_score": total,
+            "result": result,
+            "disclaimer": "本记录为自评分数汇总，不是标准 ASQ-3 常模判读，不构成医疗结论。如需正式筛查请咨询儿科/儿保科。",
+        },
+    })
 
 
 @bp.route("/api/asq/<int:record_id>", methods=["DELETE"])

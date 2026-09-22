@@ -1315,9 +1315,11 @@ function initNavigation() {
 //
 //   「一个功能拆两半」是通用规则：录的那半归记录栏，看的那半归成长栏，
 //   两栏各放一个入口、各进各的形态。已按此拆开的：
-//     身高体重(录)     ↔ 成长曲线(看)          —— 两个 page id 共用一个 page-growth
+//     身高体重(录)     ↔ 成长曲线(看)          —— 两个 page id 共用一个 page-growth，only-view 藏录入
 //     睡眠记录(录)     ↔ 睡眠分析(看)          —— 看的那半是成长页的 Tab
 //     成长成就(录)     ↔ 成长回顾(看)          —— 同一个 page-milestones，只读形态，见 READONLY_ALIAS
+//     BMI(看)          —— 录入在记录栏「身高体重」，本页无＋按钮
+//     发育筛查(看)     ↔ 健康档案 ASQ(录)      —— 成长栏只看趋势，新建在记录栏
 //   判定标准是「这块是填表还是看结果」，不是「有没有＋按钮」——出牙/囟门/飞跃期这几个页面
 //   主体就是填表，图只是顺带看一眼，所以整个留在记录栏，不拆。
 const NAV_HUBS = [
@@ -1560,6 +1562,10 @@ function switchPage(page) {
         // switchPage(宿主) 把 currentPage 改成了宿主，这里改回来，
         // 保证底部导航、相关功能、切宝宝刷新都还认得合并前的 page id
         App.currentPage = page;
+        // 共享宿主（page-growth）要按虚拟页身份重算录入/只读
+        if (tabTarget.host === 'growth') {
+            markGrowthEntry(page !== 'growth');
+        }
         // 正确的「上一页」：虚拟页交给 goBack 统一回宫格，不占历史栈；
         // 其余已合并页（疫苗/体温/用药提醒/过敏）恢复正常语义——回到真正来的那一页。
         if (!TAB_PAGE_HUB[page] && cameFrom && cameFrom !== page &&
@@ -1686,14 +1692,18 @@ function loadPageData(page) {
             // 这个 page id 现在只归记录栏的「身高体重」用（成长栏的「成长曲线」
             // 走别名 growth-chart，直接落 who-chart Tab）。
             // 固定落「记录」Tab，免得上次停在别的 Tab、点进来看到的不是录入表单。
+            markGrowthEntry(false);
             if (App.currentPage === 'growth') activateGrowthTab('records');
             loadGrowthPage();
             break;
         case 'growth-chart': {
+            markGrowthEntry(true);
             // 切宝宝后刷新曲线。注意要判视图可见——canvas 在 display:none 时宽高为 0，
             // 画了也是空白（同 sleep-analysis 的处理）。
             const view = document.getElementById('growthViewWhoChart');
             if (view && view.style.display !== 'none') loadWhoChart();
+            // 共享页的「记录」列表也会展示，先拉一份，切 Tab 不再空白
+            loadGrowthPage();
             break;
         }
         case 'milestones':        // 记录栏进来的形态：带表单，可录入
@@ -1820,7 +1830,7 @@ const PAGE_LINKS = {
     // 宿主那份（PAGE_LINKS['milestones']），而那份的第一个就是它自己 —— 回顾页上
     // 会冒出一个指向自己的按钮。
     growth:             ['growth-chart', 'bmi', 'milestones'],
-    'growth-chart':     ['growth', 'bmi', 'reports'],
+    'growth-chart':     ['growth', 'bmi', 'milestone-review'],
     milestones:         ['milestone-review', 'growth', 'timeline'],
     'milestone-review': ['milestones', 'timeline'],
 };
@@ -2214,7 +2224,7 @@ function showRecordModal(type) {
         feeding: '喂奶记录',
         sleep: '睡眠记录',
         diaper: '换尿布记录',
-        growth: '成长记录'
+        growth: '身高体重'
     };
     document.getElementById('recordModalTitle').textContent = titles[type] || '添加记录';
 
@@ -2351,6 +2361,7 @@ function bindRecordFormEvents(type) {
                     hideModal('recordModal');
                     showToast.success('记录已添加');
                     loadDashboard();
+                    loadSleepPage();
                 } else {
                     showToast.error(res.message || '添加失败');
                 }
@@ -4513,6 +4524,45 @@ const GROWTH_TAB_PAGES = {
 };
 
 /**
+ * 成长页双形态（记录栏录 / 成长栏看，见 NAV_HUBS 顶部说明）。
+ * 只要不是「记录栏身高体重 + 记录 Tab」，一律 only-view：藏掉＋添加与编辑。
+ * 分析 Tab（WHO曲线/生长速度/记录关联/睡眠分析）本就不该在页内录入。
+ *
+ * 进入身份记在 _growthViewOnly：睡眠分析往返会把 App.currentPage 从
+ * growth-chart 改成 growth（见 initGrowthTabs），只靠 currentPage 会
+ * 让成长栏进来的人在「记录」Tab 冒出＋添加——身份必须在进页时定死。
+ */
+let _growthViewOnly = false;
+
+function markGrowthEntry(viewOnly) {
+    _growthViewOnly = !!viewOnly;
+    syncGrowthRecordMode();
+}
+
+function isGrowthRecordMode() {
+    if (_growthViewOnly) return false;
+    if (App.currentPage === 'growth-chart' || App.currentPage === 'sleep-analysis') return false;
+    if (App.currentPage !== 'growth') return false;
+    const activeTab = document.querySelector('.growth-tab-btn.active')?.dataset?.growthTab;
+    return activeTab === 'records' || !activeTab;
+}
+
+function syncGrowthRecordMode() {
+    const pageEl = document.getElementById('page-growth');
+    if (!pageEl) return;
+    const recordMode = isGrowthRecordMode();
+    pageEl.classList.toggle('only-view', !recordMode);
+    const title = document.getElementById('growthPageTitle');
+    if (title) {
+        title.textContent = recordMode
+            ? '身高体重'
+            : (App.currentPage === 'sleep-analysis' ? '睡眠分析' : '成长分析');
+    }
+    const btn = document.getElementById('addGrowthBtnPage');
+    if (btn) btn.style.display = recordMode ? '' : 'none';
+}
+
+/**
  * 「虚拟页」→ 它所属的一级宫格。
  * 这类页面本体是别的页里的一个 Tab，但有自己的 page id，入口也多样
  * （宫格 tile / 相关功能链接 / 页面顶部 Tab）；而顶部 Tab 切换不算一次页面跳转，
@@ -4557,11 +4607,14 @@ function initGrowthTabs() {
             document.querySelectorAll('.growth-tab-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             const tab = btn.dataset.growthTab;
+            // Tab 切换后重算录入/只读形态：分析 Tab 永远不给＋添加
+            syncGrowthRecordMode();
 
             // 睡眠分析是「虚拟页」（有自己的 page id / 返回目标=成长宫格）；
             // 其余 Tab 都属于成长页本身。让 App.currentPage 跟上，返回按钮与 goBack 才有正确上下文。
+            // 从睡眠分析切回其它 Tab 时恢复「进页时的身份」，别一律打成记录栏的 growth。
             if (tab === 'sleep-analysis') App.currentPage = 'sleep-analysis';
-            else if (App.currentPage === 'sleep-analysis') App.currentPage = 'growth';
+            else if (App.currentPage === 'sleep-analysis') App.currentPage = _growthViewOnly ? 'growth-chart' : 'growth';
 
             Object.entries(GROWTH_TAB_VIEWS).forEach(([name, id]) => {
                 const el = document.getElementById(id);
@@ -4573,7 +4626,9 @@ function initGrowthTabs() {
             if (summary) summary.style.display = (tab === 'sleep-analysis') ? 'none' : '';
 
             // 进入 Tab 时再拉数据：canvas 已可见，不会画成 0 宽高
-            if (tab === 'who-chart') loadWhoChart();
+            // 「记录」Tab 也要刷：切宝宝/从分析 Tab 回来时列表会是旧数据
+            if (tab === 'records') loadGrowthPage();
+            else if (tab === 'who-chart') loadWhoChart();
             else if (tab === 'velocity') loadGrowthVelocity();
             else if (tab === 'correlation') loadCorrelationData();
             else if (tab === 'sleep-analysis') {
@@ -7173,21 +7228,29 @@ function loadGrowthPage() {
                 </div>
             `).join('');
         } else {
-            listContainer.innerHTML = '<p class="empty-tip">暂无成长记录<br><small>点击上方按钮添加身高、体重等数据</small></p>';
+            listContainer.innerHTML = isGrowthRecordMode()
+                ? '<p class="empty-tip">暂无成长记录<br><small>点击上方按钮添加身高、体重等数据</small></p>'
+                : '<p class="empty-tip">暂无成长记录<br><small>录入请到「记录 → 身高体重」</small></p>';
         }
     });
 
-    // 绑定添加按钮事件
+    // 绑定添加按钮事件（只读形态下 CSS 已隐藏；事件仍绑在记录栏形态）
     const btn = document.getElementById('addGrowthBtnPage');
     if (btn && !btn._bound) {
         btn._bound = true;
         btn.addEventListener('click', () => showRecordModal('growth'));
     }
+    syncGrowthRecordMode();
 }
 
 // 编辑成长记录
 function editGrowth(id) {
     if (!App.currentBaby) return;
+    // 只读形态（成长栏/分析 Tab）不给改——CSS 藏了按钮，这里再拦一道
+    if (!isGrowthRecordMode()) {
+        showToast.warning('请到「记录 → 身高体重」修改');
+        return;
+    }
     api(`/api/babies/${App.currentBaby}/growth/${id}`).then(res => {
         if (!res.success) return showToast.error('加载失败');
         const r = res.data;
@@ -8196,6 +8259,10 @@ function renderMilestones() {
 // milestone_details 表，两张表不通用，混用会删错数据。
 function deleteGrowthMilestone(id, event) {
     if (event) event.stopPropagation();
+    if (isMilestoneReview()) {
+        showToast.warning('请到「记录 → 成长成就」修改');
+        return;
+    }
     if (!confirm('确定删除这条里程碑记录吗？')) return;
     api(`/api/babies/${App.currentBaby}/milestones/${id}`, { method: 'DELETE' }).then(res => {
         if (res.success) {
@@ -9152,10 +9219,7 @@ function initPattern() {
 // ==================== ASQ发育筛查 ====================
 
 function initAsqPage() {
-    const addAsqBtn = document.getElementById('addAsqBtn');
-    if (addAsqBtn) {
-        addAsqBtn.addEventListener('click', showAsqModal);
-    }
+    // 发育筛查页在成长栏只看趋势；新建入口在「记录 → 健康档案 → ASQ筛查」
     loadAsqScreenings();
 }
 
@@ -9169,15 +9233,21 @@ function loadAsqScreenings() {
         renderAsqTrend(records);
         const container = document.getElementById('asqList');
         if (records.length === 0) {
-            container.innerHTML = '<p class="empty-tip">暂无筛查记录</p>';
+            container.innerHTML = '<p class="empty-tip">暂无筛查记录<br><small>录入请到「记录 → 健康档案 → ASQ筛查」</small></p>';
             return;
         }
         container.innerHTML = records.map(r => {
-            const resultMap = { normal: '正常', monitor: '需关注', refer: '建议转介' };
-            const resultClass = r.result === 'normal' ? 'good' : r.result === 'monitor' ? 'warn' : 'alert';
+            // 非标准 ASQ-3 常模判读，不再显示临床结论
+            const resultMap = {
+                score_only: '自评分数',
+                normal: '自评分数',
+                monitor: '自评分数',
+                refer: '自评分数',
+            };
+            const resultClass = 'good';
+            // 成长栏只看：不渲染删除按钮（原先靠 CSS 藏，onclick 仍可能被触发）
             return `
                 <div class="asq-item ${resultClass}">
-                    <button class="asq-delete" onclick="deleteAsq(${r.id})">X</button>
                     <div class="asq-item-header">
                         <span class="asq-age">${r.age_months}月龄</span>
                         <span class="asq-date">${r.screening_date}</span>
@@ -9209,7 +9279,13 @@ function renderAsqOverview(records) {
     if (!box) return;
     if (!records || records.length === 0) { box.innerHTML = ''; return; }
 
-    const resultMap = { normal: '正常', monitor: '需关注', refer: '建议转介' };
+    // 非标准 ASQ-3 常模判读，不再显示临床结论
+    const resultMap = {
+        score_only: '自评分数',
+        normal: '自评分数',
+        monitor: '自评分数',
+        refer: '自评分数',
+    };
     // 最近一次按筛查日期取，别假定后端已排好序
     const latest = records.slice().sort((a, b) =>
         String(b.screening_date || '').localeCompare(String(a.screening_date || '')))[0];
@@ -9219,8 +9295,7 @@ function renderAsqOverview(records) {
     const next = (months === null || months === undefined)
         ? null : ASQ_AGE_POINTS.find(a => a > months);
 
-    const resultCls = latest.result === 'normal' ? 'good'
-        : latest.result === 'monitor' ? 'warn' : 'alert';
+    const resultCls = 'good';
 
     box.innerHTML =
         '<div class="asq-ov-card"><span class="asq-ov-value">' + records.length +
@@ -9400,6 +9475,11 @@ function showAsqModal() {
 }
 
 function deleteAsq(id) {
+    // 发育筛查页在成长栏只看；删除只应发生在记录栏健康档案场景
+    if (App.currentPage === 'asq') {
+        showToast.warning('请到「记录 → 健康档案 → ASQ筛查」管理');
+        return;
+    }
     if (!confirm('确定删除这条筛查记录？')) return;
     api(`/api/asq/${id}`, { method: 'DELETE' }).then(res => {
         if (res.success) {
@@ -10953,7 +11033,7 @@ if (document.readyState === 'loading') {
 
 // ==================== BMI 追踪 ====================
 function initBmiPage() {
-    document.getElementById('addBmiBtn')?.addEventListener('click', showBmiForm);
+    // BMI 录入入口已收进「记录 → 身高体重」，成长栏不再提供录制按钮
 }
 
 function loadBmiData() {
@@ -10973,7 +11053,7 @@ function loadBmiData() {
             // 筛选有BMI或身高体重的记录
             const bmiRecords = res.data.filter(r => r.bmi || (r.height && r.weight));
             if (!bmiRecords.length) {
-                document.getElementById('bmiHistoryList').innerHTML = '<p class="empty-tip">请先在成长记录中添加身高体重数据</p>';
+                document.getElementById('bmiHistoryList').innerHTML = '<p class="empty-tip">请先在「记录 → 身高体重」添加数据</p>';
                 return;
             }
 
@@ -11146,7 +11226,7 @@ function drawBmiChart(records) {
 }
 
 function showBmiForm() {
-    // 跳转到成长记录页面或显示快速录入弹窗
+    // 保留兼容旧调用：跳到记录栏「身高体重」
     if (typeof switchPage === 'function') {
         switchPage('growth');
     }
@@ -15245,8 +15325,12 @@ function renderHealthAsqList(asqList) {
     const container = document.getElementById('healthAsqList');
     if (!container) return;
     if (!asqList || asqList.length === 0) { container.innerHTML = '<p class="empty-tip">暂无ASQ筛查记录</p>'; return; }
-    const resultMap = { normal: '正常', monitoring: '需关注', referral: '需转诊' };
-    const resultClass = { normal: 'asq-result-normal', monitoring: 'asq-result-monitoring', referral: 'asq-result-referral' };
+    // 非标准 ASQ-3 常模判读，统一显示自评分数
+    const resultMap = {
+        score_only: '自评分数', normal: '自评分数', monitoring: '自评分数',
+        referral: '自评分数', monitor: '自评分数', refer: '自评分数',
+    };
+    const resultClass = { score_only: 'asq-result-normal', normal: 'asq-result-normal', monitoring: 'asq-result-normal', referral: 'asq-result-normal', monitor: 'asq-result-normal', refer: 'asq-result-normal' };
     container.innerHTML = asqList.slice(0, 5).map(a => {
         const rClass = resultClass[a.result] || '';
         const rText = resultMap[a.result] || a.result;
