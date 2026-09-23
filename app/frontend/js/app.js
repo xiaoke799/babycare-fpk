@@ -1402,7 +1402,8 @@ const NAV_HUBS = [
             { page: 'settings', label: '设置', icon: 'icon-gear' },
             { page: 'clinic', label: '看诊摘要', icon: 'icon-stethoscope' },
             // 安抚音效是「用」的工具，跟记录/报表都无关，放系统栏更顺
-            { page: 'sounds', label: '安抚音效', icon: 'icon-wave' }
+            { page: 'sounds', label: '安抚音效', icon: 'icon-wave' },
+            { page: 'about', label: '关于', icon: 'icon-info' }
             // AI 助手由小萌浮窗承担，不单列页面
         ]
     }
@@ -1761,6 +1762,9 @@ function loadPageData(page) {
             break;
         case 'sounds':
             break;
+        case 'about':
+            loadAbout();
+            break;
         case 'bmi':
             loadBmiData();
             break;
@@ -1893,6 +1897,18 @@ function renderRelatedLinks(page) {
     bar.querySelectorAll('.related-link-btn').forEach(btn => {
         btn.addEventListener('click', () => switchPage(btn.dataset.goto));
     });
+}
+
+// ==================== 关于页面 ====================
+function loadAbout() {
+    // 优先从后端应用信息取版本号，失败则回退到静态版本
+    const verEl = document.getElementById('aboutVersion');
+    if (verEl) verEl.textContent = '版本 0.0.1';
+    api('/api/storage/app-info').then(r => {
+        if (r && r.success && r.version && verEl) {
+            verEl.textContent = '版本 ' + r.version;
+        }
+    }).catch(() => {});
 }
 
 // ==================== 仪表盘 ====================

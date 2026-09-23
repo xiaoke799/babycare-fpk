@@ -2068,6 +2068,92 @@ body {
     line-height: 1.6;
 }
 
+/* ==================== 关于页面 ==================== */
+.about-logo-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 18px;
+}
+.about-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    color: #fff;
+    flex-shrink: 0;
+}
+.about-logo .ic-svg {
+    width: 30px;
+    height: 30px;
+}
+.about-logo-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.about-app-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.about-version {
+    font-size: 12px;
+    color: var(--text-light);
+}
+.feedback-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 0;
+    border-bottom: 1px solid var(--border-color);
+    text-decoration: none;
+    color: inherit;
+}
+.feedback-row:last-child {
+    border-bottom: none;
+}
+.feedback-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--bg-color);
+    color: var(--primary-strong);
+    flex-shrink: 0;
+}
+.feedback-icon .ic-svg {
+    width: 18px;
+    height: 18px;
+}
+.feedback-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.feedback-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.feedback-value {
+    font-size: 12px;
+    color: var(--text-light);
+    word-break: break-all;
+}
+.feedback-go {
+    font-size: 20px;
+    color: var(--text-light);
+    flex-shrink: 0;
+}
+
 /* 行式字段：标签居左、控件居右 */
 .settings-row {
     display: flex;
