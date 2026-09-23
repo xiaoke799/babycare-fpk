@@ -56,6 +56,10 @@ MARKS = [
     ("前端新增类型下拉项在包里", "frontend/index.html", '<option value="vaccine">疫苗</option>'),
     ("前端新增类型配色在包里", "frontend/css/main.css", ".timeline-icon.vaccine"),
     ("前端类型筛选已改为服务端下推", "frontend/js/app.js", "params.set('type', typeFilter)"),
+    ("首页日期条节点在包里", "frontend/index.html", 'id="homeDateBar"'),
+    ("首页回看态逻辑在包里", "frontend/js/app.js", "homeViewDate"),
+    ("首页日期条样式在包里", "frontend/css/main.css", ".home-date-bar"),
+    ("时间线类型表已提到模块级（首页复用）", "frontend/js/app.js", "const TIMELINE_TYPE_MAP ="),
 ]
 
 
