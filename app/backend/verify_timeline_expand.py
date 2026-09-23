@@ -384,21 +384,29 @@ check("前端类型下拉的取值与后端类型标识完全一致",
       {"前端多出": sorted((opts - {"all"}) - backend_keys),
        "后端未被前端覆盖": sorted(backend_keys - opts)})
 
-# 5.2 每个后端类型在前端 typeMap 里都要有图标/标题分支，否则退化成兜底的「记录」
-tl_body = fn_body(js, "loadTimeline") or ""
+# 5.2 每个后端类型在前端类型表里都要有图标/标题分支，否则退化成兜底的「记录」
+# ⚠️ 类型表位于**模块级** `const TIMELINE_TYPE_MAP = {...}`（首页「看某一天」也用它）。
+#    以前它写在 loadTimeline 内部，所以这里曾按函数体定位；搬位置后这个检查必须同步跟着搬，
+#    否则会退化成「解析出空集 → 空集当然全部满足」的假通过。
+_tm_i = js.find("const TIMELINE_TYPE_MAP")
 tm = ""
-_tm_i = tl_body.find("const typeMap")
 if _tm_i >= 0:
-    tm = balanced_block(tl_body, tl_body.find("{", _tm_i)) or ""
+    tm = balanced_block(js, js.find("{", _tm_i)) or ""
 front_types = set(re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\s*:\s*\{", tm))
-check("后端每一类在前端 typeMap 里都有专属图标/标题",
+# 防呆：解析结果为空说明定位失效，这一条必须直接失败，不能靠下面的包含判断蒙混过关
+check("前端类型表能解析出来（解析为空＝定位失效，不是「都对上了」）",
+      len(front_types) >= len(backend_keys),
+      {"解析到": len(front_types), "需要": len(backend_keys)})
+check("后端每一类在前端类型表里都有专属图标/标题",
       backend_keys <= front_types,
-      {"前端 typeMap 缺失": sorted(backend_keys - front_types)})
+      {"前端缺失": sorted(backend_keys - front_types)})
 
 # 5.3 每个类型的圆底配色要有对应 CSS，否则图标是白底
 css_classes = set(re.findall(r"\.timeline-icon\.([A-Za-z0-9_-]+)\s*\{", css))
 map_classes = set(re.findall(r"class:\s*'([A-Za-z0-9_-]+)'", tm))
-check("前端 typeMap 用到的每个配色 class 都有 CSS 定义",
+check("前端类型表能解析出配色 class（解析为空＝定位失效）",
+      len(map_classes) >= len(backend_keys), {"解析到": len(map_classes)})
+check("前端类型表用到的每个配色 class 都有 CSS 定义",
       map_classes <= css_classes,
       {"缺 CSS": sorted(map_classes - css_classes)})
 

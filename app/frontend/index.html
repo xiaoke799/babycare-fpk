@@ -94,7 +94,7 @@
                 </div>
 
                 <!-- 快捷记录 -->
-                <div class="home-quick-actions">
+                <div class="home-quick-actions" id="homeQuickActions">
                     <button class="home-quick-btn" data-action="feeding" type="button">
                         <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bottle"/></svg></span>
                         <span class="home-quick-label">喂奶</span>
@@ -113,8 +113,20 @@
                     </button>
                 </div>
 
+                <!-- 日期切换：默认看今天，可回看任意一天（回看时本页转为只读视图） -->
+                <div class="home-date-bar" id="homeDateBar">
+                    <div class="care-tabs home-date-tabs">
+                        <button class="tab-btn active" type="button" data-home-offset="0">今天</button>
+                        <button class="tab-btn" type="button" data-home-offset="1">昨天</button>
+                        <button class="tab-btn" type="button" data-home-offset="7">一周前</button>
+                    </div>
+                    <label class="home-date-pick">
+                        <input type="date" id="homeDateInput" aria-label="选择要回看的日期">
+                    </label>
+                </div>
+
                 <!-- 今日概览 -->
-                <h3 class="home-section-title">今日概览</h3>
+                <h3 class="home-section-title" id="homeStatsTitle">今日概览</h3>
                 <div class="home-stats">
                     <div class="home-stat-card feeding">
                         <div class="home-stat-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bottle"/></svg></div>
@@ -160,9 +172,9 @@
                     </div>
                 </div>
 
-                <!-- 最近记录 -->
+                <!-- 最近记录（回看某天时变成「那天的记录」） -->
                 <div class="home-recent">
-                    <h3 class="home-section-title">最近记录</h3>
+                    <h3 class="home-section-title" id="homeRecentTitle">最近记录</h3>
                     <div class="home-recent-list" id="homeRecentList">
                         <p class="empty-tip">暂无记录</p>
                     </div>

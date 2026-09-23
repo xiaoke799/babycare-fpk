@@ -12141,6 +12141,44 @@ input:checked + .toggle-slider:before {
     color: var(--text-primary);
 }
 
+/* 首页日期切换：默认看今天，也可回看某一天 */
+.home-date-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+    flex-wrap: wrap;
+}
+
+.home-date-tabs {
+    flex: 1;
+    min-width: 220px;
+    margin-bottom: 0;
+}
+
+.home-date-pick input[type="date"] {
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    min-height: 38px;
+}
+
+/* 回看某天时的记录列表：直接复用时间线的条目样式，保证两处观感一致 */
+.home-day-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.home-day-hint {
+    font-size: 12px;
+    color: var(--text-light);
+    padding: 8px 0 4px;
+}
+
 /* 今日概览统计 */
 .home-stats {
     display: grid;

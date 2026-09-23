@@ -1962,20 +1962,143 @@ function renderHomeRecent(records) {
     }).join('');
 }
 
+// ==================== 首页「看某一天」（回看） ====================
+// 设计取舍：不改后端 dashboard 接口，回看时改用**时间线接口**取那天的数据。
+// 两条理由 —— ① 时间线已支持任意日期段，两边口径天然一致，不用为首页单开一套后端 SQL；
+//            ② 概览三卡（喂奶次数 / 睡眠时长 / 尿布数）可以由事件直接算出来，
+//               与 dashboard 里那三条 SQL 的口径相同，算出来的数不会打架。
+let homeViewDate = null;   // null = 看今天（走 dashboard 原路径），否则是 YYYY-MM-DD
+
+/** 2026-08-15 -> 8月15日（非本年才补年份）；今天/昨天给口语词 */
+function humanizeDateCN(dateStr) {
+    const parts = String(dateStr || '').split('-').map(n => parseInt(n, 10));
+    if (parts.length !== 3 || parts.some(n => !n)) return String(dateStr || '');
+    const [y, m, d] = parts;
+    if (dateStr === getToday()) return '今日';
+    const yest = new Date();
+    yest.setDate(yest.getDate() - 1);
+    if (dateStr === formatDate(yest)) return '昨天';
+    return (y === new Date().getFullYear() ? '' : y + '年') + m + '月' + d + '日';
+}
+
+/** 只改标题里 span 之后的文本节点：结构是 <span id="homeBabyName">名字</span>的今日 */
+function setHomeGreetingSuffix(suffix) {
+    const titleEl = document.querySelector('.home-greeting-title');
+    if (!titleEl) return;
+    for (const node of titleEl.childNodes) {
+        if (node.nodeType === 3) { node.textContent = '的' + suffix; return; }
+    }
+}
+
+/** 回看态 / 今日态的文案与区块显隐（两种形态都从这里统一切换，别各写一份） */
+function applyHomeDateUI() {
+    const d = homeViewDate;
+    const past = !!d;
+    setText('homeGreetingLabel', past ? '回看记录' : currentGreeting());
+    setHomeGreetingSuffix(past ? humanizeDateCN(d) : '今日');
+    setText('homeStatsTitle', (past ? humanizeDateCN(d) : '今日') + '概览');
+    setText('homeRecentTitle', past ? '那天的记录' : '最近记录');
+
+    // 回看是只读视图：录入入口和「最新测量」两块都收起来 ——
+    // 免得在一份历史数据下面摆一排「现在记录」的按钮造成误点。
+    const qa = document.getElementById('homeQuickActions');
+    if (qa) qa.style.display = past ? 'none' : '';
+    const body = document.getElementById('homeBodySection');
+    if (body) body.style.display = past ? 'none' : '';
+
+    document.querySelectorAll('#homeDateBar [data-home-offset]').forEach(btn => {
+        const off = parseInt(btn.dataset.homeOffset, 10) || 0;
+        const t = new Date();
+        t.setDate(t.getDate() - off);
+        btn.classList.toggle('active', past && formatDate(t) === d);
+    });
+
+    const input = document.getElementById('homeDateInput');
+    if (input) input.value = past ? d : getToday();
+}
+
+function initHomeDateBar() {
+    const bar = document.getElementById('homeDateBar');
+    if (!bar) return;
+    bar.querySelectorAll('[data-home-offset]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const off = parseInt(btn.dataset.homeOffset, 10) || 0;
+            const t = new Date();
+            t.setDate(t.getDate() - off);
+            setHomeDate(formatDate(t));
+        });
+    });
+    const input = document.getElementById('homeDateInput');
+    if (input) {
+        input.addEventListener('change', () => {
+            if (input.value) setHomeDate(input.value);
+        });
+    }
+    applyHomeDateUI();
+}
+
+function setHomeDate(dateStr) {
+    // 选到今天就退回原路径（dashboard），保证「今天」始终是实时口径
+    homeViewDate = (!dateStr || dateStr === getToday()) ? null : dateStr;
+    applyHomeDateUI();
+    loadDashboard();
+}
+
+/** 回看某一天：取那天的全部事件 -> 概览三卡 + 当天明细 */
+function loadHomeDayView(dateStr) {
+    const container = document.getElementById('homeRecentList');
+    const params = new URLSearchParams();
+    params.set('from', dateStr);
+    params.set('to', dateStr);
+    params.set('limit', String(TIMELINE_LIMIT));
+
+    api(`/api/babies/${App.currentBaby}/timeline?${params.toString()}`).then(res => {
+        if (!res.success) return;
+        const events = res.data || [];
+
+        // 口径与 dashboard 的今日统计一致：喂奶条数 / 睡眠总分钟 / 尿布条数
+        setText('homeFeedingCount', events.filter(e => e.type === 'feeding').length);
+        setText('homeSleepTime', formatHomeDuration(
+            events.filter(e => e.type === 'sleep')
+                .reduce((s, e) => s + (e.duration_minutes || 0), 0)));
+        setText('homeDiaperCount', events.filter(e => e.type === 'diaper').length);
+
+        if (container) {
+            container.innerHTML = events.length === 0
+                ? '<p class="empty-tip">这天没有记录</p>'
+                : '<div class="home-day-list">'
+                    + events.map(ev => timelineItemHtml(ev)).join('')
+                    + '</div>';
+        }
+        applyHomeDateUI();
+    });
+}
+
+/** 按当前时段给问候语（首页标题用；回看态的文案另由 applyHomeDateUI 覆盖） */
+function currentGreeting() {
+    const hr = new Date().getHours();
+    if (hr >= 11 && hr < 13) return '午安，';
+    if (hr >= 13 && hr < 18) return '下午好，';
+    if (hr >= 18 || hr < 5) return '晚安，';
+    return '早安，';
+}
+
 function loadDashboard() {
     if (!App.currentBaby) return;
+
+    // 回看某一天时走独立分支：复用时间线接口取那天的数据。
+    // 放在这里（而不是只在点日期条时）是为了让 switchPage、切宝宝等
+    // 所有会重新进入首页的入口都尊重当前选中的日期。
+    if (homeViewDate) {
+        loadHomeDayView(homeViewDate);
+        return;
+    }
 
     api(`/api/babies/${App.currentBaby}/dashboard`).then(res => {
         if (!res.success) return;
         const data = res.data || {};
 
-        // 问候语：按当前时段
-        const hr = new Date().getHours();
-        let greet = '早安，';
-        if (hr >= 11 && hr < 13) greet = '午安，';
-        else if (hr >= 13 && hr < 18) greet = '下午好，';
-        else if (hr >= 18 || hr < 5) greet = '晚安，';
-        setText('homeGreetingLabel', greet);
+        setText('homeGreetingLabel', currentGreeting());
 
         // 宝宝档案卡
         const bp = data.baby_profile;
@@ -2003,6 +2126,9 @@ function loadDashboard() {
 
         // 最近记录
         renderHomeRecent(data.recent_records || []);
+
+        // 从回看态切回「今天」时，把日期条的文案与区块显隐恢复原状
+        applyHomeDateUI();
     });
 }
 
@@ -4367,6 +4493,61 @@ function deleteCurrentWiki() {
 // 的错觉。拉满时页面会给出提示，引导用户缩小日期段。
 const TIMELINE_LIMIT = 2000;
 
+// 类型 -> 显示信息（图标字符 + 配色 class + 标题生成）。
+// ⚠️ 这里的键必须与后端 analytics._TIMELINE_SOURCES 的类型标识一一对应：
+//    少一项不会报错，只会让那个类型退化成兜底的「记录」。
+//    verify_timeline_expand.py 会核对「后端每一类在这里都有分支」。
+const TIMELINE_TYPE_MAP = {
+    feeding: { icon: '喂', class: 'feeding', title: (e) => {
+        const types = { breast: '母乳', bottle: '配方奶', solid: '辅食' };
+        return types[e.subtype] || '喂奶';
+    }},
+    sleep: { icon: '睡', class: 'sleep', title: (e) => {
+        return e.is_nap === 1 ? '白天小憩' : '夜间睡眠';
+    }},
+    diaper: { icon: '布', class: 'diaper', title: (e) => {
+        const types = { wet: '小便', dirty: '大便', both: '小便+大便' };
+        return types[e.diaper_type] || '换尿布';
+    }},
+    growth: { icon: '长', class: 'growth', title: () => '成长记录' },
+    milestone: { icon: '★', class: 'milestone', title: (e) => e.title },
+    // ---- 扩容新增：icon 沿用单字圆底，与上面 5 类保持同一视觉 ----
+    pumping: { icon: '吸', class: 'pumping', title: () => '吸奶' },
+    solidfood: { icon: '辅', class: 'solidfood', title: (e) => `初尝${e.food_name || '辅食'}` },
+    tummy: { icon: '趴', class: 'tummy', title: () => '趴睡训练' },
+    teething: { icon: '牙', class: 'teething', title: (e) => `出牙：${e.tooth_name || '乳牙'}` },
+    fontanelle: { icon: '囟', class: 'fontanelle', title: () => '囟门检查' },
+    leap: { icon: '跃', class: 'leap', title: (e) => `第${e.leap_number || '?'}次飞跃期` },
+    temperature: { icon: '温', class: 'temperature', title: () => '体温测量' },
+    medication: { icon: '药', class: 'medication', title: (e) => e.medication_name || '用药' },
+    vaccine: { icon: '苗', class: 'vaccine', title: (e) => `${e.vaccine_name || '疫苗'}${e.dose_number ? ' 第' + e.dose_number + '剂' : ''}` },
+    allergy: { icon: '敏', class: 'allergy', title: (e) => `过敏测试：${e.food_name || ''}` },
+    checkup: { icon: '检', class: 'checkup', title: () => '体检' },
+    diary: { icon: '记', class: 'diary', title: (e) => e.title || '日记' },
+    photo: { icon: '图', class: 'photo', title: () => '照片' }
+};
+
+/**
+ * 单条时间线条目 HTML。
+ * 时间线页与首页「看某一天」共用这一份 —— 两处各写一遍的话，
+ * 迟早出现「首页显示的和时间线不一样」这种难查的偏差。
+ */
+function timelineItemHtml(event) {
+    const t = TIMELINE_TYPE_MAP[event.type] || { icon: '记', class: '', title: () => '记录' };
+    const detail = getTimelineDetail(event);
+    const time = event.time ? String(event.time).substring(11, 16) : '';
+    return `
+        <div class="timeline-item">
+            <div class="timeline-icon ${t.class}">${t.icon}</div>
+            <div class="timeline-content">
+                <div class="timeline-title">${escapeHtml(String(t.title(event) || ''))}</div>
+                ${detail ? `<div class="timeline-detail">${escapeHtml(String(detail))}</div>` : ''}
+            </div>
+            <span class="timeline-time">${time}</span>
+        </div>
+    `;
+}
+
 function initTimeline() {
     document.getElementById('timelineDays').addEventListener('change', (e) => {
         toggleTimelineCustomRange();
@@ -4486,58 +4667,14 @@ function loadTimeline() {
             groups[date].push(event);
         });
 
-        const typeMap = {
-            feeding: { icon: '喂', class: 'feeding', title: (e) => {
-                const types = { breast: '母乳', bottle: '配方奶', solid: '辅食' };
-                return types[e.subtype] || '喂奶';
-            }},
-            sleep: { icon: '睡', class: 'sleep', title: (e) => {
-                return e.is_nap === 1 ? '白天小憩' : '夜间睡眠';
-            }},
-            diaper: { icon: '布', class: 'diaper', title: (e) => {
-                const types = { wet: '小便', dirty: '大便', both: '小便+大便' };
-                return types[e.diaper_type] || '换尿布';
-            }},
-            growth: { icon: '长', class: 'growth', title: () => '成长记录' },
-            milestone: { icon: '★', class: 'milestone', title: (e) => e.title },
-            // ---- 扩容新增：icon 沿用单字圆底，与上面 5 类保持同一视觉 ----
-            pumping: { icon: '吸', class: 'pumping', title: () => '吸奶' },
-            solidfood: { icon: '辅', class: 'solidfood', title: (e) => `初尝${e.food_name || '辅食'}` },
-            tummy: { icon: '趴', class: 'tummy', title: () => '趴睡训练' },
-            teething: { icon: '牙', class: 'teething', title: (e) => `出牙：${e.tooth_name || '乳牙'}` },
-            fontanelle: { icon: '囟', class: 'fontanelle', title: () => '囟门检查' },
-            leap: { icon: '跃', class: 'leap', title: (e) => `第${e.leap_number || '?'}次飞跃期` },
-            temperature: { icon: '温', class: 'temperature', title: () => '体温测量' },
-            medication: { icon: '药', class: 'medication', title: (e) => e.medication_name || '用药' },
-            vaccine: { icon: '苗', class: 'vaccine', title: (e) => `${e.vaccine_name || '疫苗'}${e.dose_number ? ' 第' + e.dose_number + '剂' : ''}` },
-            allergy: { icon: '敏', class: 'allergy', title: (e) => `过敏测试：${e.food_name || ''}` },
-            checkup: { icon: '检', class: 'checkup', title: () => '体检' },
-            diary: { icon: '记', class: 'diary', title: (e) => e.title || '日记' },
-            photo: { icon: '图', class: 'photo', title: () => '照片' }
-        };
-
+        // 类型显示表与条目 HTML 都在模块级（TIMELINE_TYPE_MAP / timelineItemHtml），
+        // 首页「看某一天」复用同一份，别在这里再写一遍。
         let html = '';
         for (const [date, events] of Object.entries(groups)) {
             const dateObj = new Date(date);
             const dateLabel = `${dateObj.getMonth() + 1}月${dateObj.getDate()}日`;
             html += `<div class="timeline-date-group"><div class="timeline-date-label">${dateLabel}</div>`;
-
-            events.forEach(event => {
-                const t = typeMap[event.type] || { icon: '记', class: '', title: () => '记录' };
-                const detail = getTimelineDetail(event);
-                const time = event.time ? event.time.substring(11, 16) : '';
-
-                html += `
-                    <div class="timeline-item">
-                        <div class="timeline-icon ${t.class}">${t.icon}</div>
-                        <div class="timeline-content">
-                            <div class="timeline-title">${escapeHtml(String(t.title(event) || ''))}</div>
-                            ${detail ? `<div class="timeline-detail">${escapeHtml(String(detail))}</div>` : ''}
-                        </div>
-                        <span class="timeline-time">${time}</span>
-                    </div>
-                `;
-            });
+            html += events.map(event => timelineItemHtml(event)).join('');
             html += '</div>';
         }
 
@@ -11158,6 +11295,7 @@ function mainInit() {
     safeCall(initKnowledgeSearch, 'initKnowledgeSearch');
     safeCall(initSettings, 'initSettings');
     safeCall(initTimeline, 'initTimeline');
+    safeCall(initHomeDateBar, 'initHomeDateBar');
     safeCall(initGrowthTabs, 'initGrowthTabs');
     safeCall(initTimerBar, 'initTimerBar');
     safeCall(initPhotoModal, 'initPhotoModal');
