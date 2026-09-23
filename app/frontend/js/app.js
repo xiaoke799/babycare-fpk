@@ -3994,6 +3994,21 @@ function toggleDiaryFavorite(id) {
 }
 
 function initDiaryModal() {
+    // 富文本工具条 + 图片上传：全局只初始化一次（静态弹窗与编辑弹窗共用）
+    if (!window.__diaryRichReady) {
+        window.__diaryRichReady = true;
+        const fi = document.createElement('input');
+        fi.type = 'file'; fi.accept = 'image/*'; fi.style.display = 'none';
+        fi.id = 'diaryImageFileInput';
+        document.body.appendChild(fi);
+        fi.addEventListener('change', onDiaryImagePicked);
+        document.addEventListener('click', function (e) {
+            const b = e.target.closest && e.target.closest('.dt-btn');
+            if (!b) return;
+            if (b.dataset.md === 'image') { fi.click(); return; }
+            applyDiaryFormat(activeDiaryTextareaId, b.dataset.md);
+        });
+    }
     document.getElementById('closeDiaryModal').addEventListener('click', () => hideModal('diaryModal'));
     document.getElementById('cancelDiaryForm').addEventListener('click', () => hideModal('diaryModal'));
 
@@ -4116,7 +4131,7 @@ function loadDiaryList() {
                         ${mood ? `<span class="diary-mood-tag" style="background:${mood.color}20;color:${mood.color}">${mood.label}</span>` : ''}
                         ${photos.length > 0 ? `<span class="diary-photo-count">📷 ${photos.length}</span>` : ''}
                     </div>
-                    <div class="diary-content">${escapeHtml((entry.content || '无内容').slice(0, 100))}${entry.content && entry.content.length > 100 ? '...' : ''}</div>
+                    <div class="diary-content">${escapeHtml(diaryPreviewText(entry.content).slice(0, 100))}${diaryPreviewText(entry.content).length > 100 ? '...' : ''}</div>
                     ${photos.length > 0 ? `<div class="diary-photos-preview">${photos.slice(0, 3).map(p => `<img src="${App.apiBase}/api/photos/thumbnail/${p}" class="diary-photo-thumb" loading="lazy">`).join('')}${photos.length > 3 ? `<span class="diary-photo-more">+${photos.length - 3}</span>` : ''}</div>` : ''}
                 </div>
             `}).join('')}
@@ -4139,6 +4154,8 @@ function editDiary(id) {
     api(`/api/babies/${App.currentBaby}/diary/${id}`).then(res => {
         if (!res.success) return showToast.error('加载失败');
         const entry = res.data;
+        activeDiaryTextareaId = 'editDiaryContent';
+        currentDiaryPhotos = parseDiaryPhotos(entry.photos);
         showModal(`
             <div class="modal-header"><h3>编辑日记</h3></div>
             <div class="modal-body">
@@ -4162,6 +4179,15 @@ function editDiary(id) {
                 </div>
                 <div class="form-group">
                     <label>内容</label>
+                    <div class="diary-toolbar">
+                        <button type="button" class="dt-btn" data-md="bold" title="加粗"><b>B</b></button>
+                        <button type="button" class="dt-btn" data-md="italic" title="斜体"><i>I</i></button>
+                        <button type="button" class="dt-btn" data-md="heading" title="标题">H</button>
+                        <button type="button" class="dt-btn" data-md="list" title="列表">列表</button>
+                        <button type="button" class="dt-btn" data-md="quote" title="引用">引用</button>
+                        <button type="button" class="dt-btn" data-md="hr" title="分隔线">分隔</button>
+                        <button type="button" class="dt-btn" data-md="image" title="插入图片">图片</button>
+                    </div>
                     <textarea id="editDiaryContent" rows="5" placeholder="记录宝宝成长的点滴...">${escapeHtml(entry.content || '')}</textarea>
                 </div>
             </div>
@@ -4180,6 +4206,7 @@ function saveDiaryEdit(id) {
         entry_date: document.getElementById('editDiaryDate').value,
         mood: document.getElementById('editDiaryMood').value || null,
         content: document.getElementById('editDiaryContent').value,
+        photos: currentDiaryPhotos,
     };
     api(`/api/babies/${App.currentBaby}/diary/${id}`, {
         method: 'PUT',
@@ -4200,6 +4227,8 @@ function showDiaryModal() {
         showToast.warning('请先添加宝宝');
         return;
     }
+    activeDiaryTextareaId = 'diaryContent';
+    currentDiaryPhotos = [];
     document.getElementById('diaryForm').reset();
     document.getElementById('diaryDate').value = getToday();
     showModal('diaryModal');
@@ -4212,11 +4241,9 @@ function viewDiary(id) {
         const entry = res.data.find(e => e.id === id);
         if (entry) {
             document.getElementById('articleTitle').textContent = entry.title;
-            // 使用textContent防止XSS，内容中的HTML标签会被转义
-            document.getElementById('articleContent').innerHTML = `
-                <p style="color:var(--text-secondary);margin-bottom:12px;">${escapeHtml(entry.entry_date)}</p>
-                ${escapeHtml(entry.content || '无内容').replace(/\n/g, '<br>')}
-            `;
+            document.getElementById('articleContent').innerHTML =
+                '<p class="article-date">' + escapeHtml(entry.entry_date) + '</p>'
+                + renderDiaryContent(entry.content);
             showModal('articleModal');
         }
     });
@@ -4230,6 +4257,165 @@ function deleteDiary(id) {
             loadDiaryList();
         }
     });
+}
+
+// ==================== 日记富文本（简单排版 + 图文混排）====================
+// 安全原则：所有用户输入先 escapeHtml，再只生成白名单标签；
+// 图片只认 photo:数字 与 https 外链，外链限 http/https/mailto，杜绝 XSS。
+let activeDiaryTextareaId = 'diaryContent';
+
+// 行内格式：bold / italic / code / 链接 / 图片。入参 t 已经过 escapeHtml。
+function fmtDiaryInline(t) {
+    // 图片：![alt](url) —— 仅 photo:ID 与 https 外链可渲染
+    t = t.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (m, alt, url) => {
+        const u = String(url).trim();
+        if (/^photo:\d+$/.test(u)) {
+            const id = u.slice(6);
+            return '<img class="diary-inline-img" src="' + App.apiBase + '/api/photos/file/' + id + '" alt="' + alt + '" loading="lazy">';
+        }
+        if (/^https?:\/\//.test(u)) {
+            return '<img class="diary-inline-img" src="' + u + '" alt="' + alt + '" loading="lazy">';
+        }
+        return alt ? alt : '';
+    });
+    // 链接：[text](url)
+    t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, txt, url) => {
+        const u = String(url).trim();
+        if (/^https?:\/\//.test(u) || /^mailto:/.test(u)) {
+            return '<a href="' + u + '" target="_blank" rel="noopener noreferrer">' + txt + '</a>';
+        }
+        return txt;
+    });
+    t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    t = t.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
+    t = t.replace(/(^|[^_])_([^_]+)_(?!_)/g, '$1<em>$2</em>');
+    t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+    return t;
+}
+
+// 把 markdown 文本渲染成安全 HTML
+function renderDiaryContent(raw) {
+    if (!raw) return '<p class="diary-empty-hint">（暂无内容）</p>';
+    const src = escapeHtml(raw);
+    const lines = src.split(/\r?\n/);
+    const out = [];
+    let i = 0;
+    const isBlank = l => /^\s*$/.test(l);
+    const isHeading = l => /^(#{1,3})\s+/.test(l);
+    const isHr = l => /^\s*(---|\*\*\*|___)\s*$/.test(l);
+    const isQuote = l => /^\s*&gt;\s?/.test(l);
+    const isUl = l => /^\s*[-*]\s+/.test(l);
+    const isOl = l => /^\s*\d+\.\s+/.test(l);
+    while (i < lines.length) {
+        const line = lines[i];
+        if (isBlank(line)) { i++; continue; }
+        let m;
+        if ((m = line.match(/^(#{1,3})\s+(.*)$/))) {
+            const lv = m[1].length;
+            out.push('<h' + lv + '>' + fmtDiaryInline(m[2]) + '</h' + lv + '>');
+            i++; continue;
+        }
+        if (isHr(line)) { out.push('<hr>'); i++; continue; }
+        if (isQuote(line)) {
+            const buf = [];
+            while (i < lines.length && isQuote(lines[i])) { buf.push(lines[i].replace(/^\s*&gt;\s?/, '')); i++; }
+            out.push('<blockquote>' + buf.map(fmtDiaryInline).join('<br>') + '</blockquote>');
+            continue;
+        }
+        if (isUl(line)) {
+            const buf = [];
+            while (i < lines.length && isUl(lines[i])) { buf.push(lines[i].replace(/^\s*[-*]\s+/, '')); i++; }
+            out.push('<ul>' + buf.map(x => '<li>' + fmtDiaryInline(x) + '</li>').join('') + '</ul>');
+            continue;
+        }
+        if (isOl(line)) {
+            const buf = [];
+            while (i < lines.length && isOl(lines[i])) { buf.push(lines[i].replace(/^\s*\d+\.\s+/, '')); i++; }
+            out.push('<ol>' + buf.map(x => '<li>' + fmtDiaryInline(x) + '</li>').join('') + '</ol>');
+            continue;
+        }
+        const buf = [];
+        while (i < lines.length && !isBlank(lines[i]) && !isHeading(lines[i]) && !isHr(lines[i])
+            && !isQuote(lines[i]) && !isUl(lines[i]) && !isOl(lines[i])) {
+            buf.push(lines[i]); i++;
+        }
+        out.push('<p>' + buf.map(fmtDiaryInline).join('<br>') + '</p>');
+    }
+    return out.join('');
+}
+
+// 列表预览用的纯文本（剥离 markdown 符号）
+function diaryPreviewText(raw) {
+    if (!raw) return '';
+    return raw
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, '[图片]')
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+        .replace(/[#>*_`]/g, '')
+        .replace(/\n+/g, ' ')
+        .trim();
+}
+
+// 在光标处插入文本
+function insertDiaryAtCursor(taId, text) {
+    const ta = document.getElementById(taId);
+    if (!ta) return;
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    ta.value = ta.value.slice(0, s) + text + ta.value.slice(e);
+    const np = s + text.length;
+    ta.focus();
+    ta.setSelectionRange(np, np);
+}
+
+// 工具条格式化：包裹/行前缀
+function applyDiaryFormat(taId, type) {
+    const ta = document.getElementById(taId);
+    if (!ta) return;
+    const start = ta.selectionStart, end = ta.selectionEnd;
+    const sel = ta.value.slice(start, end);
+    let pre = '', post = '', linePrefix = '', ins = sel;
+    switch (type) {
+        case 'bold': pre = '**'; post = '**'; ins = sel || '加粗文字'; break;
+        case 'italic': pre = '*'; post = '*'; ins = sel || '斜体文字'; break;
+        case 'code': pre = '`'; post = '`'; ins = sel || '代码'; break;
+        case 'heading': linePrefix = '## '; ins = sel || '小标题'; break;
+        case 'list': linePrefix = '- '; ins = sel || '列表项'; break;
+        case 'quote': linePrefix = '> '; ins = sel || '引用内容'; break;
+        case 'hr': pre = '\n'; post = '\n'; ins = '---'; break;
+        default: return;
+    }
+    const before = ta.value.slice(0, start);
+    const after = ta.value.slice(end);
+    ta.value = before + pre + linePrefix + ins + post + after;
+    const ns = start + pre.length + linePrefix.length;
+    const ne = ns + ins.length;
+    ta.focus();
+    ta.setSelectionRange(ns, ne);
+}
+
+// 图片上传后插入内联引用
+function onDiaryImagePicked(e) {
+    const input = e.target;
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (!file || !App.currentBaby) return;
+    showToast('图片上传中…');
+    const fd = new FormData();
+    fd.append('photo', file);
+    fd.append('photo_date', getToday());
+    fd.append('category', 'daily');
+    fetch(App.apiBase + '/api/babies/' + App.currentBaby + '/photos', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(res => {
+            if (!res || !res.success || !res.data || !res.data.id) {
+                showToast.error((res && res.message) || '上传失败');
+                return;
+            }
+            const id = res.data.id;
+            if (!currentDiaryPhotos.includes(id)) currentDiaryPhotos.push(id);
+            insertDiaryAtCursor(activeDiaryTextareaId, '![图片](photo:' + id + ')');
+            showToast.success('图片已插入');
+        })
+        .catch(() => showToast.error('上传失败，请重试'));
 }
 
 // ==================== 育儿知识 ====================

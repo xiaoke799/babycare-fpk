@@ -2199,6 +2199,70 @@ body {
     flex-shrink: 0;
 }
 
+/* ==================== 日记富文本（简单排版 + 图文混排） ==================== */
+.diary-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.dt-btn {
+    min-width: 36px;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-color);
+    color: var(--text-primary);
+    border-radius: 10px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+}
+.dt-btn:hover { border-color: var(--primary-color); color: var(--primary-strong); }
+.dt-btn:active { background: var(--primary-color); color: #fff; }
+
+.diary-inline-img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 10px 0;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+}
+.diary-empty-hint { color: var(--text-light); font-style: italic; }
+
+/* 阅读态富文本（文章弹窗 + 日记正文共用 .article-content） */
+.article-content blockquote {
+    margin: 10px 0;
+    padding: 8px 14px;
+    border-left: 4px solid var(--primary-color);
+    background: var(--bg-color);
+    color: var(--text-secondary);
+    border-radius: 0 10px 10px 0;
+}
+.article-content hr {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 14px 0;
+}
+.article-content code {
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 1px 6px;
+    font-size: 13px;
+    font-family: monospace;
+}
+.article-content img.diary-inline-img { margin: 12px 0; }
+.article-content strong { font-weight: 700; color: var(--text-primary); }
+.article-content em { font-style: italic; }
+.article-content a { color: var(--primary-strong); text-decoration: underline; }
+.article-date {
+    color: var(--text-light);
+    font-size: 13px;
+    margin-bottom: 12px;
+}
+
 /* 二维码。圆角只切装饰边角：实测图内内容四周留白≥80px（折算到显示尺寸约 17px），
    12px 圆角不会碰到二维码本体，扫码不受影响。白底是为了在任何主题下都留出静区。 */
 .about-support-body {

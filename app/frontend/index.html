@@ -2615,7 +2615,16 @@
                     </div>
                     <div class="form-group">
                         <label for="diaryContent">内容</label>
-                        <textarea id="diaryContent" rows="5" placeholder="记录今天的美好时光..."></textarea>
+                        <div class="diary-toolbar">
+                            <button type="button" class="dt-btn" data-md="bold" title="加粗"><b>B</b></button>
+                            <button type="button" class="dt-btn" data-md="italic" title="斜体"><i>I</i></button>
+                            <button type="button" class="dt-btn" data-md="heading" title="标题">H</button>
+                            <button type="button" class="dt-btn" data-md="list" title="列表">列表</button>
+                            <button type="button" class="dt-btn" data-md="quote" title="引用">引用</button>
+                            <button type="button" class="dt-btn" data-md="hr" title="分隔线">分隔</button>
+                            <button type="button" class="dt-btn" data-md="image" title="插入图片">图片</button>
+                        </div>
+                        <textarea id="diaryContent" rows="5" placeholder="记录今天的美好时光...（支持 # 标题、**加粗**、列表、> 引用，可插入图片）"></textarea>
                     </div>
                     <div class="form-group">
                         <label for="diaryMood">宝宝心情</label>
