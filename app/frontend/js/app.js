@@ -1500,10 +1500,12 @@ const READONLY_ALIAS = { 'milestone-review': { host: 'milestones', cls: 'only-vi
 
 // 返回上一页
 function goBack() {
-    // 「虚拟页」（如睡眠分析）本体是成长页里的一个 Tab，入口多样，
-    // 且顶部 Tab 切换不产生页面跳转 —— 历史栈不足为凭。
-    // 统一规则：回到它所属的一级宫格。
-    const hub = TAB_PAGE_HUB[App.currentPage];
+    // 虚拟页返回目标跟「进页入口」走：记录栏进来回记录宫格，成长栏进来回成长宫格。
+    // 不能一律 growth-hub，否则记录子页切到睡眠分析再返回会掉进成长栏。
+    const onGrowthVirtual = (App.currentPage === 'sleep-analysis' || App.currentPage === 'growth-chart');
+    const hub = onGrowthVirtual
+        ? (_growthViewOnly ? 'growth-hub' : 'record')
+        : TAB_PAGE_HUB[App.currentPage];
     if (hub) {
         _skipHistoryPush = true;
         switchPage(hub);
@@ -1562,9 +1564,13 @@ function switchPage(page) {
         // switchPage(宿主) 把 currentPage 改成了宿主，这里改回来，
         // 保证底部导航、相关功能、切宝宝刷新都还认得合并前的 page id
         App.currentPage = page;
-        // 共享宿主（page-growth）要按虚拟页身份重算录入/只读
+        // 共享宿主（page-growth）：身份只在「换入口」时定，同页切 Tab 不改
+        // （否则记录栏点「睡眠分析」会被误翻成成长只读）
         if (tabTarget.host === 'growth') {
-            markGrowthEntry(page !== 'growth');
+            const fromGrowthHost = (cameFrom === 'growth' || cameFrom === 'growth-chart' || cameFrom === 'sleep-analysis');
+            if (page === 'growth') markGrowthEntry(false);
+            else if (page === 'growth-chart') markGrowthEntry(true);
+            else if (!fromGrowthHost) markGrowthEntry(true);
         }
         // 正确的「上一页」：虚拟页交给 goBack 统一回宫格，不占历史栈；
         // 其余已合并页（疫苗/体温/用药提醒/过敏）恢复正常语义——回到真正来的那一页。
@@ -4536,6 +4542,27 @@ let _growthViewOnly = false;
 
 function markGrowthEntry(viewOnly) {
     _growthViewOnly = !!viewOnly;
+    // 彻底分离：记录栏进 = 只见录入 Tab；成长栏进 = 只见分析 Tab（图表保留）
+    document.querySelectorAll('.growth-tab-btn').forEach(btn => {
+        const tab = btn.dataset.growthTab;
+        const isRecordTab = tab === 'records';
+        btn.style.display = (viewOnly === isRecordTab) ? 'none' : '';
+    });
+    if (viewOnly) {
+        const active = document.querySelector('.growth-tab-btn.active');
+        if (!active || active.dataset.growthTab === 'records') {
+            const who = document.querySelector('.growth-tab-btn[data-growth-tab="who-chart"]');
+            if (who && active && active !== who) who.click();
+            else if (who) who.classList.add('active');
+        }
+    } else {
+        const active = document.querySelector('.growth-tab-btn.active');
+        if (!active || active.dataset.growthTab !== 'records') {
+            const rec = document.querySelector('.growth-tab-btn[data-growth-tab="records"]');
+            if (rec && active && active !== rec) rec.click();
+            else if (rec) rec.classList.add('active');
+        }
+    }
     syncGrowthRecordMode();
 }
 
@@ -4563,11 +4590,9 @@ function syncGrowthRecordMode() {
 }
 
 /**
- * 「虚拟页」→ 它所属的一级宫格。
- * 这类页面本体是别的页里的一个 Tab，但有自己的 page id，入口也多样
- * （宫格 tile / 相关功能链接 / 页面顶部 Tab）；而顶部 Tab 切换不算一次页面跳转，
- * 所以单靠历史栈不可靠——在它们上面按「返回」统一回到所属宫格。
- * 睡眠分析属于「成长」板块，因此返回 → 成长宫格。
+ * 「虚拟页」默认宫格。成长页虚拟页的实际返回目标由 goBack 按
+ * _growthViewOnly 决定（记录侧 → record，成长侧 → growth-hub），
+ * 这里只是兜底，避免别的调用方按 page id 找不到宫格。
  */
 const TAB_PAGE_HUB = { 'sleep-analysis': 'growth-hub', 'growth-chart': 'growth-hub' };
 
@@ -4615,6 +4640,9 @@ function initGrowthTabs() {
             // 从睡眠分析切回其它 Tab 时恢复「进页时的身份」，别一律打成记录栏的 growth。
             if (tab === 'sleep-analysis') App.currentPage = 'sleep-analysis';
             else if (App.currentPage === 'sleep-analysis') App.currentPage = _growthViewOnly ? 'growth-chart' : 'growth';
+            // 底部 tab 始终跟入口身份走，避免切 Tab 后高亮漂到另一栏
+            const entryHub = _growthViewOnly ? 'growth' : 'record';
+            document.querySelectorAll('.nav-tab').forEach(t => t.classList.toggle('active', t.dataset.hub === entryHub));
 
             Object.entries(GROWTH_TAB_VIEWS).forEach(([name, id]) => {
                 const el = document.getElementById(id);

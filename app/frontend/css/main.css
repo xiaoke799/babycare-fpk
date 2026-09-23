@@ -1228,8 +1228,11 @@ body {
 
 /* 成长页双形态（见 NAV_HUBS）：记录栏「身高体重」可录入，成长栏/分析 Tab 只读 */
 #page-growth .only-view-hint { display: none; }
+#page-growth.only-view .growth-tabs .growth-tab-btn[data-growth-tab="records"] { display: none !important; }
+#page-growth:not(.only-view) .growth-tabs .growth-tab-btn:not([data-growth-tab="records"]) { display: none !important; }
 #page-growth.only-view #addGrowthBtnPage,
-#page-growth.only-view .care-edit { display: none !important; }
+#page-growth.only-view .care-edit,
+#page-growth.only-view .care-delete { display: none !important; }
 #page-growth.only-view .only-view-hint {
     display: block;
     margin: 0 0 12px;
