@@ -2244,6 +2244,31 @@ body {
     text-align: center;
 }
 
+/* 点二维码放大：深底 + 大白边，扫码时更容易识别。
+   白底和内边距是必须的 —— 二维码周围要留静区，贴着深色背景会扫不出来。 */
+.qr-zoom-overlay {
+    flex-direction: column;
+    gap: 12px;
+    background: rgba(0, 0, 0, 0.82);
+    cursor: zoom-out;
+}
+
+.qr-zoom-overlay img {
+    width: auto;
+    max-width: 86vw;
+    max-height: 74vh;
+    box-sizing: border-box;
+    padding: 10px;
+    border-radius: 10px;
+    background: #fff;
+}
+
+.qr-zoom-tip {
+    margin: 0;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.78);
+}
+
 /* 行式字段：标签居左、控件居右 */
 .settings-row {
     display: flex;

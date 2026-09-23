@@ -334,6 +334,40 @@ setTimeout(async function(){
       document.querySelectorAll('#page-about .settings-card-title'),
       function(e){ return e.textContent; });
     log.push('aboutCardTitle=' + cardTitles.join('/'));
+
+    // ---------- 四、关于页「点了有没有反应」（这一版要修的问题） ----------
+    // 剪贴板打桩：headless 里 navigator.clipboard 受权限约束，
+    // 打桩后才能确定性地验「点了会复制并提示」这条链路。
+    window.__copied = [];
+    try {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: function(t){ window.__copied.push(t); return Promise.resolve(); } }
+      });
+    } catch (e) { log.push('clipStubErr=' + e.message); }
+
+    var rows4 = document.querySelectorAll('#page-about .feedback-row');
+    log.push('feedbackRows=' + rows4.length);
+    if (rows4.length) {
+      rows4[0].dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
+    }
+    await wait(300);
+    log.push('copied0=' + (window.__copied[0] || 'none'));
+    var toast4 = document.getElementById('toast');
+    log.push('toastShown=' + (toast4 ? toast4.className.indexOf('show') >= 0 : 'NULL'));
+    log.push('toastText=' + (toast4 ? toast4.textContent : 'NULL'));
+
+    var qrimg = document.getElementById('aboutWechatQr');
+    if (qrimg) qrimg.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
+    await wait(300);
+    var z = document.getElementById('qrZoomModal');
+    var zimg = document.getElementById('qrZoomImage');
+    log.push('zoomShown=' + (z ? z.classList.contains('show') : 'NULL'));
+    log.push('zoomSrcTail=' + String((zimg && zimg.getAttribute('src')) || '').slice(-22));
+    log.push('zoomImgW=' + (zimg ? Math.round(zimg.getBoundingClientRect().width) : 0));
+    if (z) z.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
+    await wait(300);
+    log.push('zoomHiddenAfterTap=' + (z ? !z.classList.contains('show') : 'NULL'));
   } catch (e) {
     log.push('EXCEPTION=' + e.message);
   }
@@ -587,6 +621,22 @@ window.__oldDay2 = %s;
               d("alipayWidth"))
 
         check("关于页支持卡片标题正确", "赞赏支持" in d("aboutCardTitle"), d("aboutCardTitle"))
+
+        # ---------- 四、关于页「点了有没有反应」 ----------
+        # 这三条是本次修的缺陷的回归保护：内置浏览器里 mailto:/外链没去处、
+        # 二维码没绑定动作，表现都是「点了没反应」。现在点行会复制+提示、点图会放大。
+        check("关于页三个反馈渠道行都在", d("feedbackRows") == "3", d("feedbackRows"))
+        check("点反馈行会把邮箱复制走（不是点了没反应）",
+              d("copied0") == "celiang-xiang@foxmail.com", d("copied0"))
+        check("点反馈行会弹出「已复制」提示",
+              d("toastShown") == "true" and "已复制" in d("toastText"),
+              {"shown": d("toastShown"), "text": d("toastText")})
+        check("点二维码会弹出放大层", d("zoomShown") == "true", d("zoomShown"))
+        check("放大层里就是那张二维码",
+              d("zoomSrcTail").endswith("/images/qr-wechat.png"), d("zoomSrcTail"))
+        check("放大后尺寸明显大于卡片里的小图（>200px）",
+              d("zoomImgW").isdigit() and int(d("zoomImgW")) > 200, d("zoomImgW"))
+        check("点一下放大层就能关掉", d("zoomHiddenAfterTap") == "true", d("zoomHiddenAfterTap"))
     finally:
         httpd.shutdown()
         try:

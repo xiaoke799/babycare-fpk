@@ -1911,6 +1911,72 @@ function loadAbout() {
     }).catch(() => {});
 }
 
+/**
+ * 复制文本到剪贴板。
+ * ⚠️ navigator.clipboard **只在安全上下文**（https / localhost）才有；本应用装在 NAS 上
+ * 多为 http 访问，那里 navigator.clipboard 是 undefined。必须带 execCommand 兜底，
+ * 否则症状就是「点了没反应」—— 这正是这一版要修的问题。
+ */
+function copyText(text, okMessage) {
+    const val = String(text == null ? '' : text).trim();
+    if (!val) return;
+    const ok = () => showToast(okMessage || '已复制');
+    const fail = () => showToast.warning('复制失败，请长按选择文本手动复制');
+    const legacy = () => {
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = val;
+            ta.setAttribute('readonly', '');
+            ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+            document.body.appendChild(ta);
+            ta.select();
+            ta.setSelectionRange(0, val.length);
+            const done = document.execCommand('copy');
+            document.body.removeChild(ta);
+            done ? ok() : fail();
+        } catch (e) {
+            fail();
+        }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(val).then(ok).catch(legacy);
+    } else {
+        legacy();
+    }
+}
+
+/**
+ * 关于页的交互。
+ *
+ * 背景：飞牛 App 内置浏览器里，mailto: 没有可调用的邮件程序、
+ * target="_blank" 的外链也常常被拦 —— 表现就是「点了没反应」。
+ * 所以这里额外加一层「点了就复制 + 提示」：桌面浏览器里链接照常跳转，
+ * 内置浏览器里用户至少能拿到可粘贴的文本，两边都不耽误（不 preventDefault）。
+ */
+function initAboutActions() {
+    document.querySelectorAll('#page-about .feedback-row').forEach(row => {
+        row.addEventListener('click', () => {
+            const valEl = row.querySelector('.feedback-value');
+            const labelEl = row.querySelector('.feedback-label');
+            if (!valEl) return;
+            copyText(valEl.textContent, (labelEl ? labelEl.textContent : '内容') + '已复制');
+        });
+    });
+
+    const zoom = document.getElementById('qrZoomModal');
+    const zoomImg = document.getElementById('qrZoomImage');
+    document.querySelectorAll('#page-about .about-support-qr').forEach(img => {
+        img.addEventListener('click', () => {
+            if (!zoom || !zoomImg) return;
+            zoomImg.src = img.src;
+            zoomImg.alt = img.alt || '二维码';
+            showModal('qrZoomModal');
+        });
+    });
+    // 点浮层任意处（含图片本身）关闭 —— 手机上比找关闭按钮顺手
+    if (zoom) zoom.addEventListener('click', () => hideModal('qrZoomModal'));
+}
+
 // ==================== 仪表盘 ====================
 
 // 文本赋值助手：元素不存在时静默跳过
@@ -11296,6 +11362,7 @@ function mainInit() {
     safeCall(initSettings, 'initSettings');
     safeCall(initTimeline, 'initTimeline');
     safeCall(initHomeDateBar, 'initHomeDateBar');
+    safeCall(initAboutActions, 'initAboutActions');
     safeCall(initGrowthTabs, 'initGrowthTabs');
     safeCall(initTimerBar, 'initTimerBar');
     safeCall(initPhotoModal, 'initPhotoModal');

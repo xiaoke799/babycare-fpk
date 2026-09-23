@@ -1745,7 +1745,7 @@
         </a>
     </div>
 
-    <p class="settings-card-note">点击任意渠道即可跳转（加入 QQ 群需在手机或电脑上安装 QQ）。</p>
+    <p class="settings-card-note">点任意一行会复制对应信息并提示；在浏览器里打开时也会同时跳转。加入 QQ 群需在手机或电脑上安装 QQ。</p>
 
     <!-- 关于页支持卡片：图片地址由页尾脚本按网关前缀拼（同小萌头像），
          直接写相对路径在「无尾斜杠」的 URL 下会解析到上一层去 -->
@@ -1772,10 +1772,16 @@
                     <span class="about-support-tip">支付宝</span>
                 </div>
             </div>
-            <p class="about-support-tip">扫码赞赏 · 金额随意 · 感谢支持</p>
+            <p class="about-support-tip">扫码赞赏 · 金额随意 · 感谢支持（点图片可放大）</p>
         </div>
     </div>
 </section>
+
+<!-- 二维码放大查看：扫码时放大更容易识别 -->
+<div class="modal-overlay qr-zoom-overlay" id="qrZoomModal">
+    <img id="qrZoomImage" src="" alt="二维码放大图">
+    <p class="qr-zoom-tip">点击任意处关闭</p>
+</div>
 
 <!-- 发育飞跃期页面 -->
 <section class="page" id="page-leap">
