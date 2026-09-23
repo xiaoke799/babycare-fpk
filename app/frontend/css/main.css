@@ -2199,6 +2199,51 @@ body {
     flex-shrink: 0;
 }
 
+/* 二维码。圆角只切装饰边角：实测图内内容四周留白≥80px（折算到显示尺寸约 17px），
+   12px 圆角不会碰到二维码本体，扫码不受影响。白底是为了在任何主题下都留出静区。 */
+.about-support-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 0 2px;
+}
+
+/* 两个码并排。两张图长宽比不同（微信 1:1、支付宝截图略高），
+   所以按列顶对齐，不让矮的那张被拉伸变形。 */
+.about-support-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+    gap: 12px;
+    width: 100%;
+}
+
+.about-support-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.about-support-qr {
+    display: block;
+    width: 100%;
+    max-width: 190px;
+    height: auto;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    background: #fff;
+}
+
+.about-support-tip {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-light);
+    text-align: center;
+}
+
 /* 行式字段：标签居左、控件居右 */
 .settings-row {
     display: flex;

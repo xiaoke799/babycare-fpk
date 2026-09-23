@@ -1746,6 +1746,35 @@
     </div>
 
     <p class="settings-card-note">点击任意渠道即可跳转（加入 QQ 群需在手机或电脑上安装 QQ）。</p>
+
+    <!-- 关于页支持卡片：图片地址由页尾脚本按网关前缀拼（同小萌头像），
+         直接写相对路径在「无尾斜杠」的 URL 下会解析到上一层去 -->
+    <div class="settings-card">
+        <div class="settings-card-head">
+            <span class="settings-card-icon">
+                <svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-heart"/></svg>
+            </span>
+            <div class="settings-card-head-text">
+                <div class="settings-card-title">赞赏支持</div>
+                <div class="settings-card-desc">应用完全免费，数据只存在你自己的 NAS 里，也没有广告。如果它帮到了你，欢迎扫码请开发者喝杯咖啡。</div>
+            </div>
+        </div>
+        <div class="about-support-body">
+            <div class="about-support-grid">
+                <div class="about-support-item">
+                    <img class="about-support-qr" id="aboutWechatQr" alt="微信赞赏码"
+                         src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+                    <span class="about-support-tip">微信</span>
+                </div>
+                <div class="about-support-item">
+                    <img class="about-support-qr" id="aboutAlipayQr" alt="支付宝收款码"
+                         src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+                    <span class="about-support-tip">支付宝</span>
+                </div>
+            </div>
+            <p class="about-support-tip">扫码赞赏 · 金额随意 · 感谢支持</p>
+        </div>
+    </div>
 </section>
 
 <!-- 发育飞跃期页面 -->
@@ -3411,6 +3440,12 @@
         var c = document.getElementById('xiaomengChatImg');
         if (a) a.src = src;
         if (c) c.src = src;
+
+        // 关于页的两张二维码同理，走同一个前缀。
+        var qr = document.getElementById('aboutWechatQr');
+        if (qr) qr.src = prefix + '/images/qr-wechat.png';
+        var alipay = document.getElementById('aboutAlipayQr');
+        if (alipay) alipay.src = prefix + '/images/qr-alipay.png';
     })();
 </script>
 

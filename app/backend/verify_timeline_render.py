@@ -311,6 +311,29 @@ setTimeout(async function(){
     log.push('homeBackQA=' + disp('homeQuickActions'));
     log.push('homeBackBody=' + disp('homeBodySection'));
     log.push('homeBackUrl=' + lastUrl());
+
+    // ---------- 三、关于页二维码 ----------
+    // 重点验「图片真的加载出来了」：src 是按网关前缀拼的，拼错只会在界面上留个
+    // 破图，肉眼容易忽略；naturalWidth>0 才说明这个地址真的取到了图。
+    switchPage('about');
+    await wait(1200);
+    var qr = document.getElementById('aboutWechatQr');
+    log.push('aboutQrFound=' + (!!qr));
+    log.push('aboutQrNatural=' + (qr ? qr.naturalWidth + 'x' + qr.naturalHeight : 'null'));
+    log.push('aboutQrTail=' + (qr ? String(qr.getAttribute('src') || '').slice(-28) : 'null'));
+    log.push('aboutQrWidth=' + (qr ? Math.round(qr.getBoundingClientRect().width) : 0));
+    var alipay = document.getElementById('aboutAlipayQr');
+    log.push('alipayFound=' + (!!alipay));
+    log.push('alipayNatural=' + (alipay ? alipay.naturalWidth + 'x' + alipay.naturalHeight : 'null'));
+    log.push('alipayTail=' + (alipay ? String(alipay.getAttribute('src') || '').slice(-30) : 'null'));
+    log.push('alipayWidth=' + (alipay ? Math.round(alipay.getBoundingClientRect().width) : 0));
+    // 拆成简单语句：探针是塞在 Python 字符串里的，嵌套括号一旦少一个就是整段
+    // 脚本语法错误、整个探针静默不跑（只表现为「没抓到 DIAG」，极难定位）
+    log.push('aboutHasBody=' + (!!document.querySelector('#page-about .about-support-body')));
+    var cardTitles = Array.prototype.map.call(
+      document.querySelectorAll('#page-about .settings-card-title'),
+      function(e){ return e.textContent; });
+    log.push('aboutCardTitle=' + cardTitles.join('/'));
   } catch (e) {
     log.push('EXCEPTION=' + e.message);
   }
@@ -324,6 +347,44 @@ setTimeout(async function(){
 </body>"""
 
 
+def check_probe_syntax():
+    """探针 JS 的语法自检。
+
+    探针是塞在 Python 字符串里的 JS。少一个括号 → 整段脚本语法错误 → 探针完全不跑，
+    症状只是「没抓到 DIAG」，极难定位（本次就踩了：一个多余的右括号）。
+    所以先主动验一次语法，让失败原因直接可读。找不到 node 就跳过（只提示，不算失败）。
+    """
+    m = re.search(r"<script>(.*)</script>", PROBE_BODY, re.S)
+    if not m:
+        check("能抽出探针脚本", False, "PROBE_BODY 里没有 <script> 块")
+        return
+    node = shutil.which("node")
+    if not node:
+        for cand in (r"C:\Users\X\.workbuddy\binaries\node\versions\22.22.2-3\node.exe",
+                     r"C:\Program Files\nodejs\node.exe"):
+            if os.path.exists(cand):
+                node = cand
+                break
+    if not node:
+        print("提示：没找到 node，跳过探针语法自检")
+        return
+    tmp = os.path.join(tempfile.gettempdir(), "probe_syntax_check.js")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(m.group(1))
+    try:
+        r = subprocess.run([node, "--check", tmp], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=60)
+        check("探针脚本语法检查通过（括号没配平会让整段探针静默不跑）",
+              r.returncode == 0, (r.stderr or "").strip()[:300])
+    except Exception as e:                      # noqa: BLE001
+        print("提示：探针语法自检没跑成（%s）" % e)
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+
 def main():
     if not os.path.exists(EDGE):
         print("找不到 Edge：%s —— 无法做渲染验证" % EDGE)
@@ -331,6 +392,8 @@ def main():
     if not free_port(PORT):
         print("端口 %d 被占用，先释放再跑" % PORT)
         return 2
+
+    check_probe_syntax()
 
     with open(os.path.join(FRONTEND, "index.html"), "r", encoding="utf-8") as f:
         html = f.read()
@@ -502,6 +565,28 @@ window.__oldDay2 = %s;
         check("点回「今天」后身体数据块恢复可见", d("homeBackBody") != "none", d("homeBackBody"))
         check("点回「今天」不按日期取数（回到 dashboard 路径）",
               ("from=" + D_TODAY) not in d("homeBackUrl"), d("homeBackUrl"))
+
+        # ---------- 三、关于页二维码 ----------
+        check("关于页有二维码节点", d("aboutQrFound") == "true", d("aboutQrFound"))
+        # naturalWidth>0 才算真加载：src 拼错只会留个破图，肉眼很容易漏过去
+        check("二维码图片真的加载出来了（网关前缀路径可用）",
+              d("aboutQrNatural") not in ("0x0", "null", ""), d("aboutQrNatural"))
+        check("二维码地址走的是 images/qr-wechat.png",
+              d("aboutQrTail").endswith("/images/qr-wechat.png"), d("aboutQrTail"))
+        check("二维码显示宽度在合理区间（没被样式撑破/缩没）",
+              d("aboutQrWidth").isdigit() and 150 <= int(d("aboutQrWidth")) <= 200,
+              d("aboutQrWidth"))
+
+        check("关于页有支付宝二维码节点", d("alipayFound") == "true", d("alipayFound"))
+        check("支付宝二维码图片真的加载出来了",
+              d("alipayNatural") not in ("0x0", "null", ""), d("alipayNatural"))
+        check("支付宝二维码地址走的是 images/qr-alipay.png",
+              d("alipayTail").endswith("/images/qr-alipay.png"), d("alipayTail"))
+        check("支付宝二维码显示宽度在合理区间",
+              d("alipayWidth").isdigit() and 150 <= int(d("alipayWidth")) <= 200,
+              d("alipayWidth"))
+
+        check("关于页支持卡片标题正确", "赞赏支持" in d("aboutCardTitle"), d("aboutCardTitle"))
     finally:
         httpd.shutdown()
         try:

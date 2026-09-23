@@ -44,6 +44,9 @@ PAIRS = [
     ("frontend/js/app.js", "app/frontend/js/app.js"),
     ("frontend/index.html", "app/frontend/index.html"),
     ("frontend/css/main.css", "app/frontend/css/main.css"),
+    # 图片也要比对：漏进包就是真机上破图（界面上不报错，只是没图）
+    ("frontend/images/qr-wechat.png", "app/frontend/images/qr-wechat.png"),
+    ("frontend/images/qr-alipay.png", "app/frontend/images/qr-alipay.png"),
 ]
 
 # 本次改动的特征串：(描述, 包内文件, 必须出现的子串)
@@ -60,6 +63,11 @@ MARKS = [
     ("首页回看态逻辑在包里", "frontend/js/app.js", "homeViewDate"),
     ("首页日期条样式在包里", "frontend/css/main.css", ".home-date-bar"),
     ("时间线类型表已提到模块级（首页复用）", "frontend/js/app.js", "const TIMELINE_TYPE_MAP ="),
+    ("关于页微信二维码节点在包里", "frontend/index.html", 'id="aboutWechatQr"'),
+    ("关于页二维码样式在包里", "frontend/css/main.css", ".about-support-qr"),
+    ("二维码图片文件在包里", "frontend/images/qr-wechat.png", "PNG"),
+    ("支付宝二维码节点在包里", "frontend/index.html", 'id="aboutAlipayQr"'),
+    ("支付宝二维码图片文件在包里", "frontend/images/qr-alipay.png", "PNG"),
 ]
 
 
