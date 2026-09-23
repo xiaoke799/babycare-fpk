@@ -518,111 +518,128 @@ def get_feeding_interval(baby_id):
     })
 
 
+# ==================== 时间线数据源 ====================
+# 结构：(类型标识, 表名, 时间列, [(输出字段, SQL 表达式)], 附加 WHERE)
+#
+# ⚠️ 三条铁律，改这里之前先读：
+#   1. 时间列必须是「事件发生时间」（start_time / measure_time / xxx_date），
+#      **绝不能图省事用 created_at** —— 那是入库时间，补录一条上个月的记录会直接
+#      显示成今天，整条时间线就错位了。
+#   2. 输出字段名要和前端 app.js 的 typeMap / getTimelineDetail 对得上。
+#      改名不会报错，只会让那个类型的明细**静默空掉**。
+#   3. 列名必须与 server.py 建表语句逐字一致；写错的后果是这类查空（也是静默的）。
+#      所以下面每张表都单独 try 包住，失败会写 warning 日志，不影响其它类型。
+_TIMELINE_SOURCES = [
+    # ---- 原有 5 类：字段名保持不变，前端已在用 ----
+    ("feeding", "feeding_records", "start_time",
+     [("subtype", "feeding_type"), ("amount", "amount"), ("side", "side"), ("note", "note")], ""),
+    ("sleep", "sleep_records", "start_time",
+     [("end_time", "end_time"), ("duration_minutes", "duration_minutes"),
+      ("is_nap", "is_nap"), ("sleep_quality", "sleep_quality"), ("note", "note")], ""),
+    ("diaper", "diaper_records", "change_time",
+     [("diaper_type", "diaper_type"), ("color", "color"), ("note", "note")], ""),
+    ("growth", "growth_records", "record_date",
+     [("height", "height"), ("weight", "weight"),
+      ("head_circumference", "head_circumference"), ("bmi", "bmi"), ("note", "note")], ""),
+    ("milestone", "milestones", "achieved_date",
+     [("title", "title"), ("description", "description"), ("category", "category")], ""),
+    # ---- 本次扩容：记录栏其余入口 ----
+    ("pumping", "pumping_records", "pump_time",
+     [("total_amount", "total_amount"), ("left_amount", "left_amount"), ("right_amount", "right_amount"),
+      ("duration_minutes", "duration_minutes"), ("pump_type", "pump_type"), ("note", "note")], ""),
+    ("solidfood", "solid_food_records", "first_try_date",
+     [("food_name", "food_name"), ("food_category", "food_category"), ("amount", "amount"),
+      ("reaction", "reaction"), ("note", "note")], ""),
+    ("tummy", "tummy_time_records", "start_time",
+     [("duration_minutes", "duration_minutes"), ("milestone", "milestone"), ("note", "note")], ""),
+    ("teething", "teething_records", "erupt_date",
+     [("tooth_name", "tooth_name"), ("position", "position"), ("side", "side"), ("note", "note")], ""),
+    ("fontanelle", "fontanelle_records", "check_date",
+     [("anterior_size", "anterior_size"), ("anterior_status", "anterior_status"),
+      ("posterior_status", "posterior_status"), ("note", "note")], ""),
+    ("leap", "leap_records", "start_date",
+     [("leap_number", "leap_number"), ("end_date", "end_date"),
+      ("is_completed", "is_completed"), ("note", "note")], ""),
+    ("diary", "diary_entries", "entry_date",
+     [("title", "title"), ("content", "content"), ("mood", "mood")], ""),
+    ("photo", "photos", "photo_date",
+     [("description", "description"), ("file_path", "file_path"), ("is_cover", "is_cover")], ""),
+    # ---- 健康档案里的几类，之前只在各自 Tab 里看得到 ----
+    ("temperature", "temperature_records", "measure_time",
+     [("temperature", "temperature"), ("measure_method", "measure_method"),
+      ("is_fever", "is_fever"), ("note", "note")], ""),
+    ("medication", "medication_records", "measure_time",
+     [("medication_name", "medication_name"), ("dosage", "dosage"),
+      ("dosage_unit", "dosage_unit"), ("note", "note")], ""),
+    ("vaccine", "vaccine_details", "actual_date",
+     [("vaccine_name", "vaccine_name"), ("vaccine_type", "vaccine_type"),
+      ("dose_number", "dose_number"), ("hospital", "hospital"),
+      ("has_reaction", "has_reaction"), ("reaction_detail", "reaction_detail"), ("note", "note")],
+     # 只收「已接种」的：没打的只有 scheduled_date，挂到时间线上会让人误以为打过了
+     "actual_date IS NOT NULL AND actual_date != ''"),
+    ("allergy", "allergy_tests", "test_date",
+     [("food_name", "food_name"), ("day_number", "day_number"), ("has_reaction", "has_reaction"),
+      ("reaction_detail", "reaction_detail"), ("status", "status"), ("note", "note")], ""),
+    ("checkup", "checkup_records", "checkup_date",
+     [("hospital", "hospital"), ("doctor", "doctor"), ("result", "result"),
+      ("height", "height"), ("weight", "weight"), ("head_circumference", "head_circumference"),
+      ("note", "note")], ""),
+]
+
+
 @bp.route("/api/babies/<int:baby_id>/timeline", methods=["GET"])
 def get_timeline(baby_id):
     """获取宝宝时间线（聚合所有事件按时间倒序）"""
     db = get_db()
     date_from = request.args.get("from", "")
     date_to = request.args.get("to", "")
-    limit, err = _get_int_arg("limit", 50, minimum=1, maximum=500)
+    # 服务端按类型筛：前端以前是「拉回来再本地筛」，而 limit 是在服务端截断的，
+    # 于是高频类型（喂奶）会把低频类型挤出 limit 之外，选「出牙」结果是空的。
+    # 现在把类型下推到 SQL 之前，只有被选中的表参与查询和 limit 竞争。
+    type_arg = (request.args.get("type") or "").strip()
+    wanted = None
+    if type_arg and type_arg != "all":
+        wanted = {t for t in type_arg.split(",") if t}
+    limit, err = _get_int_arg("limit", 50, minimum=1, maximum=2000)
     if err:
         return err
 
     events = []
 
-    # 查询各表事件（P2-2: 分别查询后合并排序，避免复杂 UNION）
-    table_configs = [
-        ("feeding", "start_time"),
-        ("sleep", "start_time"),
-        ("diaper", "change_time"),
-        ("growth", "record_date"),
-        ("milestone", "achieved_date"),
-    ]
+    # 逐表查询后合并排序（不写 UNION：各家列不一样，UNION 反而更难维护）
+    for type_key, table, time_col, columns, extra_where in _TIMELINE_SOURCES:
+        if wanted is not None and type_key not in wanted:
+            continue
 
-    for table, time_col in table_configs:
-        if table == "feeding":
-            q = ("SELECT id, 'feeding' as type, start_time as time, feeding_type as subtype, "
-                 "amount, side, note FROM feeding_records WHERE baby_id = ?")
-            params = [baby_id]
-            if date_from:
-                q += " AND date(start_time) >= ?"
-                params.append(date_from)
-            if date_to:
-                q += " AND date(start_time) <= ?"
-                params.append(date_to)
+        select_sql = "".join(", {} AS {}".format(expr, alias) for alias, expr in columns)
+        q = "SELECT id, {} AS time{} FROM {} WHERE baby_id = ?".format(time_col, select_sql, table)
+        params = [baby_id]
+        if extra_where:
+            q += " AND " + extra_where
+        if date_from:
+            # 统一用 date() 比较：库里既有 'YYYY-MM-DD'（日期列）也有
+            # 'YYYY-MM-DD HH:MM:SS'（时间列），date() 两种都能吃，不用分支处理。
+            q += " AND date({}) >= ?".format(time_col)
+            params.append(date_from)
+        if date_to:
+            q += " AND date({}) <= ?".format(time_col)
+            params.append(date_to)
+
+        # 单表失败不能让整条时间线挂掉：一张表列名/表名对不上就跳过它，其余照常。
+        try:
             rows = db.execute(q, params).fetchall()
-            for f in rows:
-                events.append({
-                    "id": f["id"], "type": "feeding", "time": f["time"],
-                    "subtype": f["subtype"], "amount": f["amount"],
-                    "side": f["side"], "note": f["note"],
-                })
-        elif table == "sleep":
-            q = ("SELECT id, 'sleep' as type, start_time as time, end_time, "
-                 "duration_minutes, is_nap, sleep_quality, note FROM sleep_records WHERE baby_id = ?")
-            params = [baby_id]
-            if date_from:
-                q += " AND date(start_time) >= ?"
-                params.append(date_from)
-            if date_to:
-                q += " AND date(start_time) <= ?"
-                params.append(date_to)
-            rows = db.execute(q, params).fetchall()
-            for s in rows:
-                events.append({
-                    "id": s["id"], "type": "sleep", "time": s["time"],
-                    "end_time": s["end_time"], "duration_minutes": s["duration_minutes"],
-                    "is_nap": s["is_nap"], "sleep_quality": s["sleep_quality"], "note": s["note"],
-                })
-        elif table == "diaper":
-            q = ("SELECT id, 'diaper' as type, change_time as time, diaper_type, color, note "
-                 "FROM diaper_records WHERE baby_id = ?")
-            params = [baby_id]
-            if date_from:
-                q += " AND date(change_time) >= ?"
-                params.append(date_from)
-            if date_to:
-                q += " AND date(change_time) <= ?"
-                params.append(date_to)
-            rows = db.execute(q, params).fetchall()
-            for d in rows:
-                events.append({
-                    "id": d["id"], "type": "diaper", "time": d["time"],
-                    "diaper_type": d["diaper_type"], "color": d["color"], "note": d["note"],
-                })
-        elif table == "growth":
-            q = ("SELECT id, 'growth' as type, record_date as time, height, weight, "
-                 "head_circumference, bmi, note FROM growth_records WHERE baby_id = ?")
-            params = [baby_id]
-            if date_from:
-                q += " AND record_date >= ?"
-                params.append(date_from)
-            if date_to:
-                q += " AND record_date <= ?"
-                params.append(date_to)
-            rows = db.execute(q, params).fetchall()
-            for g in rows:
-                events.append({
-                    "id": g["id"], "type": "growth", "time": g["time"],
-                    "height": g["height"], "weight": g["weight"],
-                    "head_circumference": g["head_circumference"], "bmi": g["bmi"], "note": g["note"],
-                })
-        elif table == "milestone":
-            q = ("SELECT id, 'milestone' as type, achieved_date as time, title, description, category "
-                 "FROM milestones WHERE baby_id = ?")
-            params = [baby_id]
-            if date_from:
-                q += " AND achieved_date >= ?"
-                params.append(date_from)
-            if date_to:
-                q += " AND achieved_date <= ?"
-                params.append(date_to)
-            rows = db.execute(q, params).fetchall()
-            for m in rows:
-                events.append({
-                    "id": m["id"], "type": "milestone", "time": m["time"],
-                    "title": m["title"], "description": m["description"], "category": m["category"],
-                })
+        except Exception as e:
+            logger.warning("时间线跳过数据源 %s(%s)：%s", type_key, table, e)
+            continue
+
+        for r in rows:
+            if not r["time"]:
+                # 时间列为空的历史脏数据：挂不上时间轴，跳过（否则排序时会 TypeError）
+                continue
+            ev = {"id": r["id"], "type": type_key, "time": r["time"]}
+            for alias, _expr in columns:
+                ev[alias] = r[alias]
+            events.append(ev)
 
     events.sort(key=lambda x: x["time"], reverse=True)
     events = events[:limit]

@@ -365,18 +365,44 @@
                             <option value="3">近3天</option>
                             <option value="7" selected>近7天</option>
                             <option value="30">近30天</option>
+                            <option value="90">近90天</option>
+                            <option value="180">近半年</option>
+                            <option value="365">近一年</option>
+                            <option value="0">全部</option>
+                            <option value="custom">选日期段</option>
                         </select>
                         <select id="timelineType">
                             <option value="all">全部类型</option>
                             <option value="feeding">喂奶</option>
+                            <option value="pumping">吸奶</option>
+                            <option value="solidfood">辅食</option>
                             <option value="sleep">睡眠</option>
                             <option value="diaper">换尿布</option>
-                            <option value="growth">成长</option>
-                            <option value="milestone">里程碑</option>
+                            <option value="tummy">趴睡训练</option>
+                            <option value="growth">身高体重</option>
+                            <option value="milestone">成长成就</option>
+                            <option value="teething">出牙</option>
+                            <option value="fontanelle">囟门</option>
+                            <option value="leap">飞跃期</option>
+                            <option value="temperature">体温</option>
+                            <option value="medication">用药</option>
+                            <option value="vaccine">疫苗</option>
+                            <option value="allergy">过敏测试</option>
+                            <option value="checkup">体检</option>
+                            <option value="diary">日记</option>
+                            <option value="photo">照片</option>
                         </select>
                     </div>
                 </div>
+                <!-- 自定义日期段：仅当选「选日期段」时显示 -->
+                <div class="timeline-custom-range" id="timelineCustomRange" style="display:none">
+                    <input type="date" id="timelineFrom">
+                    <span class="timeline-range-sep">至</span>
+                    <input type="date" id="timelineTo">
+                    <button class="btn btn-primary btn-sm" id="timelineApplyBtn">查看</button>
+                </div>
                 <div class="timeline-stats" id="timelineStats"></div>
+                <div class="timeline-hint" id="timelineHint" style="display:none"></div>
                 <div class="timeline-list" id="timelineList">
                     <p class="empty-tip">暂无记录</p>
                 </div>

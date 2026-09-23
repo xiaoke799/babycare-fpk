@@ -1727,6 +1727,51 @@ body {
 .timeline-icon.diaper { background: #E0F7F5; }
 .timeline-icon.growth { background: #E8F5E9; }
 .timeline-icon.milestone { background: #FFF8E1; }
+/* 扩容后新增的类型：沿用同一套浅色圆底，两两不撞色便于一眼区分 */
+.timeline-icon.pumping { background: #F3E5F5; }
+.timeline-icon.solidfood { background: #FFF3E0; }
+.timeline-icon.tummy { background: #E0F2F1; }
+.timeline-icon.teething { background: #FCE4EC; }
+.timeline-icon.fontanelle { background: #E8EAF6; }
+.timeline-icon.leap { background: #EDE7F6; }
+.timeline-icon.diary { background: #FFFDE7; }
+.timeline-icon.photo { background: #E3F2FD; }
+.timeline-icon.temperature { background: #FFEBEE; }
+.timeline-icon.medication { background: #F1F8E9; }
+.timeline-icon.vaccine { background: #E0F7FA; }
+.timeline-icon.allergy { background: #FBE9E7; }
+.timeline-icon.checkup { background: #ECEFF1; }
+
+/* 自定义日期段 */
+.timeline-custom-range {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.timeline-custom-range input[type="date"] {
+    padding: 6px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    background: var(--card-bg);
+    color: var(--text-primary);
+}
+
+.timeline-range-sep {
+    color: var(--text-light);
+}
+
+/* 记录被 limit 截断时的提示 */
+.timeline-hint {
+    font-size: 12px;
+    color: var(--text-light);
+    padding: 6px 0 10px;
+}
 
 .timeline-content {
     flex: 1;

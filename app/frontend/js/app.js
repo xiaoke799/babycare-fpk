@@ -4363,34 +4363,95 @@ function deleteCurrentWiki() {
 
 // ==================== 时间线 ====================
 
+// 时间线一次最多拉多少条。后端上限 2000，两边要一起改，否则前端会出现「拉了但没显示完」
+// 的错觉。拉满时页面会给出提示，引导用户缩小日期段。
+const TIMELINE_LIMIT = 2000;
+
 function initTimeline() {
-    document.getElementById('timelineDays').addEventListener('change', () => {
-        loadTimeline();
+    document.getElementById('timelineDays').addEventListener('change', (e) => {
+        toggleTimelineCustomRange();
+        // 切到「选日期段」时先别查，等用户把起止填完点「查看」
+        if (e.target.value !== 'custom') loadTimeline();
     });
     document.getElementById('timelineType').addEventListener('change', () => {
         loadTimeline();
     });
+    const applyBtn = document.getElementById('timelineApplyBtn');
+    if (applyBtn) applyBtn.addEventListener('click', () => loadTimeline());
+}
+
+/** 只有选「选日期段」时才显示起止日期输入框，其余档位隐藏 */
+function toggleTimelineCustomRange() {
+    const box = document.getElementById('timelineCustomRange');
+    const daysEl = document.getElementById('timelineDays');
+    if (!box || !daysEl) return;
+    box.style.display = (daysEl.value === 'custom') ? 'flex' : 'none';
+    if (daysEl.value === 'custom') {
+        const fromEl = document.getElementById('timelineFrom');
+        const toEl = document.getElementById('timelineTo');
+        const today = getToday();
+        // 默认给「最近 30 天」，省得用户两个框都要手填
+        if (fromEl && !fromEl.value) {
+            const d = new Date();
+            d.setDate(d.getDate() - 29);
+            fromEl.value = formatDate(d);
+        }
+        if (toEl && !toEl.value) toEl.value = today;
+    }
+}
+
+/**
+ * 由日期档位算出查询用的 from/to。
+ * 返回空串表示该端不限（「全部」档两端都空）。
+ * ⚠️ 近 N 天按 n-1 往回推，跟记录栏的日期筛选保持同一口径
+ *   （近1天=今天，近3天=今天+前天），别写成 -n。
+ */
+function timelineRange() {
+    const daysEl = document.getElementById('timelineDays');
+    const val = daysEl ? daysEl.value : '7';
+    if (val === 'custom') {
+        return {
+            from: document.getElementById('timelineFrom')?.value || '',
+            to: document.getElementById('timelineTo')?.value || '',
+        };
+    }
+    const n = parseInt(val, 10);
+    if (!n || n <= 0) return { from: '', to: '' };
+    const d = new Date();
+    d.setDate(d.getDate() - (n - 1));
+    return { from: formatDate(d), to: '' };
 }
 
 function loadTimeline() {
     if (!App.currentBaby) return;
 
-    const days = document.getElementById('timelineDays').value;
     const typeFilter = document.getElementById('timelineType')?.value || 'all';
-    const fromDate = new Date();
-    fromDate.setDate(fromDate.getDate() - parseInt(days));
-    const from = formatDate(fromDate);
+    const range = timelineRange();
 
-    api(`/api/babies/${App.currentBaby}/timeline?from=${from}&limit=200`).then(res => {
+    const params = new URLSearchParams();
+    if (range.from) params.set('from', range.from);
+    if (range.to) params.set('to', range.to);
+    // 类型筛选下推到服务端：本地筛是「先按 limit 截断再筛」，
+    // 高频类型会把低频类型挤出 limit，选「出牙」必然是空的。
+    if (typeFilter !== 'all') params.set('type', typeFilter);
+    params.set('limit', String(TIMELINE_LIMIT));
+
+    api(`/api/babies/${App.currentBaby}/timeline?${params.toString()}`).then(res => {
         if (!res.success) return;
         const container = document.getElementById('timelineList');
         const statsEl = document.getElementById('timelineStats');
+        const hintEl = document.getElementById('timelineHint');
 
-        let events = res.data || [];
+        const events = res.data || [];
 
-        // 类型筛选
-        if (typeFilter !== 'all') {
-            events = events.filter(e => e.type === typeFilter);
+        // 拉满说明被截断了，明说一句 —— 否则用户会以为「这个月就这些」
+        if (hintEl) {
+            if (events.length >= TIMELINE_LIMIT) {
+                hintEl.textContent = `记录较多，仅显示最近 ${TIMELINE_LIMIT} 条。要看更早的，把日期范围选小一些。`;
+                hintEl.style.display = 'block';
+            } else {
+                hintEl.style.display = 'none';
+            }
         }
 
         // 显示统计
@@ -4411,13 +4472,15 @@ function loadTimeline() {
         }
 
         if (events.length === 0) {
-            container.innerHTML = '<p class="empty-tip">暂无记录</p>';
+            container.innerHTML = '<p class="empty-tip">这段时间没有记录</p>';
             return;
         }
 
         // 按日期分组
+        // ⚠️ 必须用 events 而不是 res.data：res.data 是未筛选的原始数组，
+        //    用它分组会让类型筛选只改上面统计条、下面列表照旧全显示。
         const groups = {};
-        res.data.forEach(event => {
+        events.forEach(event => {
             const date = event.time ? event.time.substring(0, 10) : '';
             if (!groups[date]) groups[date] = [];
             groups[date].push(event);
@@ -4436,7 +4499,21 @@ function loadTimeline() {
                 return types[e.diaper_type] || '换尿布';
             }},
             growth: { icon: '长', class: 'growth', title: () => '成长记录' },
-            milestone: { icon: '★', class: 'milestone', title: (e) => e.title }
+            milestone: { icon: '★', class: 'milestone', title: (e) => e.title },
+            // ---- 扩容新增：icon 沿用单字圆底，与上面 5 类保持同一视觉 ----
+            pumping: { icon: '吸', class: 'pumping', title: () => '吸奶' },
+            solidfood: { icon: '辅', class: 'solidfood', title: (e) => `初尝${e.food_name || '辅食'}` },
+            tummy: { icon: '趴', class: 'tummy', title: () => '趴睡训练' },
+            teething: { icon: '牙', class: 'teething', title: (e) => `出牙：${e.tooth_name || '乳牙'}` },
+            fontanelle: { icon: '囟', class: 'fontanelle', title: () => '囟门检查' },
+            leap: { icon: '跃', class: 'leap', title: (e) => `第${e.leap_number || '?'}次飞跃期` },
+            temperature: { icon: '温', class: 'temperature', title: () => '体温测量' },
+            medication: { icon: '药', class: 'medication', title: (e) => e.medication_name || '用药' },
+            vaccine: { icon: '苗', class: 'vaccine', title: (e) => `${e.vaccine_name || '疫苗'}${e.dose_number ? ' 第' + e.dose_number + '剂' : ''}` },
+            allergy: { icon: '敏', class: 'allergy', title: (e) => `过敏测试：${e.food_name || ''}` },
+            checkup: { icon: '检', class: 'checkup', title: () => '体检' },
+            diary: { icon: '记', class: 'diary', title: (e) => e.title || '日记' },
+            photo: { icon: '图', class: 'photo', title: () => '照片' }
         };
 
         let html = '';
@@ -4514,6 +4591,100 @@ function getTimelineDetail(event) {
         }
         case 'milestone':
             return event.description || event.title || '';
+        // ---- 扩容新增类型的明细。字段名对应后端 _TIMELINE_SOURCES 里的别名，改名两边要一起改 ----
+        case 'pumping': {
+            const parts = [];
+            if (event.total_amount) parts.push(`共 ${event.total_amount}ml`);
+            if (event.left_amount || event.right_amount) {
+                parts.push(`[左 ${event.left_amount || 0}ml / 右 ${event.right_amount || 0}ml]`);
+            }
+            if (event.duration_minutes) parts.push(`${event.duration_minutes}分钟`);
+            if (event.note) parts.push(event.note);
+            return parts.filter(Boolean).join(' ');
+        }
+        case 'solidfood': {
+            const parts = [];
+            if (event.amount) parts.push(event.amount);
+            if (event.reaction && event.reaction !== 'none') parts.push(`有反应：${event.reaction}`);
+            if (event.note) parts.push(event.note);
+            return parts.filter(Boolean).join(' ');
+        }
+        case 'tummy': {
+            const parts = [];
+            if (event.duration_minutes) parts.push(`${event.duration_minutes}分钟`);
+            if (event.milestone) parts.push(event.milestone);
+            if (event.note) parts.push(event.note);
+            return parts.filter(Boolean).join(' ');
+        }
+        case 'teething': {
+            const parts = [];
+            if (event.position) parts.push(event.position);
+            if (event.side) parts.push(event.side);
+            if (event.note) parts.push(event.note);
+            return parts.filter(Boolean).join(' ');
+        }
+        case 'fontanelle': {
+            const parts = [];
+            if (event.anterior_size) parts.push(`前囟 ${event.anterior_size}cm`);
+            const statusMap = { open: '未闭合', closing: '闭合中', closed: '已闭合' };
+            if (event.anterior_status) parts.push(statusMap[event.anterior_status] || event.anterior_status);
+            if (event.note) parts.push(event.note);
+            return parts.filter(Boolean).join(' ');
+        }
+        case 'leap': {
+            const parts = [];
+            if (event.end_date) parts.push(`至 ${String(event.end_date).substring(0, 10)}`);
+            if (event.is_completed) parts.push('已度过');
+            if (event.note) parts.push(event.note);
+            return parts.filter(Boolean).join(' ');
+        }
+        case 'temperature': {
+            const parts = [];
+            if (event.temperature) parts.push(`${event.temperature}°C`);
+            const methodMap = { ear: '耳温', armpit: '腋温', oral: '口温', rectal: '肛温' };
+            if (event.measure_method) parts.push(methodMap[event.measure_method] || '');
+            if (event.is_fever) parts.push('发烧');
+            if (event.note) parts.push(event.note);
+            return parts.filter(Boolean).join(' ');
+        }
+        case 'medication': {
+            const parts = [];
+            if (event.dosage) parts.push(`${event.dosage}${event.dosage_unit || ''}`);
+            if (event.note) parts.push(event.note);
+            return parts.filter(Boolean).join(' ');
+        }
+        case 'vaccine': {
+            const parts = [];
+            if (event.vaccine_type === 'paid') parts.push('自费');
+            if (event.hospital) parts.push(event.hospital);
+            if (event.has_reaction) parts.push(`有反应：${event.reaction_detail || '有'}`);
+            if (event.note) parts.push(event.note);
+            return parts.filter(Boolean).join(' ');
+        }
+        case 'allergy': {
+            const parts = [];
+            if (event.day_number) parts.push(`第${event.day_number}天`);
+            const statusMap = { testing: '测试中', passed: '已通过', failed: '未通过' };
+            if (event.status) parts.push(statusMap[event.status] || event.status);
+            if (event.has_reaction) parts.push(`有反应：${event.reaction_detail || '有'}`);
+            if (event.note) parts.push(event.note);
+            return parts.filter(Boolean).join(' ');
+        }
+        case 'checkup': {
+            const parts = [];
+            if (event.hospital) parts.push(event.hospital);
+            if (event.doctor) parts.push(event.doctor);
+            if (event.height) parts.push(`身高${event.height}cm`);
+            if (event.weight) parts.push(`体重${event.weight}kg`);
+            if (event.note) parts.push(event.note);
+            return parts.filter(Boolean).join(' ');
+        }
+        case 'diary': {
+            const parts = [];
+            if (event.content) parts.push(String(event.content).substring(0, 60));
+            if (event.mood) parts.push(event.mood);
+            return parts.filter(Boolean).join(' ');
+        }
         default:
             return event.note || event.description || '';
     }
