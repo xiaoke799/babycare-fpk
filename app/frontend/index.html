@@ -34,7 +34,17 @@
     .skin-btn:hover{border-color:#FF86A1;background:#FFF0F5}
     .skin-btn.active{background:#FF86A1;color:#fff;border-color:#FF86A1}
     </style>
-    <link rel="stylesheet" href="/app/babycare-fpk/css/main.css">
+        <!-- 网页/手机端图标：收藏、主屏、微信内打开。文件都在 images/ 下 -->
+    <link rel="icon" href="images/favicon.ico" sizes="any">
+    <link rel="icon" type="image/png" sizes="32x32" href="images/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="48x48" href="images/favicon-48.png">
+    <link rel="icon" type="image/svg+xml" href="images/icon.svg">
+    <link rel="apple-touch-icon" sizes="180x180" href="images/apple-touch-icon.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="images/icon-192.png">
+    <meta name="theme-color" content="#FFAD7A">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="育儿宝">
+<link rel="stylesheet" href="/app/babycare-fpk/css/main.css">
     <script>
         // 网关前缀：优先从 URL 路径自动提取 /app/<应用名>，兜底为 /app/babycare-fpk
         (function() {
@@ -93,90 +103,95 @@
                     </div>
                 </div>
 
-                <!-- 快捷记录 -->
-                <div class="home-quick-actions" id="homeQuickActions">
-                    <button class="home-quick-btn" data-action="feeding" type="button">
-                        <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bottle"/></svg></span>
-                        <span class="home-quick-label">喂奶</span>
-                    </button>
-                    <button class="home-quick-btn" data-action="sleep" type="button">
-                        <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-moon"/></svg></span>
-                        <span class="home-quick-label">睡眠</span>
-                    </button>
-                    <button class="home-quick-btn" data-action="diaper" type="button">
-                        <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-diaper"/></svg></span>
-                        <span class="home-quick-label">尿布</span>
-                    </button>
-                    <button class="home-quick-btn" data-action="growth" type="button">
-                        <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chart"/></svg></span>
-                        <span class="home-quick-label">成长</span>
-                    </button>
-                </div>
+                <!-- 双端布局：手机端 display:contents 摊平成单列；桌面端变成左右两栏 -->
+                <div class="home-col home-col-left">
+                    <!-- 快捷记录 -->
+                    <div class="home-quick-actions" id="homeQuickActions">
+                        <button class="home-quick-btn" data-action="feeding" type="button">
+                            <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bottle"/></svg></span>
+                            <span class="home-quick-label">喂奶</span>
+                        </button>
+                        <button class="home-quick-btn" data-action="sleep" type="button">
+                            <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-moon"/></svg></span>
+                            <span class="home-quick-label">睡眠</span>
+                        </button>
+                        <button class="home-quick-btn" data-action="diaper" type="button">
+                            <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-diaper"/></svg></span>
+                            <span class="home-quick-label">尿布</span>
+                        </button>
+                        <button class="home-quick-btn" data-action="growth" type="button">
+                            <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chart"/></svg></span>
+                            <span class="home-quick-label">成长</span>
+                        </button>
+                    </div>
 
-                <!-- 日期切换：默认看今天，可回看任意一天（回看时本页转为只读视图） -->
-                <div class="home-date-bar" id="homeDateBar">
-                    <div class="care-tabs home-date-tabs">
-                        <button class="tab-btn active" type="button" data-home-offset="0">今天</button>
-                        <button class="tab-btn" type="button" data-home-offset="1">昨天</button>
-                        <button class="tab-btn" type="button" data-home-offset="7">一周前</button>
-                    </div>
-                    <label class="home-date-pick">
-                        <input type="date" id="homeDateInput" aria-label="选择要回看的日期">
-                    </label>
-                </div>
-
-                <!-- 今日概览 -->
-                <h3 class="home-section-title" id="homeStatsTitle">今日概览</h3>
-                <div class="home-stats">
-                    <div class="home-stat-card feeding">
-                        <div class="home-stat-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bottle"/></svg></div>
-                        <div class="home-stat-value" id="homeFeedingCount">0</div>
-                        <div class="home-stat-label">喂奶</div>
-                    </div>
-                    <div class="home-stat-card sleep">
-                        <div class="home-stat-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-moon"/></svg></div>
-                        <div class="home-stat-value" id="homeSleepTime">0m</div>
-                        <div class="home-stat-label">睡眠</div>
-                    </div>
-                    <div class="home-stat-card diaper">
-                        <div class="home-stat-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-diaper"/></svg></div>
-                        <div class="home-stat-value" id="homeDiaperCount">0</div>
-                        <div class="home-stat-label">换尿布</div>
-                    </div>
-                </div>
-
-                <!-- 身体数据：显示最新一次测量值（不是「今日」数据，单独一块） -->
-                <div class="home-body" id="homeBodySection">
-                    <h3 class="home-section-title">身体数据</h3>
-                    <div class="home-body-card" id="homeBodyCard">
-                        <div class="home-body-item">
-                            <span class="home-body-value" id="homeLatestHeight">--</span>
-                            <span class="home-body-label">身高 (cm)</span>
+                    <!-- 身体数据：显示最新一次测量值（不是「今日」数据，单独一块） -->
+                    <div class="home-body" id="homeBodySection">
+                        <h3 class="home-section-title">身体数据</h3>
+                        <div class="home-body-card" id="homeBodyCard">
+                            <div class="home-body-item">
+                                <span class="home-body-value" id="homeLatestHeight">--</span>
+                                <span class="home-body-label">身高 (cm)</span>
+                            </div>
+                            <div class="home-body-item">
+                                <span class="home-body-value" id="homeLatestWeight">--</span>
+                                <span class="home-body-label">体重 (kg)</span>
+                            </div>
+                            <div class="home-body-item">
+                                <span class="home-body-value" id="homeLatestBmi">--</span>
+                                <span class="home-body-label">BMI</span>
+                            </div>
+                            <div class="home-body-item">
+                                <span class="home-body-value" id="homeLatestHead">--</span>
+                                <span class="home-body-label">头围 (cm)</span>
+                            </div>
                         </div>
-                        <div class="home-body-item">
-                            <span class="home-body-value" id="homeLatestWeight">--</span>
-                            <span class="home-body-label">体重 (kg)</span>
+                        <div class="home-body-foot">
+                            <span class="home-body-date" id="homeBodyDate">还没有测量记录</span>
+                            <button class="home-body-record-btn" id="homeBodyRecordBtn" type="button">记一次</button>
                         </div>
-                        <div class="home-body-item">
-                            <span class="home-body-value" id="homeLatestBmi">--</span>
-                            <span class="home-body-label">BMI</span>
-                        </div>
-                        <div class="home-body-item">
-                            <span class="home-body-value" id="homeLatestHead">--</span>
-                            <span class="home-body-label">头围 (cm)</span>
-                        </div>
-                    </div>
-                    <div class="home-body-foot">
-                        <span class="home-body-date" id="homeBodyDate">还没有测量记录</span>
-                        <button class="home-body-record-btn" id="homeBodyRecordBtn" type="button">记一次</button>
                     </div>
                 </div>
 
-                <!-- 最近记录（回看某天时变成「那天的记录」） -->
-                <div class="home-recent">
-                    <h3 class="home-section-title" id="homeRecentTitle">最近记录</h3>
-                    <div class="home-recent-list" id="homeRecentList">
-                        <p class="empty-tip">暂无记录</p>
+                <div class="home-col home-col-right">
+                    <!-- 日期切换：默认看今天，可回看任意一天（回看时本页转为只读视图） -->
+                    <div class="home-date-bar" id="homeDateBar">
+                        <div class="care-tabs home-date-tabs">
+                            <button class="tab-btn active" type="button" data-home-offset="0">今天</button>
+                            <button class="tab-btn" type="button" data-home-offset="1">昨天</button>
+                            <button class="tab-btn" type="button" data-home-offset="7">一周前</button>
+                        </div>
+                        <label class="home-date-pick">
+                            <input type="date" id="homeDateInput" aria-label="选择要回看的日期">
+                        </label>
+                    </div>
+
+                    <!-- 今日概览 -->
+                    <h3 class="home-section-title" id="homeStatsTitle">今日概览</h3>
+                    <div class="home-stats">
+                        <div class="home-stat-card feeding">
+                            <div class="home-stat-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bottle"/></svg></div>
+                            <div class="home-stat-value" id="homeFeedingCount">0</div>
+                            <div class="home-stat-label">喂奶</div>
+                        </div>
+                        <div class="home-stat-card sleep">
+                            <div class="home-stat-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-moon"/></svg></div>
+                            <div class="home-stat-value" id="homeSleepTime">0m</div>
+                            <div class="home-stat-label">睡眠</div>
+                        </div>
+                        <div class="home-stat-card diaper">
+                            <div class="home-stat-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-diaper"/></svg></div>
+                            <div class="home-stat-value" id="homeDiaperCount">0</div>
+                            <div class="home-stat-label">换尿布</div>
+                        </div>
+                    </div>
+
+                    <!-- 最近记录（回看某天时变成「那天的记录」） -->
+                    <div class="home-recent">
+                        <h3 class="home-section-title" id="homeRecentTitle">最近记录</h3>
+                        <div class="home-recent-list" id="homeRecentList">
+                            <p class="empty-tip">暂无记录</p>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -234,12 +249,16 @@
                     <div class="stat-chip">亲喂 <strong id="feedingTodayBreast">0</strong> 分</div>
                     <div class="stat-chip">上次 <strong id="feedingLastTime">--</strong></div>
                 </div>
-                <!-- 快捷操作 -->
+                <!-- 快捷操作：一键记「现在」的喂奶，复制上次按上一条同款再来一份 -->
                 <div class="quick-actions" id="feedingQuickActions">
                     <button class="quick-btn" data-type="breast" data-amount="0">母乳</button>
                     <button class="quick-btn" data-type="bottle" data-amount="60">60ml</button>
                     <button class="quick-btn" data-type="bottle" data-amount="90">90ml</button>
                     <button class="quick-btn" data-type="bottle" data-amount="120">120ml</button>
+                    <button class="quick-btn" data-type="bottle" data-amount="150">150ml</button>
+                    <button class="quick-btn" data-type="bottle" data-amount="180">180ml</button>
+                    <button class="quick-btn quick-btn-special" data-action="custom" type="button">其他奶量</button>
+                    <button class="quick-btn quick-btn-special" data-action="repeat" type="button">复制上次</button>
                 </div>
                 <!-- 日期筛选 -->
                 <div class="care-tabs" id="feedingRangeTabs">
@@ -828,10 +847,17 @@
             <div class="health-overview-card">
                 <div class="health-overview-num" id="ovLatestHeight">-</div>
                 <div class="health-overview-label">身高(cm)</div>
+                <div class="health-overview-sub" id="ovHeightPct"></div>
             </div>
             <div class="health-overview-card">
                 <div class="health-overview-num" id="ovLatestWeight">-</div>
                 <div class="health-overview-label">体重(kg)</div>
+                <div class="health-overview-sub" id="ovWeightPct"></div>
+            </div>
+            <div class="health-overview-card">
+                <div class="health-overview-num" id="ovTemperature">-</div>
+                <div class="health-overview-label">最近体温</div>
+                <div class="health-overview-sub" id="ovTemperatureHint"></div>
             </div>
             <div class="health-overview-card">
                 <div class="health-overview-num" id="ovVaccine">0/0</div>
@@ -861,6 +887,11 @@
                 <div class="health-overview-num" id="ovPendingReminders">0</div>
                 <div class="health-overview-label">待办提醒</div>
             </div>
+        </div>
+        <!-- 30 天内待种疫苗：接口已算好，这里一开口就能看见 -->
+        <div class="health-upcoming-vaccines" id="ovUpcomingVaccines" style="display:none">
+            <h4>即将接种</h4>
+            <div id="ovUpcomingList"></div>
         </div>
         <div class="health-recent">
             <h4>最近记录</h4>
@@ -1234,6 +1265,20 @@
             </label>
         </div>
 
+        <div class="settings-row settings-row--stack">
+            <div>
+                <div class="settings-row-label">删除安全码</div>
+                <div class="settings-row-hint" id="safetyCodeHint">删除宝宝前必须输入安全码，防止误删</div>
+            </div>
+            <div class="safety-code-actions">
+                <input type="password" id="safetyCodeInput" class="settings-input"
+                       placeholder="至少 4 位" maxlength="64" autocomplete="new-password">
+                <button type="button" class="btn btn-primary btn-sm" id="saveSafetyCodeBtn">设置</button>
+                <button type="button" class="btn btn-cancel btn-sm" id="clearSafetyCodeBtn">清除</button>
+            </div>
+            <p class="settings-tip" id="safetyCodeTip"></p>
+        </div>
+
         <button class="btn btn-primary settings-save-btn" id="saveSettingsBtn">保存设置</button>
         <p class="settings-tip" id="settingsTip"></p>
     </div>
@@ -1438,6 +1483,11 @@
         <div class="data-mgmt-actions">
             <button class="btn btn-outline" id="createBackupBtn">创建备份</button>
             <button class="btn btn-outline" id="exportAllBtn">导出JSON</button>
+            <button class="btn btn-primary" id="exportToShareBtn">导出到共享目录</button>
+            <button class="btn btn-outline btn-sm" id="genIntegrationTokenBtn">生成集成 Token</button>
+            <button class="btn btn-outline btn-sm" id="revokeIntegrationTokenBtn">吊销 Token</button>
+            <p class="empty-tip" id="integrationTokenStatus" style="margin-top:8px">智能家居 Token：未配置</p>
+            <button class="btn btn-outline" id="restoreFromShareBtn">从共享目录恢复</button>
             <button class="btn btn-outline" id="importDataBtn">导入数据</button>
             <button class="btn btn-outline" id="triggerAutoBackupBtn">立即自动备份</button>
         </div>
@@ -1595,6 +1645,7 @@
         <div class="settings-field">
             <label class="settings-field-label" for="notifyWechat">企业微信 Webhook</label>
             <input type="text" id="notifyWechat" class="settings-input" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx">
+            <p class="settings-tip">群机器人地址；正文按纯文本推送，企业微信与微信插件均可直接阅读</p>
         </div>
         <div class="settings-field">
             <label class="settings-field-label" for="notifyDingtalk">钉钉 Webhook</label>
@@ -1611,6 +1662,7 @@
         <div class="settings-field">
             <label class="settings-field-label" for="notifyPushplus">PushPlus Token</label>
             <input type="text" id="notifyPushplus" class="settings-input" placeholder="你的 PushPlus Token">
+            <p class="settings-tip">推送到微信公众号；按 HTML 简单排版，公众号内可正常阅读</p>
         </div>
         <!-- 下面两项后端一直支持（在 CONFIG_KEYS 里），只是设置页没暴露出来 -->
         <div class="settings-field">
@@ -1743,9 +1795,9 @@
             </span>
             <span class="feedback-go">›</span>
         </a>
-    </div>
 
-    <p class="settings-card-note">点任意一行会复制对应信息并提示；在浏览器里打开时也会同时跳转。加入 QQ 群需在手机或电脑上安装 QQ。</p>
+        <p class="settings-card-note">点任意一行会复制对应信息并提示；在浏览器里打开时也会同时跳转。加入 QQ 群需在手机或电脑上安装 QQ。</p>
+    </div>
 
     <!-- 关于页支持卡片：图片地址由页尾脚本按网关前缀拼（同小萌头像），
          直接写相对路径在「无尾斜杠」的 URL 下会解析到上一层去 -->
@@ -2377,7 +2429,7 @@
         </nav>
     </div>
 
-    <!-- 添加宝宝弹窗 -->
+    <!-- 添加/编辑宝宝弹窗 -->
     <div class="modal-overlay" id="addBabyModal">
         <div class="modal">
             <div class="modal-header">
@@ -2388,7 +2440,7 @@
                 <form id="babyForm">
                     <div class="form-group">
                         <label for="babyName">宝宝昵称</label>
-                        <input type="text" id="babyName" placeholder="请输入宝宝昵称" required>
+                        <input type="text" id="babyName" placeholder="请输入宝宝昵称" required maxlength="50">
                     </div>
                     <div class="form-group">
                         <label for="babyBirthday">生日</label>
@@ -2409,26 +2461,47 @@
                     </div>
                     <div class="form-actions">
                         <button type="button" class="btn btn-cancel" id="cancelBabyForm">取消</button>
-                        <button type="submit" class="btn btn-primary">保存</button>
+                        <button type="submit" class="btn btn-primary" id="saveBabyBtn">保存</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- 选择宝宝弹窗：多宝宝时直接任选。
-         原来点选择器只能「切到下一个」，3 个宝宝要连点 3 次才绕回来，也看不到一共有几个。 -->
+    <!-- 选择 / 管理宝宝弹窗：切换、编辑资料、删除 -->
     <div class="modal-overlay" id="babyListModal">
         <div class="modal">
             <div class="modal-header">
-                <h2>选择宝宝</h2>
+                <h2>宝宝管理</h2>
                 <button class="modal-close" id="closeBabyListModal">X</button>
             </div>
             <div class="modal-body">
                 <div class="baby-list" id="babyListItems"></div>
                 <div class="form-actions">
-                    <button type="button" class="btn btn-cancel" id="cancelBabyList">取消</button>
+                    <button type="button" class="btn btn-cancel" id="cancelBabyList">关闭</button>
                     <button type="button" class="btn btn-primary" id="addBabyFromList">＋ 添加宝宝</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 删除宝宝：安全码确认 -->
+    <div class="modal-overlay" id="safetyCodeModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>安全验证</h2>
+                <button class="modal-close" id="closeSafetyCodeModal">X</button>
+            </div>
+            <div class="modal-body">
+                <p class="safety-confirm-text" id="safetyConfirmText"></p>
+                <div class="form-group">
+                    <label for="safetyVerifyInput">请输入删除安全码</label>
+                    <input type="password" id="safetyVerifyInput" class="settings-input"
+                           placeholder="安全码" maxlength="64" autocomplete="off">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-cancel" id="cancelSafetyCode">取消</button>
+                    <button type="button" class="btn btn-primary" id="confirmSafetyCode">确认删除</button>
                 </div>
             </div>
         </div>

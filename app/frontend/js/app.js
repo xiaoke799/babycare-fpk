@@ -1158,24 +1158,20 @@ document.addEventListener('click', (e) => {
 
 // ==================== 宝宝管理 ====================
 
+// 编辑中的宝宝 id；null 表示「添加」模式
+let editingBabyId = null;
+
 function initBabySelector() {
     const selector = document.getElementById('babySelector');
     const addBtn = document.getElementById('addBabyBtn');
 
     selector.addEventListener('click', () => {
-        if (App.babies.length === 0) {
-            showAddBabyModal();
-        } else if (App.babies.length === 1) {
-            showToast('目前只有 1 个宝宝，点旁边「＋」可以添加');
-        } else {
-            // 多宝宝：弹列表直接任选（原先只能切到下一个）
-            showBabyListModal();
-        }
+        // 始终打开管理列表：切换 / 编辑 / 删除都在这里
+        showBabyListModal();
     });
 
     addBtn.addEventListener('click', showAddBabyModal);
     document.getElementById('closeBabyModal').addEventListener('click', () => hideModal('addBabyModal'));
-    // 选择宝宝弹窗的按钮（元素可能被精简掉，一律用 ?. 兜底）
     document.getElementById('closeBabyListModal')?.addEventListener('click', () => hideModal('babyListModal'));
     document.getElementById('cancelBabyList')?.addEventListener('click', () => hideModal('babyListModal'));
     document.getElementById('addBabyFromList')?.addEventListener('click', () => {
@@ -1183,7 +1179,6 @@ function initBabySelector() {
         showAddBabyModal();
     });
     document.getElementById('cancelBabyForm').addEventListener('click', () => hideModal('addBabyModal'));
-    document.getElementById('babyModalTitle').textContent = '添加宝宝';
 
     document.getElementById('babyForm').addEventListener('submit', function(e) {
         e.preventDefault();
@@ -1197,17 +1192,20 @@ function initBabySelector() {
             return;
         }
 
-        api('/api/babies', {
-            method: 'POST',
+        const isEdit = editingBabyId != null;
+        const url = isEdit ? `/api/babies/${editingBabyId}` : '/api/babies';
+        api(url, {
+            method: isEdit ? 'PUT' : 'POST',
             body: JSON.stringify({ name, birthday, gender, due_date: dueDate })
         }).then(res => {
             if (res.success) {
                 hideModal('addBabyModal');
-                showToast.success('宝宝添加成功');
+                showToast.success(isEdit ? '宝宝信息已更新' : '宝宝添加成功');
                 this.reset();
+                editingBabyId = null;
                 loadBabies();
             } else {
-                showToast.error(res.message || '添加失败');
+                showToast.error(res.message || (isEdit ? '保存失败' : '添加失败'));
             }
         });
     });
@@ -1231,34 +1229,239 @@ function loadCurrentBaby() {
     } catch (e) { return null; }
 }
 
-/** 列出所有宝宝供选择（只有一个时调用方不弹，没什么可选的）。 */
+/** 列出所有宝宝：点行切换，右侧「编辑 / 删除」做管理。 */
 function showBabyListModal() {
     const box = document.getElementById('babyListItems');
     if (!box) return;
+
+    if (!App.babies || App.babies.length === 0) {
+        hideModal('babyListModal');
+        showAddBabyModal();
+        return;
+    }
+
     box.innerHTML = (App.babies || []).map(b => {
         const isCur = b.id === App.currentBaby;
-        return '<button type="button" class="baby-list-item' + (isCur ? ' active' : '') +
-            '" data-baby-id="' + b.id + '">' +
+        return '<div class="baby-list-item' + (isCur ? ' active' : '') + '" data-baby-id="' + b.id + '">' +
+            '<button type="button" class="bli-main" data-baby-id="' + b.id + '">' +
             '<span class="bli-name">' + escapeHtml(b.name) + '</span>' +
             '<span class="bli-meta">' + escapeHtml(b.age || '') + '</span>' +
             (isCur ? '<span class="bli-check">✓</span>' : '') +
-            '</button>';
+            '</button>' +
+            '<span class="bli-actions">' +
+            '<button type="button" class="bli-act bli-edit" data-baby-id="' + b.id + '" title="编辑资料">编辑</button>' +
+            '<button type="button" class="bli-act bli-del" data-baby-id="' + b.id + '" title="删除宝宝">删除</button>' +
+            '</span>' +
+            '</div>';
     }).join('');
 
-    box.querySelectorAll('.baby-list-item').forEach(el => {
+    box.querySelectorAll('.bli-main').forEach(el => {
         el.addEventListener('click', () => {
             const id = parseInt(el.dataset.babyId, 10);
             hideModal('babyListModal');
             if (id !== App.currentBaby) selectBaby(id);
         });
     });
+    box.querySelectorAll('.bli-edit').forEach(el => {
+        el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const id = parseInt(el.dataset.babyId, 10);
+            hideModal('babyListModal');
+            showEditBabyModal(id);
+        });
+    });
+    box.querySelectorAll('.bli-del').forEach(el => {
+        el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const id = parseInt(el.dataset.babyId, 10);
+            deleteBaby(id);
+        });
+    });
     showModal('babyListModal');
 }
 
 function showAddBabyModal() {
-    document.getElementById('babyForm').reset();
-    document.getElementById('babyModalTitle').textContent = '添加宝宝';
+    editingBabyId = null;
+    const form = document.getElementById('babyForm');
+    if (form) form.reset();
+    const title = document.getElementById('babyModalTitle');
+    if (title) title.textContent = '添加宝宝';
+    const saveBtn = document.getElementById('saveBabyBtn');
+    if (saveBtn) saveBtn.textContent = '保存';
     showModal('addBabyModal');
+}
+
+function showEditBabyModal(babyId) {
+    const baby = (App.babies || []).find(b => b.id === babyId);
+    if (!baby) return;
+    editingBabyId = babyId;
+
+    document.getElementById('babyName').value = baby.name || '';
+    document.getElementById('babyBirthday').value = baby.birthday || '';
+    document.getElementById('babyGender').value = baby.gender || 'other';
+    const due = document.getElementById('babyDueDate');
+    if (due) due.value = baby.due_date || '';
+
+    const title = document.getElementById('babyModalTitle');
+    if (title) title.textContent = '编辑宝宝信息';
+    const saveBtn = document.getElementById('saveBabyBtn');
+    if (saveBtn) saveBtn.textContent = '保存修改';
+    showModal('addBabyModal');
+}
+
+function deleteBaby(babyId) {
+    const baby = (App.babies || []).find(b => b.id === babyId);
+    if (!baby) return;
+
+    const msg = '将删除「' + baby.name + '」及其喂养、睡眠、生长、健康等全部记录，无法恢复。\n请通过安全码验证后继续。';
+    const textEl = document.getElementById('safetyConfirmText');
+    if (textEl) textEl.textContent = msg;
+    else if (!confirm(msg)) return;
+
+    pendingDeleteBabyId = babyId;
+    const input = document.getElementById('safetyVerifyInput');
+    if (input) {
+        input.value = '';
+        showModal('safetyCodeModal');
+        setTimeout(() => { try { input.focus(); } catch (e) { /* 忽略 */ } }, 50);
+    } else {
+        // 兜底：没有弹窗时仍要求输入
+        const code = prompt('请输入删除安全码');
+        if (code == null) return;
+        performDeleteBaby(babyId, code);
+    }
+}
+
+let pendingDeleteBabyId = null;
+
+function performDeleteBaby(babyId, safetyCode) {
+    const baby = (App.babies || []).find(b => b.id === babyId) || { name: '' };
+    api(`/api/babies/${babyId}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ safety_code: safetyCode || '' })
+    }).then(res => {
+        hideModal('safetyCodeModal');
+        pendingDeleteBabyId = null;
+        const input = document.getElementById('safetyVerifyInput');
+        if (input) input.value = '';
+
+        if (res.success) {
+            showToast.success('已删除「' + baby.name + '」');
+            hideModal('babyListModal');
+            if (App.currentBaby === babyId) {
+                App.currentBaby = null;
+                saveCurrentBaby(null);
+            }
+            loadBabies();
+            return;
+        }
+
+        const msg = (res.message || '删除失败').replace(/\(\d+\)$/, '');
+        if (res.needSafetyCode || msg.indexOf('安全码') >= 0) {
+            // 安全码错误/未设置：留在弹窗里让用户重试，除非是「未设置」
+            if (msg.indexOf('尚未设置') >= 0) {
+                showToast.warning(msg);
+            } else {
+                showToast.error(msg);
+                const textEl = document.getElementById('safetyConfirmText');
+                if (textEl) textEl.textContent = msg + '。请重新输入。';
+                showModal('safetyCodeModal');
+            }
+        } else if (msg.indexOf('权限') >= 0 || msg.indexOf('登录') >= 0) {
+            showToast.warning(msg);
+        } else {
+            showToast.error(msg);
+        }
+    });
+}
+
+function initSafetyCode() {
+    const saveBtn = document.getElementById('saveSafetyCodeBtn');
+    const clearBtn = document.getElementById('clearSafetyCodeBtn');
+    const input = document.getElementById('safetyCodeInput');
+
+    function tip(msg, ok) {
+        const el = document.getElementById('safetyCodeTip');
+        if (!el) return;
+        el.textContent = msg;
+        el.style.display = 'block';
+        el.style.color = ok ? 'var(--success-color)' : 'var(--danger-color)';
+        setTimeout(() => { el.style.display = 'none'; }, 2500);
+    }
+
+    function refreshHint() {
+        api('/api/settings/safety-code').then(res => {
+            const hint = document.getElementById('safetyCodeHint');
+            if (!hint || !res.success) return;
+            hint.textContent = res.data && res.data.enabled
+                ? '已启用：删除宝宝前必须输入安全码'
+                : '未设置：请设置安全码后才能删除宝宝';
+        }).catch(() => { /* 忽略 */ });
+    }
+
+    if (saveBtn) {
+        saveBtn.addEventListener('click', () => {
+            const code = (input && input.value || '').trim();
+            api('/api/settings/safety-code', {
+                method: 'PUT',
+                body: JSON.stringify({ code })
+            }).then(res => {
+                if (res.success) {
+                    if (input) input.value = '';
+                    tip('安全码已保存', true);
+                    showToast.success('安全码已设置');
+                    refreshHint();
+                } else {
+                    tip(res.message || '设置失败', false);
+                    showToast.error(res.message || '设置失败');
+                }
+            });
+        });
+    }
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            if (!confirm('清除安全码后将无法删除宝宝，确定清除？')) return;
+            api('/api/settings/safety-code', { method: 'DELETE' }).then(res => {
+                if (res.success) {
+                    tip('安全码已清除', true);
+                    showToast.success('安全码已清除');
+                    refreshHint();
+                } else {
+                    tip(res.message || '清除失败', false);
+                    showToast.error(res.message || '清除失败');
+                }
+            });
+        });
+    }
+
+    // 删除确认弹窗
+    document.getElementById('closeSafetyCodeModal')?.addEventListener('click', () => {
+        pendingDeleteBabyId = null;
+        hideModal('safetyCodeModal');
+    });
+    document.getElementById('cancelSafetyCode')?.addEventListener('click', () => {
+        pendingDeleteBabyId = null;
+        hideModal('safetyCodeModal');
+    });
+    document.getElementById('confirmSafetyCode')?.addEventListener('click', () => {
+        const inputEl = document.getElementById('safetyVerifyInput');
+        const code = (inputEl && inputEl.value || '').trim();
+        if (!code) {
+            showToast.warning('请输入安全码');
+            return;
+        }
+        if (pendingDeleteBabyId == null) return;
+        performDeleteBaby(pendingDeleteBabyId, code);
+    });
+    document.getElementById('safetyVerifyInput')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            document.getElementById('confirmSafetyCode')?.click();
+        }
+    });
+
+    refreshHint();
 }
 
 function loadBabies() {
@@ -1278,6 +1481,7 @@ function loadBabies() {
                 document.getElementById('currentBabyName').textContent = `${baby.name} (${baby.age})`;
                 if (App.currentPage) { refreshCurrentPage(); } else { loadDashboard(); }
             } else {
+                App.currentBaby = null;
                 document.getElementById('currentBabyName').textContent = '请选择宝宝';
             }
         }
@@ -2184,6 +2388,11 @@ function loadDashboard() {
         setText('homeFeedingCount', feeding.count != null ? feeding.count : 0);
         setText('homeSleepTime', formatHomeDuration(sleep.total_minutes));
         setText('homeDiaperCount', diaper.count != null ? diaper.count : 0);
+        // 今日奶量
+        const mlToday = feeding.ml ?? feeding.amount ?? feeding.total_ml;
+        if (mlToday != null) {
+            setText('homeFeedingCount', `${feeding.count != null ? feeding.count : 0} · ${mlToday}ml`);
+        }
 
         // 身体数据：显示最新一次测量值。
         // 后端 dashboard 早就返回了 latest_growth，前端一直没用它，
@@ -2209,6 +2418,9 @@ function renderHomeBodyData(growth) {
     setText('homeLatestWeight', g.weight != null ? g.weight : '--');
     setText('homeLatestBmi', g.bmi != null ? g.bmi : '--');
     setText('homeLatestHead', g.head_circumference != null ? g.head_circumference : '--');
+
+
+
     setText('homeBodyDate', has
         ? (g.record_date ? '测量于 ' + g.record_date : '已有测量记录')
         : '还没有测量记录，点右边「记一次」');
@@ -2293,17 +2505,19 @@ function feedingFormHtml(r) {
                 <label>喂养类型</label>
                 <select id="feedingType">${typeOptions}</select>
             </div>
-            <div class="form-group">
-                <label>开始时间</label>
-                <input type="datetime-local" id="feedingStart" value="${toLocal(rec.start_time) || defaultLocal}" required>
-            </div>
-            <div class="form-group">
-                <label>结束时间 <small>（可选，填了能算出本次时长）</small></label>
-                <input type="datetime-local" id="feedingEnd" value="${toLocal(rec.end_time)}">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>开始时间</label>
+                    <input type="datetime-local" id="feedingStart" value="${toLocal(rec.start_time) || defaultLocal}" required>
+                </div>
+                <div class="form-group">
+                    <label>结束时间 <small>（可选）</small></label>
+                    <input type="datetime-local" id="feedingEnd" value="${toLocal(rec.end_time)}">
+                </div>
             </div>
             <div class="form-group" id="amountGroup">
-                <label>奶量 (ml)</label>
-                <input type="number" id="feedingAmount" value="${rec.amount != null ? rec.amount : ''}" placeholder="可选">
+                <label id="amountLabel">${type === 'solid' ? '份量 (g)' : '奶量 (ml)'}</label>
+                <input type="number" id="feedingAmount" value="${rec.amount != null ? rec.amount : ''}" placeholder="可选" min="0" step="0.1">
             </div>
             <div class="form-group" id="sideGroup">
                 <label>哺乳侧</label>
@@ -2354,10 +2568,12 @@ function applyFeedingTypeVisibility(type) {
     const amountGroup = document.getElementById('amountGroup');
     const sideGroup = document.getElementById('sideGroup');
     const sideTimerGroup = document.getElementById('sideTimerGroup');
+    const amountLabel = document.getElementById('amountLabel');
     const showSide = (type === 'breast' || type === 'mixed');
     if (amountGroup) amountGroup.style.display = (type === 'breast') ? 'none' : 'block';
     if (sideGroup) sideGroup.style.display = showSide ? 'block' : 'none';
     if (sideTimerGroup) sideTimerGroup.style.display = showSide ? 'block' : 'none';
+    if (amountLabel) amountLabel.textContent = (type === 'solid') ? '份量 (g)' : '奶量 (ml)';
 }
 
 /** 初始化喂奶表单：绑事件、按类型显隐、回填计时器秒数 */
@@ -2808,14 +3024,16 @@ function loadFeedingPage() {
     bindFeedingPageControls();
 }
 
-/** 顶部统计栏：今日次数 / 瓶喂总量 / 亲喂总时长 / 距上次 */
+/** 顶部统计栏：今日次数 / 瓶喂总量 / 亲喂总时长 / 距上次 / 节奏 */
 function loadFeedingStats() {
     api(`/api/babies/${App.currentBaby}/feeding/stats`).then(res => {
         if (!res.success) return;
         const d = res.data || {};
         const total = d.today_total || {};
         setText('feedingTodayCount', total.count || 0);
-        setText('feedingTodayAmount', Math.round(total.amount || 0));
+        // 瓶喂只认 bottle+mixed 的 ml，别把辅食克数加进去
+        const bottleMl = total.bottle_ml != null ? total.bottle_ml : (total.amount || 0);
+        setText('feedingTodayAmount', Math.round(bottleMl));
         setText('feedingTodayBreast', Math.round((total.breast_seconds || 0) / 60));
 
         const lastEl = document.getElementById('feedingLastTime');
@@ -2826,7 +3044,7 @@ function loadFeedingStats() {
     });
 }
 
-/** 距上次喂奶提醒条：超过设定小时数就变红提示 */
+/** 距上次喂奶提醒条：超过设定小时数就变红提示；有节奏时带上「预计下次」 */
 function renderFeedingReminder(stats) {
     const box = document.getElementById('feedingReminder');
     const textEl = document.getElementById('feedingReminderText');
@@ -2844,11 +3062,23 @@ function renderFeedingReminder(stats) {
     box.style.display = 'flex';
     box.classList.toggle('overdue', overdue);
 
+    // 预计下次：用真实节奏（近 7 天平均间隔），没有就退回提醒阈值
+    let nextHint = '';
+    if (stats.next_expected) {
+        const nx = parseDateSafe(stats.next_expected);
+        if (nx) {
+            const p = n => String(n).padStart(2, '0');
+            nextHint = `，预计 ${p(nx.getHours())}:${p(nx.getMinutes())} 左右再喂`;
+        }
+    } else if (stats.avg_interval_minutes) {
+        nextHint = `，平均间隔约 ${Math.round(stats.avg_interval_minutes)} 分钟`;
+    }
+
     if (overdue) {
-        textEl.textContent = `距离上次喂奶已经 ${formatAgoCN(minutes)}，超过 ${hours} 小时了，该喂啦`;
+        textEl.textContent = `距离上次喂奶已经 ${formatAgoCN(minutes)}，超过 ${hours} 小时了，该喂啦${nextHint}`;
     } else {
         const left = Math.max(0, Math.round(threshold - minutes));
-        textEl.textContent = `距离上次喂奶 ${formatAgoCN(minutes)}，还有约 ${left} 分钟到 ${hours} 小时`;
+        textEl.textContent = `距离上次喂奶 ${formatAgoCN(minutes)}，还有约 ${left} 分钟到 ${hours} 小时${nextHint}`;
     }
 }
 
@@ -2880,11 +3110,18 @@ function renderFeedingList(records) {
     let html = '';
     groups.forEach((items, day) => {
         const title = day === today ? '今天' : (day === yesterday ? '昨天' : day);
-        const amount = items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        const ml = items.reduce((s, r) => {
+            const t = r.feeding_type;
+            if (t === 'bottle' || t === 'mixed') return s + (Number(r.amount) || 0);
+            return s;
+        }, 0);
+        const g = items.reduce((s, r) =>
+            (r.feeding_type === 'solid') ? s + (Number(r.amount) || 0) : s, 0);
         const seconds = items.reduce(
             (s, r) => s + (Number(r.left_duration) || 0) + (Number(r.right_duration) || 0), 0);
         let sum = `${items.length} 次`;
-        if (amount) sum += ` · ${Math.round(amount)}ml`;
+        if (ml) sum += ` · ${Math.round(ml)}ml`;
+        if (g) sum += ` · 辅食 ${Math.round(g)}g`;
         if (seconds) sum += ` · 亲喂 ${Math.round(seconds / 60)} 分`;
 
         html += `<div class="care-day-group">
@@ -2912,6 +3149,15 @@ function bindFeedingPageControls() {
         quickActions.addEventListener('click', (e) => {
             const btn = e.target.closest('.quick-btn');
             if (!btn) return;
+            const action = btn.dataset.action;
+            if (action === 'custom') {
+                showFeedingCustomAmountModal();
+                return;
+            }
+            if (action === 'repeat') {
+                quickRepeatLastFeeding();
+                return;
+            }
             quickAddFeeding(btn.dataset.type, parseInt(btn.dataset.amount) || 0);
         });
     }
@@ -2963,6 +3209,84 @@ function quickAddFeeding(type, amount) {
             showToast.error(res.message || '添加失败');
         }
     });
+}
+
+/** 其他奶量：弹个轻量输入，不用走完整表单 */
+function showFeedingCustomAmountModal() {
+    showModal(`
+        <div class="modal-header"><h3>记一次瓶喂</h3></div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>奶量 (ml)</label>
+                <input type="number" id="quickCustomAmount" min="1" max="999" step="1" placeholder="如 150" autofocus>
+            </div>
+            <div class="form-group">
+                <label>类型</label>
+                <select id="quickCustomType">
+                    <option value="bottle">配方奶</option>
+                    <option value="mixed">混合喂养</option>
+                    <option value="solid">辅食（按克）</option>
+                </select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+            <button class="btn btn-primary" id="confirmQuickCustom">保存</button>
+        </div>
+    `);
+    const amountInput = document.getElementById('quickCustomAmount');
+    setTimeout(() => { try { amountInput?.focus(); } catch (e) { /* 忽略 */ } }, 50);
+    document.getElementById('confirmQuickCustom')?.addEventListener('click', () => {
+        const amount = parseInt(amountInput?.value, 10);
+        const type = document.getElementById('quickCustomType')?.value || 'bottle';
+        if (!amount || amount <= 0) {
+            showToast.warning('请输入有效的数量');
+            return;
+        }
+        closeModal();
+        quickAddFeeding(type, amount);
+    });
+    amountInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            document.getElementById('confirmQuickCustom')?.click();
+        }
+    });
+}
+
+/** 复制上一条：同类型、同奶量/侧别，时间改成现在。适合规律喂养一键打卡 */
+function quickRepeatLastFeeding() {
+    if (!App.currentBaby) return;
+    api(`/api/babies/${App.currentBaby}/feeding?limit=1`).then(res => {
+        const list = (res && res.data) || [];
+        const last = list[0];
+        if (!last) {
+            showToast.warning('还没有喂奶记录，先添加一条吧');
+            return;
+        }
+        const data = {
+            baby_id: App.currentBaby,
+            feeding_type: last.feeding_type || 'bottle',
+            start_time: nowLocalStr(),
+        };
+        if (last.amount != null && Number(last.amount) > 0) data.amount = Number(last.amount);
+        if (last.side) data.side = last.side;
+        // 不带备注/时长：复制的是「量和类型」，不是把旧记录整份粘过来
+        api(`/api/babies/${App.currentBaby}/feeding`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }).then(r => {
+            if (r.success) {
+                const label = last.amount ? `${last.amount}${last.feeding_type === 'solid' ? 'g' : 'ml'}` : (last.feeding_type === 'breast' ? '母乳' : '');
+                showToast.success(`已按上次复制${label ? '（' + label + '）' : ''}`);
+                loadFeedingPage();
+                loadTimeline();
+                loadDashboard();
+            } else {
+                showToast.error(r.message || '复制失败');
+            }
+        });
+    }).catch(() => showToast.error('读取上次记录失败'));
 }
 
 // ==================== 吸奶记录页面 ====================
@@ -3537,7 +3861,11 @@ function renderFeedingItems(r) {
     const sideMap = { left: '左侧', right: '右侧', both: '双侧' };
     const parts = [];
 
-    if (r.amount) parts.push(`${escapeHtml(String(r.amount))}ml`);
+    if (r.amount) {
+        // 辅食按克，其它按毫升
+        const unit = r.feeding_type === 'solid' ? 'g' : 'ml';
+        parts.push(`${escapeHtml(String(r.amount))}${unit}`);
+    }
     if (r.side) parts.push(sideMap[r.side] || escapeHtml(String(r.side)));
 
     const totalSec = (Number(r.left_duration) || 0) + (Number(r.right_duration) || 0);
@@ -5955,6 +6283,9 @@ function initSettings() {
 
     // LLM 配置初始化
     initLLMSettings();
+
+    // 删除安全码
+    initSafetyCode();
 }
 
 // LLM 全局状态和配置
@@ -7328,28 +7659,12 @@ function stopActiveTimer() {
     const startTime = timerStartTime;
     const babyId = App.currentBaby;
 
-    api(`/api/timers/${activeTimerId}/stop`, { method: 'POST' }).then(res => {
+    api(`/api/timers/${activeTimerId}/stop`, {
+        method: 'POST',
+        body: JSON.stringify({ create_record: true }),
+    }).then(res => {
         if (res.success) {
-            showToast('计时器已停止');
-            // 睡眠计时结束时自动生成一条睡眠记录，让"计时"真正落到记录里
-            if (timerType === 'sleep' && startTime && babyId) {
-                api(`/api/babies/${babyId}/sleep`, {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        start_time: toLocalStr(startTime),
-                        end_time: nowLocalStr(),
-                        is_nap: 0,
-                        sleep_quality: null,
-                        note: '计时器记录'
-                    })
-                }).then(r => {
-                    if (r.success) {
-                        showToast.success('睡眠记录已保存');
-                    } else {
-                        showToast.error(r.message || '睡眠记录保存失败');
-                    }
-                });
-            }
+            showToast(res.message || '计时器已停止');
         }
         activeTimerId = null;
         timerStartTime = null;
@@ -11861,6 +12176,11 @@ function initDataManagement() {
     });
     document.getElementById('importFileInput')?.addEventListener('change', handleImportFile);
     document.getElementById('createBackupBtn')?.addEventListener('click', createBackup);
+    document.getElementById('exportToShareBtn')?.addEventListener('click', exportBackupToShare);
+    document.getElementById('restoreFromShareBtn')?.addEventListener('click', openRestoreFromShare);
+    document.getElementById('genIntegrationTokenBtn')?.addEventListener('click', generateIntegrationToken);
+    document.getElementById('revokeIntegrationTokenBtn')?.addEventListener('click', revokeIntegrationToken);
+    loadIntegrationTokenStatus();
     document.getElementById('importBackupInput')?.addEventListener('change', handleBackupUpload);
     document.getElementById('triggerAutoBackupBtn')?.addEventListener('click', triggerAutoBackup);
     document.getElementById('saveAutoBackupBtn')?.addEventListener('click', saveAutoBackupConfig);
@@ -12186,6 +12506,144 @@ function showDataTip(msg, type) {
 }
 
 // ==================== 备份管理 ====================
+function exportBackupToShare() {
+    api('/api/backup/share-info').then(info => {
+        const auth = (info && info.data && info.data.authorized_paths) || [];
+        let target = '';
+        if (auth.length) {
+            const opts = auth.map((p, i) => `<option value="${i}">${escapeHtml(p)}</option>`).join('');
+            showModal(`
+                <div class="modal-header"><h3>导出到目录</h3></div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>目标目录（应用中心授权目录）</label>
+                        <select id="exportShareTarget">
+                            <option value="">默认共享目录 babycare-fpk/backups</option>
+                            ${opts}
+                        </select>
+                    </div>
+                    <p class="empty-tip" style="margin:0">授权目录在「应用中心 → 育儿宝 → 设置 → 授权目录」中维护。</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+                    <button class="btn btn-primary" id="confirmExportShare">开始导出</button>
+                </div>
+            `);
+            document.getElementById('confirmExportShare')?.addEventListener('click', () => {
+                const idx = document.getElementById('exportShareTarget')?.value;
+                target = idx === '' ? '' : (auth[parseInt(idx, 10)] || '');
+                closeModal();
+                doExportBackupToShare(target);
+            });
+            return;
+        }
+        doExportBackupToShare('');
+    }).catch(() => doExportBackupToShare(''));
+}
+
+function doExportBackupToShare(targetPath) {
+    if (!confirm('将完整备份导出到 NAS 目录？')) return;
+    api('/api/backup/export-to-share', {
+        method: 'POST',
+        body: JSON.stringify({ note: '共享目录导出', target_path: targetPath || '' }),
+    }).then(res => {
+        if (res.success) {
+            showToast.success(res.message || '已导出');
+            loadBackupList();
+        } else {
+            showToast.error(res.message || '导出失败');
+        }
+    }).catch(() => showToast.error('导出失败'));
+}
+
+function openRestoreFromShare() {
+    api('/api/backup/share-files').then(res => {
+        if (!res.success) return showToast.error(res.message || '读取共享目录失败');
+        const items = res.data || [];
+        if (!items.length) {
+            showToast.warning('共享目录暂无备份，请先「导出到共享目录」');
+            return;
+        }
+        const options = items.map((it, i) =>
+            `<option value="${i}">${escapeHtml(it.filename)}（${it.size_human} · ${it.created_at}）</option>`
+        ).join('');
+        showModal(`
+            <div class="modal-header"><h3>从共享目录恢复</h3></div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>选择备份</label>
+                    <select id="shareRestoreFile">${options}</select>
+                </div>
+                <div class="form-group">
+                    <label>安全码</label>
+                    <input type="text" id="shareRestoreCode" placeholder="请输入安全码确认恢复">
+                </div>
+                <p class="empty-tip" style="margin:0">恢复会覆盖当前数据，请谨慎操作。</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn btn-primary" id="confirmShareRestore">确认恢复</button>
+            </div>
+        `);
+        document.getElementById('confirmShareRestore')?.addEventListener('click', () => {
+            const idx = parseInt(document.getElementById('shareRestoreFile')?.value || '0', 10);
+            const code = document.getElementById('shareRestoreCode')?.value || '';
+            const file = items[idx];
+            if (!file) return;
+            api('/api/backup/restore-from-share', {
+                method: 'POST',
+                body: JSON.stringify({ filename: file.filename, safety_code: code, dir: file.dir || '' }),
+            }).then(res => {
+                if (res.success) {
+                    showToast.success(res.message || '恢复完成');
+                    closeModal();
+                    if (App.currentPage) refreshCurrentPage();
+                } else {
+                    showToast.error(res.message || '恢复失败');
+                }
+            }).catch(() => showToast.error('恢复失败'));
+        });
+    }).catch(() => showToast.error('读取共享目录失败'));
+}
+
+function loadIntegrationTokenStatus() {
+    api('/api/settings/integration-token').then(res => {
+        const el = document.getElementById('integrationTokenStatus');
+        if (!el) return;
+        const ok = !!(res && res.data && res.data.configured);
+        el.textContent = ok ? '智能家居 Token：已配置（明文仅生成时显示）' : '智能家居 Token：未配置';
+    }).catch(() => {});
+}
+
+function generateIntegrationToken() {
+    if (!confirm('生成新的集成 Token？旧 Token 将立即失效。')) return;
+    api('/api/settings/integration-token', { method: 'POST' }).then(res => {
+        if (res && res.token) {
+            showModal(`
+                <div class="modal-header"><h3>集成 Token</h3></div>
+                <div class="modal-body">
+                    <p>请立即复制保存，关闭后无法再次查看：</p>
+                    <input type="text" readonly value="${escapeHtml(res.token)}" style="width:100%" onclick="this.select()">
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" onclick="closeModal()">我已保存</button>
+                </div>
+            `);
+            loadIntegrationTokenStatus();
+        } else {
+            showToast.error(res && res.message || '生成失败');
+        }
+    }).catch(() => showToast.error('生成失败'));
+}
+
+function revokeIntegrationToken() {
+    if (!confirm('确定吊销集成 Token？Home Assistant 等将无法访问。')) return;
+    api('/api/settings/integration-token', { method: 'DELETE' }).then(res => {
+        showToast.success(res && res.message || '已吊销');
+        loadIntegrationTokenStatus();
+    }).catch(() => showToast.error('吊销失败'));
+}
+
 function createBackup() {
     const btn = document.getElementById('createBackupBtn');
     if (btn) {
@@ -12447,12 +12905,20 @@ function restoreBackup(filename) {
         return;
     }
 
+    // 恢复会覆盖数据，必须安全码（与删除宝宝同一套）
+    const code = prompt('请输入删除/恢复安全码');
+    if (code == null) return;
+    if (!code.trim()) {
+        showDataTip('已取消：未输入安全码', 'error');
+        return;
+    }
+
     showDataTip('正在恢复，请稍候...', 'success');
 
     fetch(`${App.apiBase}/api/backup/restore`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename })
+        body: JSON.stringify({ filename, safety_code: code.trim() })
     })
     .then(r => r.json())
     .then(res => {
@@ -12497,12 +12963,20 @@ function handleBackupUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
 
-    if (!file.name.endsWith('.json')) {
-        showDataTip('请选择 JSON 格式的备份文件', 'error');
+    const lower = file.name.toLowerCase();
+    if (!lower.endsWith('.json') && !lower.endsWith('.zip')) {
+        showDataTip('请选择 JSON 或 ZIP 格式的备份文件', 'error');
         return;
     }
 
-    if (!confirm(`确定要从 "${file.name}" 恢复数据吗？`)) {
+    if (!confirm(`确定要从 "${file.name}" 恢复数据吗？\n\n恢复会覆盖同名宝宝的现有记录。`)) {
+        e.target.value = '';
+        return;
+    }
+
+    const code = prompt('请输入删除/恢复安全码');
+    if (code == null || !code.trim()) {
+        showDataTip('已取消：未输入安全码', 'error');
         e.target.value = '';
         return;
     }
@@ -12511,6 +12985,7 @@ function handleBackupUpload(e) {
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('safety_code', code.trim());
 
     fetch(`${App.apiBase}/api/backup/upload-restore`, {
         method: 'POST',
@@ -14789,6 +15264,31 @@ function loadOverview() {
             document.getElementById('ovLatestWeight').textContent = s.latestWeight || s.latest_weight || '-';
             document.getElementById('ovPendingReminders').textContent = s.pending_reminders || 0;
 
+            // WHO 百分位：算好了就摊在身高/体重卡片下沿，不用再进生长页
+            const hp = document.getElementById('ovHeightPct');
+            if (hp) hp.textContent = (s.height_percentile != null) ? `P${s.height_percentile}` : '';
+            const wp = document.getElementById('ovWeightPct');
+            if (wp) wp.textContent = (s.weight_percentile != null) ? `P${s.weight_percentile}` : '';
+
+            // 最近体温 / 发热提示
+            const tempEl = document.getElementById('ovTemperature');
+            const tempHint = document.getElementById('ovTemperatureHint');
+            if (tempEl) {
+                tempEl.textContent = (s.latest_temperature != null) ? `${s.latest_temperature}°` : '-';
+                tempEl.classList.toggle('fever', !!s.has_fever);
+            }
+            if (tempHint) {
+                if (s.latest_temperature == null) {
+                    tempHint.textContent = '';
+                } else if (s.has_fever) {
+                    tempHint.textContent = '⚠ 发热';
+                    tempHint.classList.add('fever');
+                } else {
+                    tempHint.textContent = '正常';
+                    tempHint.classList.remove('fever');
+                }
+            }
+
             // 更新扩展概览卡片
             const ovVaccine = document.getElementById('ovVaccine');
             if (ovVaccine) ovVaccine.textContent = `${s.vaccine_completed || 0}/${s.vaccine_total || 0}`;
@@ -14803,30 +15303,58 @@ function loadOverview() {
             const ovFeeding = document.getElementById('ovFeeding');
             if (ovFeeding) ovFeeding.textContent = s.feeding_months || 0;
 
+            renderUpcomingVaccines(s.upcoming_vaccines);
+
             // 综合最近记录
             const container = document.getElementById('ovRecentList');
             if (container) {
                 const recentItems = [];
+                if (s.has_fever && s.latest_temperature != null) {
+                    recentItems.push({ type: '发热', title: `体温 ${s.latest_temperature}°，请注意观察`, date: s.temperature_time ? String(s.temperature_time).slice(0, 10) : '' });
+                }
                 if (s.latest_record_date) recentItems.push({ type: '体检', title: `最新身高 ${s.latest_height || '-'}cm / 体重 ${s.latest_weight || '-'}kg`, date: s.latest_record_date });
                 if (s.latest_vaccine_date) recentItems.push({ type: '疫苗', title: s.latest_vaccine_name || '疫苗接种记录', date: s.latest_vaccine_date });
                 if (s.latest_asq_date) recentItems.push({ type: 'ASQ筛查', title: `结果: ${s.latest_asq_result || '-'}`, date: s.latest_asq_date });
+                if (s.allergy_count > 0) recentItems.push({ type: '过敏', title: `${s.allergy_count} 项过敏史仍在关注`, date: '' });
                 if (s.screening_abnormal > 0) recentItems.push({ type: '筛查异常', title: `${s.screening_abnormal}项异常需关注`, date: '' });
+                if (s.pending_reminders > 0) recentItems.push({ type: '待办', title: `${s.pending_reminders} 条健康提醒未完成`, date: '' });
 
                 if (recentItems.length === 0) {
                     container.innerHTML = '<p class="empty-tip">暂无记录</p>';
                 } else {
-                    const typeLabels = { 体检: '', 疫苗: '', ASQ筛查: '',筛查异常: '[!]' };
                     container.innerHTML = recentItems.map(r => `
                         <div class="health-recent-item">
-                            <span class="health-recent-type">${typeLabels[r.type] || ''} ${escapeHtml(r.type)}</span>
+                            <span class="health-recent-type">${escapeHtml(r.type)}</span>
                             <span class="health-recent-title">${escapeHtml(r.title)}</span>
-                            <span class="health-recent-date">${escapeHtml(r.date)}</span>
+                            <span class="health-recent-date">${escapeHtml(r.date || '')}</span>
                         </div>
                     `).join('');
                 }
             }
         }
     });
+}
+
+/** 30 天内待种疫苗：有才显示，点一条可直接跳到疫苗 Tab */
+function renderUpcomingVaccines(list) {
+    const box = document.getElementById('ovUpcomingVaccines');
+    const body = document.getElementById('ovUpcomingList');
+    if (!box || !body) return;
+    const items = Array.isArray(list) ? list : [];
+    if (!items.length) {
+        box.style.display = 'none';
+        return;
+    }
+    box.style.display = 'block';
+    body.innerHTML = items.map(v => {
+        const date = escapeHtml(String(v.scheduled_date || ''));
+        const name = escapeHtml(String(v.vaccine_name || '疫苗'));
+        const dose = v.dose_number ? ` 第${escapeHtml(String(v.dose_number))}剂` : '';
+        return `<button type="button" class="health-upcoming-item" onclick="switchHealthTab('vaccine')">
+            <span class="health-upcoming-date">${date}</span>
+            <span class="health-upcoming-name">${name}${dose}</span>
+        </button>`;
+    }).join('');
 }
 
 // --- 体检记录 ---

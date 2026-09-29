@@ -170,10 +170,16 @@ body {
     border-radius: 20px;
     font-size: 13px;
     cursor: pointer;
-    max-width: 150px;
+    max-width: 180px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.baby-selector #currentBabyName {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
 }
 
 .dropdown-arrow {
@@ -459,6 +465,18 @@ body {
     border-color: var(--primary-color);
 }
 
+/* 快捷区里的「功能型」按钮：虚线边、弱化填充，和奶量档位区分开 */
+.quick-btn-special {
+    border-style: dashed;
+    color: var(--text-secondary);
+    background: transparent;
+}
+.quick-btn-special:hover {
+    background: var(--primary-color);
+    color: white;
+    border-style: solid;
+}
+
 .care-type {
     font-weight: 600;
     font-size: 14px;
@@ -601,6 +619,29 @@ body {
     display: flex;
     flex-direction: column;
     gap: 12px;
+}
+
+@media (min-width: 1024px) {
+    .diary-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px 16px;
+    }
+    /* 关于页与设置页同款：卡片双栏 */
+    #page-about {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0 20px;
+        align-items: start;
+    }
+    #page-about .settings-header,
+    #page-about .about-logo-row {
+        grid-column: 1 / -1;
+    }
+    #page-about .settings-card {
+        margin-bottom: 20px;
+        min-width: 0;
+    }
 }
 
 .diary-item {
@@ -1391,6 +1432,39 @@ body {
     max-height: 85vh;
 }
 
+/* 桌面：弹窗加宽，表单舒适录入 */
+@media (min-width: 768px) {
+    .modal {
+        max-width: 560px;
+        max-height: 86vh;
+        border-radius: 18px;
+    }
+    .modal-large,
+    .modal-lg {
+        max-width: 800px;
+        max-height: 90vh;
+    }
+    .modal-header {
+        padding: 18px 24px;
+    }
+    .modal-body {
+        padding: 22px 24px;
+    }
+    /* 已有成对字段排更开；动作按钮按内容宽，不必均分 */
+    .modal-body .form-row,
+    .modal-body .form-group-row {
+        gap: 12px;
+    }
+    .form-actions {
+        justify-content: flex-end;
+    }
+    .form-actions .btn {
+        flex: 0 1 auto;
+        min-width: 112px;
+        padding: 10px 28px;
+    }
+}
+
 @keyframes modalIn {
     from { opacity: 0; transform: scale(0.95) translateY(10px); }
     to { opacity: 1; transform: scale(1) translateY(0); }
@@ -1645,10 +1719,13 @@ body {
     }
 
     /* 宫格在桌面更舒展：图标大一点、组间距松一点。
-       这里别再写 grid-template-columns —— 图标容器已是 flex 定宽，
-       再指定网格列会把布局拉回「按整屏宽度均分」，右侧就会空一大片。 */
+       这里别再写 grid-template-columns 到图标上 —— 图标容器已是 flex 定宽，
+       再指定网格列会把布局拉回「按整屏宽度均分」，右侧就会空一大片。
+       但分组容器可以两栏并排，把整页宽度用起来。 */
     .hub-grid {
-        gap: 18px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 20px 36px;
         padding: 12px 4px 20px;
     }
     .hub-group { gap: 18px; }
@@ -2047,6 +2124,28 @@ body {
     margin-bottom: 16px;
 }
 
+/* 设置页：桌面双栏卡片流，手机保持单列 */
+@media (min-width: 1024px) {
+    #page-settings {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0 20px;
+        align-items: start;
+    }
+    #page-settings .settings-header {
+        grid-column: 1 / -1;
+    }
+    #page-settings .settings-card {
+        margin-bottom: 20px;
+    }
+    /* 通栏卡片（诊断区等）占满两列 */
+    #page-settings .settings-card--wide,
+    #page-settings > .settings-tip,
+    #page-settings > .data-mgmt-tip {
+        grid-column: 1 / -1;
+    }
+}
+
 /* ==================== 设置页设计系统 ==================== */
 /* 卡片容器：设置页内所有分组统一使用 */
 .settings-card {
@@ -2056,6 +2155,7 @@ body {
     padding: 18px 20px;
     margin-bottom: 16px;
     box-shadow: var(--shadow);
+    min-width: 0;
 }
 
 .settings-card--llm {
@@ -4186,14 +4286,30 @@ body {
 
 .data-mgmt-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 8px;
 }
 
 .data-mgmt-actions .btn {
-    flex: 1;
+    flex: 1 1 calc(50% - 8px);
+    min-width: 120px;
     font-size: 12px;
     padding: 8px 10px;
+}
+
+/* Token 状态独占一行，不要被挤成窄条 */
+.data-mgmt-actions .empty-tip {
+    flex: 1 1 100%;
+    margin: 4px 0;
+    text-align: left;
+}
+
+@media (min-width: 768px) {
+    .data-mgmt-actions .btn {
+        flex: 0 1 auto;
+        min-width: 0;
+    }
 }
 
 .data-mgmt-tip {
@@ -5712,6 +5828,13 @@ body {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
+}
+
+/* 窄屏两列放不下就竖排 */
+@media (max-width: 380px) {
+    .form-group-row {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* ==================== ASQ发育筛查 ==================== */
@@ -7642,10 +7765,8 @@ body {
     margin-top: 12px;
 }
 
-/* 食谱详情弹窗 */
+/* 食谱详情弹窗：只补滚动，宽度交给全局 .modal-large（勿再写死 500px） */
 .modal-large {
-    max-width: 500px;
-    max-height: 80vh;
     overflow-y: auto;
 }
 
@@ -8947,9 +9068,14 @@ body {
     display: flex;
     gap: 4px;
     overflow-x: auto;
+    overflow-y: hidden;
+    max-width: 100%;
     padding-bottom: 4px;
     margin-bottom: 16px;
     border-bottom: 1px solid var(--border-color);
+    /* 横滑时不要把外层撑破 */
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
 }
 
 .health-tab {
@@ -8962,6 +9088,7 @@ body {
     cursor: pointer;
     border-bottom: 2px solid transparent;
     transition: all 0.2s ease;
+    white-space: nowrap;
 }
 
 .health-tab.active {
@@ -8972,6 +9099,7 @@ body {
 
 .health-tab-content {
     display: none;
+    min-width: 0;
 }
 
 .health-tab-content.active {
@@ -8981,9 +9109,28 @@ body {
 /* 概览卡片 */
 .health-overview-cards {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 8px;
     margin-bottom: 20px;
+}
+
+@media (min-width: 480px) {
+    .health-overview-cards {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (min-width: 1024px) {
+    .health-overview-cards {
+        grid-template-columns: repeat(5, 1fr);
+        gap: 12px;
+    }
+    /* 页签在桌面更舒展，不必横滑 */
+    .health-tabs {
+        flex-wrap: wrap;
+        overflow-x: visible;
+        gap: 6px 2px;
+    }
 }
 
 .health-overview-card {
@@ -9004,6 +9151,61 @@ body {
 .health-overview-label {
     font-size: 11px;
     color: var(--text-light);
+}
+
+/* 卡片副行：百分位 / 发热提示，字号比主数字小一截 */
+.health-overview-sub {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    min-height: 14px;
+}
+.health-overview-sub.fever {
+    color: var(--danger-color);
+    font-weight: 600;
+}
+.health-overview-num.fever {
+    color: var(--danger-color);
+}
+
+/* 即将接种：有 30 天内待种疫苗时出现在概览 */
+.health-upcoming-vaccines {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    padding: 14px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border-left: 3px solid var(--primary-color);
+}
+.health-upcoming-vaccines h4 {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+.health-upcoming-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 8px 0;
+    border: none;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 13px;
+}
+.health-upcoming-item:last-child {
+    border-bottom: none;
+}
+.health-upcoming-date {
+    flex-shrink: 0;
+    font-weight: 600;
+    color: var(--primary-color);
+    min-width: 88px;
+}
+.health-upcoming-name {
+    color: var(--text-primary);
 }
 
 .health-recent {
@@ -9514,9 +9716,6 @@ body {
 
 /* 响应式 */
 @media (max-width: 600px) {
-    .health-overview-cards {
-        grid-template-columns: repeat(3, 1fr);
-    }
     .form-row {
         flex-direction: column;
         gap: 0;
@@ -12149,6 +12348,31 @@ input:checked + .toggle-slider:before {
 
 /* ==================== 首页仪表盘（home） ==================== */
 
+/* 双端列容器：默认摊平（display:contents），子元素按 order 排成手机单列；
+   桌面端再变成左右两栏。避免为双端各写一套 DOM。
+   DOM 顺序是「左栏(快捷+身体) → 右栏(日期+概览+最近)」，手机端用 order
+   调成「快捷 → 日期 → 概览 → 身体 → 最近」的阅读顺序。
+   顺序靠 order，所以页面容器必须是 flex/grid，不能用 .page.active 的 display:block。 */
+.home-col {
+    display: contents;
+}
+
+#page-dashboard.page.active {
+    display: flex;
+    flex-direction: column;
+}
+
+/* 手机/平板单列阅读顺序：快捷 → 日期 → 概览 → 身体 → 最近 */
+@media (max-width: 1023px) {
+    #page-dashboard .home-header { order: 1; }
+    #page-dashboard .home-quick-actions { order: 2; }
+    #page-dashboard .home-date-bar { order: 3; }
+    #page-dashboard #homeStatsTitle { order: 4; }
+    #page-dashboard .home-stats { order: 5; }
+    #page-dashboard .home-body { order: 6; }
+    #page-dashboard .home-recent { order: 7; }
+}
+
 /* 顶部问候 + 宝宝档案卡 */
 .home-header {
     margin: 16px 16px 0;
@@ -12369,6 +12593,8 @@ input:checked + .toggle-slider:before {
     font-weight: 800;
     color: var(--text-primary);
     line-height: 1.1;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .home-stat-label {
@@ -12438,6 +12664,34 @@ input:checked + .toggle-slider:before {
 /* 窄屏四项挤不下就折成两行 */
 @media (max-width: 360px) {
     .home-body-card { grid-template-columns: repeat(2, 1fr); }
+    .home-quick-actions { gap: 8px; padding: 12px; }
+    .home-quick-btn { min-height: 68px; padding: 10px 2px; }
+    .home-quick-icon { width: 36px; height: 36px; }
+    .home-greeting-title { font-size: 19px; }
+    .home-stat-value { font-size: 18px; }
+}
+
+/* 小屏手机：日期条折行时日期选择器占满一行，避免挤成窄条 */
+@media (max-width: 480px) {
+    .home-date-bar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+    .home-date-tabs {
+        min-width: 0;
+        width: 100%;
+    }
+    .home-date-pick input[type="date"] {
+        width: 100%;
+    }
+    .home-stat-value {
+        font-size: clamp(16px, 5.2vw, 22px);
+        overflow-wrap: anywhere;
+    }
+    .home-body-foot {
+        flex-wrap: wrap;
+    }
 }
 
 /* 最近记录 */
@@ -12513,35 +12767,188 @@ input:checked + .toggle-slider:before {
 [data-theme="dark"] .home-stat-icon,
 [data-theme="dark"] .home-recent-icon { background: rgba(255, 255, 255, 0.06); }
 
-/* 桌面端：内容区已由 .app-content 提供留白，去掉各区块自带的左右边距 */
-@media (min-width: 1024px) {
-    #page-dashboard .home-header,
+/* 平板：内容更舒展，统计卡可稍大 */
+@media (min-width: 768px) and (max-width: 1023px) {
+    .app-content {
+        padding: 20px 24px calc(52px + var(--safe-bottom) + 16px);
+    }
+    #page-dashboard .home-header {
+        margin: 0 0 12px;
+        padding: 22px 24px;
+    }
     #page-dashboard .home-quick-actions,
+    #page-dashboard .home-date-bar,
     #page-dashboard .home-section-title,
     #page-dashboard .home-stats,
+    #page-dashboard .home-body,
     #page-dashboard .home-recent {
         margin-left: 0;
         margin-right: 0;
         padding-left: 0;
         padding-right: 0;
     }
+    #page-dashboard .home-quick-actions {
+        gap: 12px;
+    }
+    #page-dashboard .home-stats {
+        gap: 12px;
+    }
+    .home-stat-value { font-size: 24px; }
+    .home-greeting-title { font-size: 24px; }
+    .baby-selector { max-width: 220px; }
+}
+
+/* 桌面端：双栏仪表盘 —— 左栏快捷+身体，右栏日期+概览+最近
+   注意：必须写成 #page-dashboard.page.active，否则 id 选择器会盖过
+   .page.active 的 display，未激活页也会占布局。 */
+@media (min-width: 1024px) {
+    #page-dashboard.page.active {
+        display: grid;
+        grid-template-columns: minmax(300px, 0.92fr) minmax(360px, 1.18fr);
+        column-gap: 28px;
+        row-gap: 0;
+        align-items: start;
+    }
+
+    #page-dashboard .home-header {
+        grid-column: 1 / -1;
+        grid-row: 1;
+        margin: 0 0 20px;
+        padding: 28px 32px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+    }
+
+    /* 两栏各自纵向堆叠，行高不再互相拉扯 */
+    #page-dashboard .home-col-left {
+        grid-column: 1;
+        grid-row: 2;
+    }
+    #page-dashboard .home-col-right {
+        grid-column: 2;
+        grid-row: 2;
+    }
+    #page-dashboard .home-col {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        min-width: 0;
+    }
+
+    /* 标题紧跟在自己的内容块上方 */
+    #page-dashboard #homeStatsTitle {
+        margin: 0 0 -6px;
+    }
+
+    #page-dashboard .home-greeting {
+        min-width: 0;
+        flex: 1;
+    }
+
+    #page-dashboard .home-baby-card {
+        margin-top: 0;
+        flex: 0 1 320px;
+        min-width: 220px;
+    }
+
+    #page-dashboard .home-greeting-title {
+        font-size: 28px;
+    }
 
     #page-dashboard .home-quick-actions {
-        grid-template-columns: repeat(4, 1fr);
-        gap: 14px;
+        margin: 0;
+        padding: 0;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+
+    #page-dashboard .home-quick-btn {
+        min-height: 88px;
+        flex-direction: row;
+        justify-content: flex-start;
+        padding: 14px 16px;
+        gap: 12px;
+        text-align: left;
+    }
+
+    #page-dashboard .home-quick-label {
+        font-size: 14px;
+    }
+
+    #page-dashboard .home-date-bar {
+        margin: 0;
+        padding: 0;
+    }
+
+    #page-dashboard .home-section-title {
+        margin: 0;
+        padding: 0;
+    }
+
+    #page-dashboard .home-body,
+    #page-dashboard .home-stats,
+    #page-dashboard .home-recent {
+        margin: 0;
+        padding: 0;
+    }
+
+    #page-dashboard .home-body > .home-section-title,
+    #page-dashboard .home-recent > .home-section-title {
+        margin: 0 0 10px;
+        padding: 0;
     }
 
     #page-dashboard .home-stats {
         grid-template-columns: repeat(3, 1fr);
-        gap: 16px;
+        gap: 14px;
+    }
+
+    #page-dashboard .home-recent {
+        padding: 0 0 8px;
     }
 
     #page-dashboard .home-recent-list {
         grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
     }
 
-    #page-dashboard .home-header {
-        padding: 24px 28px;
+    #page-dashboard .home-body-card {
+        padding: 18px 12px;
+        gap: 10px;
+    }
+
+    .home-body-value {
+        font-size: 22px;
+    }
+
+    .home-stat-card {
+        padding: 18px 12px 16px;
+    }
+
+    .home-stat-value {
+        font-size: 26px;
+    }
+
+    .baby-selector {
+        max-width: 280px;
+        font-size: 14px;
+        padding: 6px 14px;
+    }
+}
+
+/* 超宽桌面：双栏更舒展，避免内容被无限拉伸 */
+@media (min-width: 1440px) {
+    #app {
+        max-width: 1200px;
+    }
+    .app-nav {
+        max-width: 1200px;
+    }
+    #page-dashboard {
+        grid-template-columns: minmax(340px, 0.95fr) minmax(420px, 1.2fr);
+        column-gap: 36px;
     }
 }
 
@@ -12862,7 +13269,7 @@ input:checked + .toggle-slider:before {
        color: var(--text-primary);
    }
 
-/* 选择宝宝弹窗里的宝宝列表（多宝宝时可直接任选）。
+/* 选择/管理宝宝弹窗：点行切换，右侧编辑/删除。
    max-height + 滚动：宝宝再多也不会把弹窗顶破（实测 5 个正常，留足余量给更多）。 */
 .baby-list {
     display: flex;
@@ -12876,19 +13283,91 @@ input:checked + .toggle-slider:before {
     align-items: center;
     gap: 10px;
     width: 100%;
-    padding: 12px 14px;
+    padding: 10px 12px;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     background: var(--card-bg);
     color: var(--text-primary);
-    font: inherit;
-    cursor: pointer;
-    text-align: left;
 }
 .baby-list-item.active {
     border-color: var(--primary-color);
     background: rgba(255, 173, 122, 0.12);
 }
+.bli-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+    padding: 4px 0;
+}
 .bli-name { flex: 1; font-size: 15px; font-weight: 500; }
 .bli-meta { font-size: 12px; color: var(--text-light); }
 .bli-check { color: var(--primary-strong); font-size: 14px; }
+.bli-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+.bli-act {
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1;
+    padding: 7px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+}
+.bli-act:active { transform: scale(0.96); }
+.bli-edit {
+    color: var(--primary-strong);
+    border-color: rgba(209, 90, 122, 0.35);
+}
+.bli-del {
+    color: var(--danger-color);
+    border-color: rgba(255, 122, 122, 0.4);
+}
+
+/* 删除安全码 */
+.settings-row--stack {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+}
+.safety-code-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.settings-input {
+    flex: 1;
+    min-width: 140px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    background: var(--card-bg);
+    color: var(--text-primary);
+}
+.settings-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+.btn-sm {
+    padding: 8px 14px;
+    font-size: 13px;
+}
+.safety-confirm-text {
+    margin: 0 0 12px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
