@@ -202,10 +202,16 @@ class UnifiedNotifier:
         )
 
     def send_test(self, channel: str = "") -> NotificationResult:
-        """发送测试消息"""
+        """发送测试消息。
+
+        正文用纯文本多行，方便在企业微信 text / 微信公众号里直接看清，
+        也顺带验证「标题 + 正文」整形是否正常。
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         return self.send_notification(
             "测试消息",
-            f"这是一条测试推送，发送时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"这是一条育儿宝测试推送。\n发送时间：{now}\n"
+            f"若在微信/企业微信里能读到本条，说明渠道格式正常。",
             channels=[channel] if channel else None,
             skip_dedup=True,
             # 测试推送刻意绕过勿扰：否则用户在自己设的免打扰时段点「发送测试」

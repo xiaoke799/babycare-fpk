@@ -5,9 +5,20 @@
 """
 多平台通知器。
 支持企业微信、钉钉、飞书、Bark、PushPlus 推送。
+
+格式约定（按「微信里也能正常看」优先）：
+- 企业微信机器人：用 text，不用 markdown。markdown 的 ### / 列表在微信插件里
+  会显示成字面量或整段空白 —— 2026-09 复核时用户反馈「微信查看不了」。
+- PushPlus（落到微信公众号）：template=html，简单 <b>/<br>；markdown 模板
+  在公众号侧经常不渲染或被截断。
+- 钉钉：markdown（支持较好），标题用 **加粗** 而不是 ###
+- 飞书卡片：lark_md 只认 **加粗** / 链接，去掉标题语法
+- Bark：纯文本，剥掉所有 markdown 标记
 """
 
+import html
 import json
+import re
 import time
 import logging
 import hashlib
@@ -16,13 +27,101 @@ import urllib.parse
 import urllib.error
 import threading
 from typing import Dict, Any, List, Optional, Tuple
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
 # PushPlus 固定接口。
 # 必须走 https：这里是 POST 明文 token，用 http 等于把凭据裸奔在网络上。
 PUSHPLUS_URL = "https://www.pushplus.plus/send"
+
+
+# ---------- 文案整形：一套标题/正文，按渠道输出各自能渲染的形态 ----------
+
+_MD_STARS = re.compile(r"\*\*(.+?)\*\*", re.S)
+_MD_ITALIC = re.compile(r"(?<!\*)\*([^*\n]+)\*(?!\*)")
+_MD_HEAD = re.compile(r"^#{1,6}\s*", re.M)
+_MD_LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+_MD_CODE_FENCE = re.compile(r"```[\s\S]*?```")
+_MD_INLINE_CODE = re.compile(r"`([^`]+)`")
+_MD_LIST_BULLET = re.compile(r"^\s*[-*+]\s+", re.M)
+_MD_LIST_NUM = re.compile(r"^\s*\d+[.)]\s+", re.M)
+_MD_QUOTE = re.compile(r"^\s*>\s?", re.M)
+
+
+def _strip_md(text: str) -> str:
+    """把 markdown 压成纯文本（Bark / 企业微信 text 用）。"""
+    s = text or ""
+    s = _MD_CODE_FENCE.sub(lambda m: m.group(0).strip("`").strip(), s)
+    s = _MD_LINK.sub(r"\1", s)
+    s = _MD_STARS.sub(r"\1", s)
+    s = _MD_ITALIC.sub(r"\1", s)
+    s = _MD_INLINE_CODE.sub(r"\1", s)
+    s = _MD_HEAD.sub("", s)
+    s = _MD_LIST_BULLET.sub("· ", s)
+    s = _MD_LIST_NUM.sub("", s)
+    s = _MD_QUOTE.sub("", s)
+    return s.strip()
+
+
+def _full_title(prefix: str, title: str) -> str:
+    prefix = (prefix or "").strip()
+    title = (title or "").strip()
+    if prefix and title:
+        return f"{prefix} · {title}"
+    return prefix or title
+
+
+def format_plain(prefix: str, title: str, content: str) -> str:
+    """纯文本：企业微信 text / Bark。"""
+    head = _strip_md(_full_title(prefix, title))
+    body = _strip_md(content or "")
+    if body:
+        return f"{head}\n{body}"
+    return head
+
+
+def format_qywx_text(prefix: str, title: str, content: str) -> str:
+    """企业微信 text 正文（微信插件可读）。长度 2048 字节上限，超了截断。"""
+    text = format_plain(prefix, title, content)
+    raw = text.encode("utf-8")
+    if len(raw) <= 2000:
+        return text
+    # 按字节截断，避免切开半个汉字
+    cut = raw[:2000]
+    while cut and (cut[-1] & 0xC0) == 0x80:
+        cut = cut[:-1]
+    return cut.decode("utf-8", errors="ignore") + "\n…"
+
+
+def format_bold_title_md(prefix: str, title: str, content: str) -> str:
+    """钉钉 / 企业微信 markdown 友好：标题加粗，正文保留简单 md。"""
+    head = _full_title(prefix, title)
+    body = (content or "").strip()
+    # 去掉内容里原有的 # 标题语法，统一改成加粗
+    body = _MD_HEAD.sub("", body)
+    return f"**{head}**\n{body}" if body else f"**{head}**"
+
+
+def format_lark_md(content: str) -> str:
+    """飞书 lark_md：只保留 **加粗** 和链接。"""
+    s = content or ""
+    s = _MD_HEAD.sub("", s)
+    s = _MD_CODE_FENCE.sub(lambda m: m.group(0).strip("`").strip(), s)
+    s = _MD_INLINE_CODE.sub(r"\1", s)
+    s = _MD_LIST_BULLET.sub("· ", s)
+    s = _MD_QUOTE.sub("", s)
+    return s.strip()
+
+
+def format_html(prefix: str, title: str, content: str) -> str:
+    """PushPlus template=html：微信公众号能稳定渲染的极简 HTML。"""
+    head = html.escape(_full_title(prefix, title))
+    body = _strip_md(content or "")
+    body_html = "<br>".join(html.escape(line) for line in body.splitlines() if line.strip())
+    if body_html:
+        return f"<b>{head}</b><br>{body_html}"
+    return f"<b>{head}</b>"
 
 
 @dataclass
@@ -122,16 +221,20 @@ class MultiPlatformNotifier:
             return False, self._redact(str(e))
 
     def _send_wechat(self, title: str, content: str) -> NotifyResult:
-        """企业微信 Webhook 推送"""
+        """企业微信 Webhook 推送。
+
+        用 text 而不是 markdown：企业微信 markdown 的 ### 在微信插件里
+        会显示成字面量，部分版本甚至整条空白（用户反馈「微信查看不了」）。
+        text 在企业微信 App 和微信插件里都能正常打开。
+        """
         if not self.wechat_webhook_url:
             return NotifyResult("wechat", False, "未配置 Webhook URL")
 
-        # 企业微信支持 markdown 和 text
         msg = {
-            "msgtype": "markdown",
-            "markdown": {
-                "content": f"### {self.title_prefix} - {title}\n{content}"
-            }
+            "msgtype": "text",
+            "text": {
+                "content": format_qywx_text(self.title_prefix, title, content),
+            },
         }
         ok, resp = self._http_post(self.wechat_webhook_url, msg)
         if ok and isinstance(resp, dict):
@@ -142,16 +245,17 @@ class MultiPlatformNotifier:
         return NotifyResult("wechat", ok, "" if ok else str(resp), resp)
 
     def _send_dingtalk(self, title: str, content: str) -> NotifyResult:
-        """钉钉 Webhook 推送"""
+        """钉钉 Webhook 推送。markdown.title 是通知栏摘要，text 是会话正文。"""
         if not self.dingtalk_webhook_url:
             return NotifyResult("dingtalk", False, "未配置 Webhook URL")
 
+        full_title = _full_title(self.title_prefix, title)
         msg = {
             "msgtype": "markdown",
             "markdown": {
-                "title": f"{self.title_prefix} - {title}",
-                "text": f"### {self.title_prefix} - {title}\n{content}"
-            }
+                "title": full_title,
+                "text": format_bold_title_md(self.title_prefix, title, content),
+            },
         }
         ok, resp = self._http_post(self.dingtalk_webhook_url, msg)
         if ok and isinstance(resp, dict):
@@ -161,48 +265,74 @@ class MultiPlatformNotifier:
         return NotifyResult("dingtalk", ok, "" if ok else str(resp), resp)
 
     def _send_feishu(self, title: str, content: str) -> NotifyResult:
-        """飞书 Webhook 推送"""
+        """飞书 Webhook 推送（卡片）。lark_md 不认 # 标题，正文要先洗净。"""
         if not self.feishu_webhook_url:
             return NotifyResult("feishu", False, "未配置 Webhook URL")
 
+        body = format_lark_md(content) or _full_title(self.title_prefix, title)
         msg = {
             "msg_type": "interactive",
             "card": {
                 "header": {
-                    "title": {"content": f"{self.title_prefix} - {title}", "tag": "plain_text"},
-                    "template": "blue"
+                    "title": {"content": _full_title(self.title_prefix, title), "tag": "plain_text"},
+                    "template": "blue",
                 },
                 "elements": [
                     {
                         "tag": "div",
-                        "text": {"content": content, "tag": "lark_md"}
+                        "text": {"content": body, "tag": "lark_md"},
                     }
-                ]
-            }
+                ],
+            },
         }
         ok, resp = self._http_post(self.feishu_webhook_url, msg)
         if ok and isinstance(resp, dict):
-            # 飞书返回 {"code": 0, "msg": "success"}
-            if resp.get("code") == 0:
+            # 飞书返回 {"code": 0, "msg": "success"}；旧版也有 {"StatusCode":0}
+            if resp.get("code") == 0 or resp.get("StatusCode") == 0:
                 return NotifyResult("feishu", True, response=resp)
             return NotifyResult("feishu", False, resp.get("msg", str(resp)), resp)
         return NotifyResult("feishu", ok, "" if ok else str(resp), resp)
 
+    @staticmethod
+    def _normalize_bark_url(raw: str) -> str:
+        """把 Bark 地址收成可 POST 的形态。
+
+        用户常见三种填法：
+          https://api.day.app/{key}
+          https://api.day.app/{key}/{title}/{body}   ← GET 形态，别把标题编进 URL
+          https://api.day.app/push                  ← 需在 body 里带 device_key，这里不展开
+        只保留到 /{key} 或 /push，多出来的路径段丢掉。
+        """
+        url = (raw or "").strip().rstrip("/")
+        if not url:
+            return ""
+        try:
+            parsed = urllib.parse.urlparse(url)
+        except Exception:
+            return url
+        parts = [p for p in parsed.path.split("/") if p]
+        if not parts:
+            return url
+        head = parts[0]
+        if head == "push":
+            path = "/push"
+        else:
+            path = "/" + head
+        return urllib.parse.urlunparse(parsed._replace(path=path))
+
     def _send_bark(self, title: str, content: str) -> NotifyResult:
-        """Bark (iOS) 推送"""
+        """Bark (iOS) 推送。正文必须是纯文本，markdown 会在通知里露出符号。"""
         if not self.bark_url:
             return NotifyResult("bark", False, "未配置 Bark URL")
 
-        # Bark URL 格式: https://api.day.app/{key}/{title}/{body}
-        # 或者 POST 到 https://api.day.app/push
         try:
-            # 尝试 POST 方式
+            url = self._normalize_bark_url(self.bark_url)
             msg = {
-                "title": f"{self.title_prefix} - {title}",
-                "body": content,
-                "group": "育儿宝",
+                "title": _full_title(self.title_prefix, title),
+                "body": format_plain("", "", content),
+                "group": self.title_prefix or "育儿宝",
             }
-            ok, resp = self._http_post(self.bark_url, msg)
+            ok, resp = self._http_post(url, msg)
             if ok and isinstance(resp, dict):
                 if resp.get("code") == 200:
                     return NotifyResult("bark", True, response=resp)
@@ -212,15 +342,15 @@ class MultiPlatformNotifier:
             return NotifyResult("bark", False, self._redact(str(e)))
 
     def _send_pushplus(self, title: str, content: str) -> NotifyResult:
-        """PushPlus 推送"""
+        """PushPlus → 微信公众号。用 html 模板，markdown 在公众号侧经常空白/截断。"""
         if not self.pushplus_token:
             return NotifyResult("pushplus", False, "未配置 Token")
 
         msg = {
             "token": self.pushplus_token,
-            "title": f"{self.title_prefix} - {title}",
-            "content": content,
-            "template": "markdown",
+            "title": _full_title(self.title_prefix, title),
+            "content": format_html(self.title_prefix, title, content),
+            "template": "html",
         }
         if self.pushplus_topic:
             msg["topic"] = self.pushplus_topic
