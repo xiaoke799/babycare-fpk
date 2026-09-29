@@ -54,8 +54,15 @@
 - 辅食食谱推荐
 
 ### ⏱️ 工具
-- 喂奶计时器、睡眠计时器
-- 数据导出/导入
+- 喂奶计时器、睡眠计时器（停止时可自动生成记录）
+- 数据导出/导入、含相册的 ZIP 备份
+- 导出到 fnOS 共享目录 / 从共享目录恢复
+- 删除安全码：删宝宝 / 恢复备份前必须验证，防误删
+- 智能家居集成 API Token（Home Assistant 等）
+
+### 🏠 智能家居
+- 内置 Home Assistant 集成（`ha-integration/`）：传感器、服务、计时开关
+- Token 鉴权，数据仍留在本地 NAS
 
 ## AI 功能说明
 
@@ -91,8 +98,9 @@ babycare-fpk/
 ├── PRIVACY.md            # 隐私政策
 ├── LICENSE               # Apache-2.0 开源协议
 ├── cmd/                  # 生命周期脚本（main/install/upgrade/uninstall/config）
-├── config/               # 运行权限与资源配置
+├── config/               # 运行权限与资源配置（含共享目录 / API scope）
 ├── wizard/               # 安装/卸载向导
+├── ha-integration/       # Home Assistant 自定义集成
 ├── app/
 │   ├── backend/          # Python 后端
 │   │   ├── server.py     # Flask 应用入口

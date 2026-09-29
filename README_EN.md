@@ -54,8 +54,15 @@ BabyCare (育儿宝) is a native NAS parenting app for the fnOS platform (by fnO
 - Solid-food recipe recommendations
 
 ### ⏱️ Tools
-- Feeding timer, sleep timer
-- Data export / import
+- Feeding timer, sleep timer (can auto-create records on stop)
+- Data export / import, ZIP backup including photo albums
+- Export to / restore from fnOS shared folders
+- Delete safety code: required before deleting a baby or restoring a backup
+- Smart-home integration API token (Home Assistant, etc.)
+
+### 🏠 Smart Home
+- Built-in Home Assistant integration (`ha-integration/`): sensors, services, timer switches
+- Token auth; data still stays on your local NAS
 
 ## AI Features
 
@@ -90,8 +97,9 @@ babycare-fpk/
 ├── PRIVACY.md            # Privacy policy
 ├── LICENSE               # Apache-2.0
 ├── cmd/                  # Lifecycle scripts (main/install/upgrade/uninstall/config)
-├── config/               # Runtime permissions & resources
+├── config/               # Runtime permissions & resources (shared folders / API scope)
 ├── wizard/               # Install/uninstall wizard
+├── ha-integration/       # Home Assistant custom integration
 ├── app/
 │   ├── backend/          # Python backend
 │   │   ├── server.py     # Flask entry point
