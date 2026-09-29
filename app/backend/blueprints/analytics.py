@@ -386,6 +386,45 @@ def _generate_pattern_note(peak_hours, avg_interval, avg_duration):
 # ==================== 路由 ====================
 
 
+@bp.route("/api/babies/<int:baby_id>/today-summary", methods=["GET"])
+def today_summary(baby_id):
+    """今日汇总：喂奶次数/奶量、尿布、睡眠分钟、最近身高体重。"""
+    today = datetime.date.today().isoformat()
+    db = get_db()
+    if not db.execute("SELECT id FROM babies WHERE id = ?", (baby_id,)).fetchone():
+        return jsonify({"success": False, "message": "宝宝不存在"}), 404
+
+    def _one(sql, args=()):
+        row = db.execute(sql, args).fetchone()
+        return row[0] if row and row[0] is not None else 0
+
+    growth = db.execute(
+        "SELECT height, weight, bmi, head_circumference, record_date FROM growth_records "
+        "WHERE baby_id=? ORDER BY record_date DESC, id DESC LIMIT 1",
+        (baby_id,),
+    ).fetchone()
+    return jsonify({
+        "success": True,
+        "data": {
+            "baby_id": baby_id,
+            "date": today,
+            "feeding_count": _one(
+                "SELECT COUNT(*) FROM feeding_records WHERE baby_id=? AND substr(start_time,1,10)=?",
+                (baby_id, today)),
+            "feeding_ml": _one(
+                "SELECT COALESCE(SUM(amount),0) FROM feeding_records WHERE baby_id=? AND substr(start_time,1,10)=?",
+                (baby_id, today)),
+            "diaper_count": _one(
+                "SELECT COUNT(*) FROM diaper_records WHERE baby_id=? AND substr(change_time,1,10)=?",
+                (baby_id, today)),
+            "sleep_minutes": _one(
+                "SELECT COALESCE(SUM(duration_minutes),0) FROM sleep_records WHERE baby_id=? AND substr(start_time,1,10)=?",
+                (baby_id, today)),
+            "latest_growth": dict(growth) if growth else None,
+        },
+    })
+
+
 @bp.route("/api/babies/<int:baby_id>/dashboard", methods=["GET"])
 def get_dashboard(baby_id):
     """获取仪表盘统计数据（合并版：包含今日统计、间隔分析、AI洞察）"""

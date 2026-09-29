@@ -250,10 +250,20 @@ def get_feeding_stats(baby_id):
             r["feeding_type"]: {"count": r["count"], "amount": r["amount"], "seconds": r["seconds"]}
             for r in rows
         }
+        # bottle_ml 只统计「能按毫升理解」的瓶喂/混合，别把辅食克数混进 ml
+        bottle_ml = (
+            by_type.get("bottle", {}).get("amount", 0)
+            + by_type.get("mixed", {}).get("amount", 0)
+        )
+        solid_g = by_type.get("solid", {}).get("amount", 0)
         total = {
             "count": sum(v["count"] for v in by_type.values()),
+            # amount 保留：兼容老前端「总量」；新前端请用 bottle_ml / solid_g
             "amount": round(sum(v["amount"] for v in by_type.values()), 1),
-            "breast_seconds": by_type.get("breast", {}).get("seconds", 0),
+            "bottle_ml": round(bottle_ml, 1),
+            "solid_g": round(solid_g, 1),
+            "breast_seconds": by_type.get("breast", {}).get("seconds", 0)
+            + by_type.get("mixed", {}).get("seconds", 0),
         }
         return by_type, total
 

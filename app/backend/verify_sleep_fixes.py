@@ -30,6 +30,11 @@ import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# vendor 内嵌依赖（Flask 等）——与 server.py / start_server.py 同一套路
+_vendor_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
+if os.path.isdir(_vendor_dir) and _vendor_dir not in sys.path:
+    sys.path.insert(0, _vendor_dir)
+
 import utils
 from flask import Flask
 from blueprints.sleep import bp

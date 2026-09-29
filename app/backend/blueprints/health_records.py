@@ -243,6 +243,24 @@ def health_summary(baby_id):
             if latest_weight:
                 weight_percentile = round(_calc_percentile(latest_weight, age_m, 'weight', gender), 1)
 
+        # 最近体温 / 是否发热（38.0 起算发热，概览一眼能看到）
+        # 表名是 temperature_records（不是 temperatures）
+        latest_temp = db.execute(
+            "SELECT temperature, measure_time, measure_method, is_fever FROM temperature_records "
+            "WHERE baby_id = ? ORDER BY replace(measure_time, 'T', ' ') DESC LIMIT 1",
+            (baby_id,),
+        ).fetchone()
+        latest_temperature = (
+            float(latest_temp["temperature"])
+            if latest_temp and latest_temp["temperature"] is not None else None
+        )
+        temperature_time = latest_temp["measure_time"] if latest_temp else None
+        # 优先信库里的 is_fever 标记；没有就按 38.0 阈值现算
+        if latest_temp is not None and latest_temp["is_fever"] is not None:
+            has_fever = bool(int(latest_temp["is_fever"]))
+        else:
+            has_fever = bool(latest_temperature is not None and latest_temperature >= 38.0)
+
         return jsonify({
             'success': True,
             'summary': {
@@ -267,6 +285,9 @@ def health_summary(baby_id):
                 'feeding_months': feeding_months,
                 'latest_vaccine_date': latest_vaccine['actual_date'] if latest_vaccine else None,
                 'latest_vaccine_name': latest_vaccine['vaccine_name'] if latest_vaccine else None,
+                'latest_temperature': latest_temperature,
+                'temperature_time': temperature_time,
+                'has_fever': has_fever,
                 'upcoming_vaccines': rows_to_list(upcoming_vaccines),
             }
         })
