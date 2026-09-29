@@ -1,0 +1,199 @@
+add_feeding:
+  name: Add feeding
+  description: 写入喂奶记录（育儿宝）
+  fields:
+    baby_id:
+      name: Baby ID
+      required: true
+      selector:
+        number:
+          min: 1
+    start_time:
+      name: Start
+      selector:
+        text:
+    end_time:
+      name: End
+      selector:
+        text:
+    type:
+      name: Feeding type
+      description: breast / bottle / mixed / solid
+      selector:
+        select:
+          options:
+            - breast
+            - bottle
+            - mixed
+            - solid
+    amount:
+      name: Amount (ml)
+      selector:
+        number:
+          min: 0
+          max: 2000
+    side:
+      name: Side
+      selector:
+        select:
+          options:
+            - left
+            - right
+            - both
+    note:
+      name: Note
+      selector:
+        text:
+
+add_sleep:
+  name: Add sleep
+  description: 写入睡眠记录
+  fields:
+    baby_id:
+      name: Baby ID
+      required: true
+      selector:
+        number:
+          min: 1
+    start_time:
+      name: Start
+      selector:
+        text:
+    end_time:
+      name: End
+      selector:
+        text:
+    sleep_quality:
+      name: Quality
+      selector:
+        select:
+          options:
+            - good
+            - normal
+            - poor
+    note:
+      name: Note
+      selector:
+        text:
+
+add_diaper:
+  name: Add diaper change
+  description: 写入换尿布记录
+  fields:
+    baby_id:
+      name: Baby ID
+      required: true
+      selector:
+        number:
+          min: 1
+    start_time:
+      name: Time
+      selector:
+        text:
+    diaper_type:
+      name: Type
+      selector:
+        select:
+          options:
+            - wet
+            - dirty
+            - both
+            - dry
+    note:
+      name: Note
+      selector:
+        text:
+
+add_growth:
+  name: Add growth
+  description: 写入身高体重记录
+  fields:
+    baby_id:
+      name: Baby ID
+      required: true
+      selector:
+        number:
+          min: 1
+    record_date:
+      name: Date
+      selector:
+        text:
+    height:
+      name: Height (cm)
+      selector:
+        number:
+          min: 0
+          max: 200
+          step: 0.1
+    weight:
+      name: Weight (kg)
+      selector:
+        number:
+          min: 0
+          max: 50
+          step: 0.01
+    note:
+      name: Note
+      selector:
+        text:
+
+start_timer:
+  name: Start timer
+  description: 启动育儿宝计时器
+  fields:
+    baby_id:
+      name: Baby ID
+      required: true
+      selector:
+        number:
+          min: 1
+    type:
+      name: Timer type
+      selector:
+        select:
+          options:
+            - feeding
+            - sleep
+            - tummy
+    note:
+      name: Name
+      selector:
+        text:
+
+stop_timer:
+  name: Stop timer
+  description: 停止计时器，可选写入喂奶/睡眠记录
+  fields:
+    timer_id:
+      name: Timer ID
+      required: true
+      selector:
+        number:
+          min: 1
+    create_record:
+      name: Create record
+      description: 停止时写入对应记录
+      default: true
+      selector:
+        boolean:
+
+delete_last_entry:
+  name: Delete last entry
+  description: 撤销最近一条记录（误录一键删除）
+  fields:
+    baby_id:
+      name: Baby ID
+      required: true
+      selector:
+        number:
+          min: 1
+    type:
+      name: Entry type
+      selector:
+        select:
+          options:
+            - feeding
+            - sleep
+            - diaper
+            - growth
+            - pumping

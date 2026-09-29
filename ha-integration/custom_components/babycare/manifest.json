@@ -1,0 +1,12 @@
+{
+  "domain": "babycare",
+  "name": "BabyCare 育儿宝",
+  "codeowners": ["@xiaoke799"],
+  "config_flow": true,
+  "documentation": "https://github.com/xiaoke799/babycare-fpk",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/xiaoke799/babycare-fpk/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

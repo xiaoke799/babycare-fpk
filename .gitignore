@@ -39,6 +39,10 @@ _*.py
 _*.txt
 _*.json
 
+# 但 Python 包的 __init__.py 必须留：少了它 Home Assistant 集成根本加载不了，
+# 而且打包时若沿用 .gitignore，缺文件的包会一起发出去（2026-09-29 实测）
+!__init__.py
+
 # 密钥和本地配置
 secret_key
 .env
