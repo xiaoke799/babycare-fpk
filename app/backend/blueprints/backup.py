@@ -11,11 +11,13 @@ import json
 import os
 import glob
 import shutil
+import zipfile
 from flask import Blueprint, request, jsonify, send_file, current_app
 
 from utils import get_db, json_body, scrub_secrets_from_settings_rows as _scrub_secrets_from_settings_rows
 from user_context import require_admin
 from constants import EXPORT_TABLES, BABY_SCOPED_TABLES as _BABY_SCOPED_TABLES
+import safety_code
 
 bp = Blueprint("backup", __name__)
 
@@ -25,22 +27,58 @@ BACKUP_DIR_NAME = "backups"
 # 默认保留的备份数量
 DEFAULT_KEEP_COUNT = 10
 
-# 上传备份的体积上限：JSON 全量备份正常也就几 MB，
-# 早期无上限 —— 传个超大文件就能把内存和数据库一起拖垮
-MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+# 上传备份的体积上限：含相册的 zip 可能到几百 MB
+MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+
+
+def _get_share_dir(name):
+    """解析 fnOS data-share 共享目录（文件管理器可见）。
+
+    config/resource 声明 babycare-fpk/backups、babycare-fpk/exports 后，
+    安装时系统创建共享目录；运行时优先：
+      1) /var/apps/babycare-fpk/share/<name>
+      2) TRIM_DATA_SHARE_PATHS 中以 /<name> 结尾的路径
+      3) 回退 None（非 fnOS / 未声明时仍走应用私有目录）
+    """
+    app_name = 'babycare-fpk'
+    candidates = [
+        os.path.join('/var/apps', app_name, 'share', name),
+        os.path.join('/var/apps', app_name, 'share', app_name, name),
+    ]
+    for p in candidates:
+        if os.path.isdir(p):
+            return p
+    raw = os.environ.get('TRIM_DATA_SHARE_PATHS', '')
+    for part in raw.split(':'):
+        part = part.strip()
+        if part and (part.endswith('/' + name) or part.endswith('\\' + name) or part.endswith(name)):
+            if os.path.isdir(part):
+                return part
+    return None
 
 
 def _get_backup_dir():
-    """获取备份目录路径"""
-    # 从应用配置获取数据目录
+    """获取备份目录：优先 fnOS 共享目录 babycare-fpk/backups（文件管理器可见）"""
+    share = _get_share_dir('backups')
+    if share:
+        return share
     data_dir = current_app.config.get('DATA_DIR', '')
     if not data_dir:
-        # 回退到环境变量
         data_dir = os.environ.get('BABYCARE_DATA_DIR', '/tmp/babycare')
-    
     backup_dir = os.path.join(data_dir, BACKUP_DIR_NAME)
     os.makedirs(backup_dir, exist_ok=True)
     return backup_dir
+
+
+def _get_export_share_dir():
+    """导出目录：fnOS 共享 babycare-fpk/exports"""
+    share = _get_share_dir('exports')
+    if share:
+        return share
+    data_dir = current_app.config.get('DATA_DIR', '') or os.environ.get('BABYCARE_DATA_DIR', '/tmp/babycare')
+    path = os.path.join(data_dir, 'exports')
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def _get_db_path():
@@ -61,14 +99,17 @@ def _get_db_path():
 _RESTORE_ALLOWED_TABLES = {t for t in EXPORT_TABLES if t != 'babies'}
 
 # 备份文件名合法格式，杜绝路径穿越/任意文件读写。
-# 手动备份叫 backup_<时间戳>.json；自动备份（storage.py 的定时线程）叫
-# auto_backup_<时间戳>.json。两者都要放行——此前只认 backup_ 前缀，导致自动备份
+# 手动备份 backup_<时间戳>.zip（旧版 .json 仍可恢复）；自动备份 auto_backup_<时间戳>.zip。
+# 两者都要放行——此前只认 backup_ 前缀，导致自动备份
 # 既不出现在列表里、也没法恢复/删除，而且清理逻辑也匹配不到它（越攒越多直到占满磁盘）。
 import re as _re
-_BACKUP_FILENAME_RE = _re.compile(r'^(?:auto_)?backup_[A-Za-z0-9_\-]+\.json$')
+_BACKUP_FILENAME_RE = _re.compile(r'^(?:auto_)?backup_[A-Za-z0-9_\-]+\.(json|zip)$')
 
-# 备份文件的两套前缀，集中在这里，避免各处 glob 写不一致
-BACKUP_GLOBS = ('backup_*.json', 'auto_backup_*.json')
+# 备份文件的两套前缀 + 两种后缀
+BACKUP_GLOBS = (
+    'backup_*.json', 'auto_backup_*.json',
+    'backup_*.zip', 'auto_backup_*.zip',
+)
 
 
 def iter_backup_files(backup_dir, only_auto=None):
@@ -92,7 +133,7 @@ def iter_backup_files(backup_dir, only_auto=None):
 
 def _validate_backup_filename(filename):
     """校验备份文件名，防路径穿越。
-    只允许 backup_ / auto_backup_ 前缀 + 字母数字下划线连字符 + .json 后缀，
+    只允许 backup_ / auto_backup_ 前缀 + 字母数字下划线连字符 + .json/.zip 后缀，
     天然拒绝 ..、/、\\、空字节等一切路径技巧。
     非字符串（JSON 里传数字/布尔）直接判非法 —— 否则 re.match 会抛 TypeError。
     """
@@ -100,8 +141,143 @@ def _validate_backup_filename(filename):
         return False
     return bool(_BACKUP_FILENAME_RE.match(filename))
 
+
+def _get_data_dir():
+    try:
+        data_dir = current_app.config.get('DATA_DIR', '') or ''
+    except Exception:
+        data_dir = ''
+    if not data_dir:
+        data_dir = os.environ.get('BABYCARE_DATA_DIR', '/tmp/babycare')
+    return data_dir
+
+
 # 列名合法字符：字母数字下划线，杜绝 SQL 注入
 _COL_NAME_RE = _re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+# 备份包内媒体相对前缀
+_MEDIA_PREFIX = 'files/'
+
+
+def _collect_media_files(baby_id=None):
+    """收集相册/成长照片等磁盘文件 → {包内相对路径: 本机绝对路径}。
+
+    只打包真实存在的文件；相对路径统一用 /（zip 兼容）。
+    """
+    data_dir = _get_data_dir()
+    db = get_db()
+    existing_tables = set(
+        row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    )
+
+    # 表 → 路径列
+    path_cols = {
+        'photos': ('file_path', 'thumbnail_path'),
+        'growth_photos': ('photo_path',),
+    }
+    media = {}
+    for table, cols in path_cols.items():
+        if table not in existing_tables:
+            continue
+        for col in cols:
+            try:
+                if baby_id is not None:
+                    rows = db.execute(f'SELECT {col} FROM {table} WHERE baby_id = ?', (baby_id,)).fetchall()
+                else:
+                    rows = db.execute(f'SELECT {col} FROM {table}').fetchall()
+            except Exception:
+                continue
+            for row in rows:
+                rel = (row[col] if col in row.keys() else row[0]) or ''
+                rel = str(rel).replace('\\', '/').strip()
+                if not rel or '..' in rel or rel.startswith('/'):
+                    continue
+                abs_path = os.path.join(data_dir, *rel.split('/'))
+                if os.path.isfile(abs_path):
+                    media[rel] = abs_path
+    return media
+
+
+def _safe_media_relpath(name):
+    """校验 zip 内媒体相对路径，拒绝穿越。"""
+    if not name or not isinstance(name, str):
+        return None
+    name = name.replace('\\', '/').strip()
+    if not name.startswith(_MEDIA_PREFIX):
+        return None
+    rel = name[len(_MEDIA_PREFIX):]
+    if not rel or rel.startswith('/') or '..' in rel.split('/'):
+        return None
+    return rel
+
+
+def write_backup_archive(filepath, all_data, baby_id=None):
+    """写备份包：data.json + files/ 相册等媒体。返回 media 文件数。"""
+    media = _collect_media_files(baby_id)
+    all_data = dict(all_data or {})
+    all_data['version'] = '2.0'
+    all_data['include_media'] = True
+    all_data['media_count'] = len(media)
+
+    with zipfile.ZipFile(filepath, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr('data.json', json.dumps(all_data, ensure_ascii=False, indent=2))
+        for rel, abs_path in media.items():
+            # zip 内统一用 files/<rel>
+            zf.write(abs_path, _MEDIA_PREFIX + rel)
+    return len(media)
+
+
+def _load_backup_file(filepath):
+    """读备份（.zip 新格式 / .json 旧格式）→ (backup_data, media_iter_or_None)。
+
+    media_iter: 可选，yield (相对路径, zip 成员名)，供恢复时落盘。
+    """
+    lower = filepath.lower()
+    if lower.endswith('.zip'):
+        zf = zipfile.ZipFile(filepath, 'r')
+        try:
+            raw = zf.read('data.json')
+            backup_data = json.loads(raw.decode('utf-8'))
+        except Exception:
+            zf.close()
+            raise
+        members = [n for n in zf.namelist() if n.startswith(_MEDIA_PREFIX) and not n.endswith('/')]
+
+        def _iter():
+            try:
+                for name in members:
+                    rel = _safe_media_relpath(name)
+                    if rel:
+                        yield rel, name
+            finally:
+                zf.close()
+
+        return backup_data, _iter(), zf
+    # 旧 JSON
+    with open(filepath, 'r', encoding='utf-8') as f:
+        backup_data = json.load(f)
+    return backup_data, None, None
+
+
+def _extract_media_files(media_iter, zf, data_dir):
+    """把备份包内媒体写回 DATA_DIR。返回 (ok, fail)。"""
+    ok = fail = 0
+    if not media_iter:
+        return 0, 0
+    for rel, name in media_iter:
+        dest = os.path.join(data_dir, *rel.split('/'))
+        try:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with zf.open(name) as src, open(dest, 'wb') as out:
+                shutil.copyfileobj(src, out)
+            ok += 1
+        except Exception as e:
+            fail += 1
+            try:
+                current_app.logger.error(f'恢复媒体失败 {rel}: {e}')
+            except Exception:
+                pass
+    return ok, fail
 
 
 def _safe_cols_and_values(row):
@@ -212,22 +388,20 @@ def create_backup():
         baby_id = None
 
     backup_dir = _get_backup_dir()
-    
-    # 生成备份文件名
+
+    # 生成备份文件名（zip 包：JSON + 相册文件）
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     prefix = f'backup_{timestamp}'
-    filename = f'{prefix}.json'
+    filename = f'{prefix}.zip'
     filepath = os.path.join(backup_dir, filename)
-    
+
     # 收集数据
     all_data = _collect_all_data(baby_id)
     all_data['note'] = note
     all_data['backup_type'] = 'manual'
-    
-    # 写入文件
-    with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump(all_data, f, ensure_ascii=False, indent=2)
-    
+
+    media_count = write_backup_archive(filepath, all_data, baby_id=baby_id)
+
     # 清理旧备份
     keep_count = data.get('keep_count', DEFAULT_KEEP_COUNT)
     # keep_count 校验：非整数或 < 1 一律回退默认值，防止传 0 清空全部历史备份
@@ -239,11 +413,12 @@ def create_backup():
 
     return jsonify({
         'success': True,
-        'message': '备份创建成功',
+        'message': f'备份创建成功（含 {media_count} 个相册/照片文件）',
         'filename': filename,
         # 不返回服务器绝对路径（信息泄露）
         'size': file_size,
         'size_human': _format_size(file_size),
+        'media_count': media_count,
         'created_at': all_data['exported_at'],
     })
 
@@ -292,7 +467,7 @@ def download_backup(filename):
     
     return send_file(
         filepath,
-        mimetype='application/json',
+        mimetype='application/zip' if filename.lower().endswith('.zip') else 'application/json',
         as_attachment=True,
         download_name=filename,
     )
@@ -428,7 +603,7 @@ def _restore_from_data(db, backup_data, source='restore'):
 @bp.route('/api/backup/restore', methods=['POST'])
 @require_admin
 def restore_backup():
-    """从备份文件恢复数据"""
+    """从备份文件恢复数据（危险：覆盖现有记录，必须安全码）"""
     data = json_body()
     filename = str(data.get('filename') or '').strip()
     if not filename:
@@ -437,44 +612,66 @@ def restore_backup():
     # 安全检查：白名单格式校验，杜绝路径穿越
     if not _validate_backup_filename(filename):
         return jsonify({'success': False, 'message': '无效的文件名'}), 400
-    
+
+    db = get_db()
+    ok, msg = safety_code.verify(db, data.get('safety_code', ''))
+    if not ok:
+        return jsonify({'success': False, 'message': msg, 'needSafetyCode': True}), 403
+
     backup_dir = _get_backup_dir()
     filepath = os.path.join(backup_dir, filename)
-    
+
     if not os.path.isfile(filepath):
         return jsonify({'success': False, 'message': '备份文件不存在'}), 404
-    
+
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            backup_data = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
+        backup_data, media_iter, zf = _load_backup_file(filepath)
+    except (json.JSONDecodeError, OSError, zipfile.BadZipFile, KeyError) as e:
         return jsonify({'success': False, 'message': f'读取备份失败: {str(e)}'}), 400
-    
+
     # 验证备份格式
     if 'babies' not in backup_data:
+        if zf:
+            zf.close()
         return jsonify({'success': False, 'message': '无效的备份格式'}), 400
-    
-    db = get_db()
+
     restored = {}
     failed = {}
-    
+    media_ok = media_fail = 0
+
     try:
         restored, failed = _restore_from_data(db, backup_data, source='恢复')
+        media_ok, media_fail = _extract_media_files(media_iter, zf, _get_data_dir())
         db.commit()
 
         total_restored = sum(restored.values())
         total_failed = sum(failed.values()) if failed else 0
+        msg = f'恢复完成，共恢复 {total_restored} 条记录'
+        if total_failed:
+            msg += f'，{total_failed} 条失败'
+        if media_ok or media_fail:
+            msg += f'，相册文件 {media_ok} 个'
+            if media_fail:
+                msg += f'（{media_fail} 个失败）'
 
         return jsonify({
             'success': True,
-            'message': f'恢复完成，共恢复 {total_restored} 条记录' + (f'，{total_failed} 条失败' if total_failed else ''),
+            'message': msg,
             'restored': restored,
             'failed': failed,
+            'media_restored': media_ok,
+            'media_failed': media_fail,
         })
 
     except Exception as e:
         db.rollback()
         return jsonify({'success': False, 'message': f'恢复失败: {str(e)}'}), 500
+    finally:
+        if zf:
+            try:
+                zf.close()
+            except Exception:
+                pass
 
 
 # ==================== API: 上传备份恢复 ====================
@@ -482,15 +679,27 @@ def restore_backup():
 @bp.route('/api/backup/upload-restore', methods=['POST'])
 @require_admin
 def upload_restore():
-    """上传备份文件并恢复"""
+    """上传备份文件并恢复（JSON / ZIP，必须安全码）"""
     if 'file' not in request.files:
         return jsonify({'success': False, 'message': '请选择备份文件'}), 400
-    
-    file = request.files['file']
-    if not (file.filename or '').lower().endswith('.json'):
-        return jsonify({'success': False, 'message': '请上传 JSON 格式的备份文件'}), 400
 
-    # 体积检查：先量大小再解析，别让一个超大 JSON 把内存吃光
+    # 安全码：表单字段或 JSON 字段
+    code = request.form.get('safety_code') or ''
+    if not code:
+        try:
+            code = (request.get_json(silent=True) or {}).get('safety_code') or ''
+        except Exception:
+            code = ''
+    ok, msg = safety_code.verify(get_db(), code)
+    if not ok:
+        return jsonify({'success': False, 'message': msg, 'needSafetyCode': True}), 403
+
+    file = request.files['file']
+    fname = (file.filename or '').lower()
+    if not fname.endswith(('.json', '.zip')):
+        return jsonify({'success': False, 'message': '请上传 JSON 或 ZIP 格式的备份文件'}), 400
+
+    # 体积检查：先量大小再解析，别让一个超大包把内存吃光
     stream = file.stream
     try:
         stream.seek(0, os.SEEK_END)
@@ -504,40 +713,253 @@ def upload_restore():
             'message': f'备份文件过大（{size // 1024 // 1024}MB，上限 {MAX_UPLOAD_BYTES // 1024 // 1024}MB）',
         }), 413
 
+    tmp_path = None
+    zf = None
+    media_iter = None
     try:
-        backup_data = json.load(stream)
-    except json.JSONDecodeError:
-        return jsonify({'success': False, 'message': '无效的 JSON 文件'}), 400
-    
-    if 'babies' not in backup_data:
-        return jsonify({'success': False, 'message': '无效的备份格式'}), 400
-    
-    db = get_db()
-    restored = {}
-    failed = {}
-    
-    try:
+        if fname.endswith('.zip'):
+            import tempfile
+            fd, tmp_path = tempfile.mkstemp(suffix='.zip', prefix='babycare_restore_')
+            os.close(fd)
+            with open(tmp_path, 'wb') as out:
+                shutil.copyfileobj(stream, out)
+            backup_data, media_iter, zf = _load_backup_file(tmp_path)
+        else:
+            try:
+                backup_data = json.load(stream)
+            except json.JSONDecodeError:
+                return jsonify({'success': False, 'message': '无效的 JSON 文件'}), 400
+
+        if 'babies' not in backup_data:
+            return jsonify({'success': False, 'message': '无效的备份格式'}), 400
+
+        db = get_db()
         restored, failed = _restore_from_data(db, backup_data, source='上传恢复')
+        media_ok, media_fail = _extract_media_files(media_iter, zf, _get_data_dir())
         db.commit()
 
         total_restored = sum(restored.values())
         total_failed = sum(failed.values()) if failed else 0
+        msg = f'恢复完成，共恢复 {total_restored} 条记录'
+        if total_failed:
+            msg += f'，{total_failed} 条失败'
+        if media_ok or media_fail:
+            msg += f'，相册文件 {media_ok} 个'
         return jsonify({
             'success': True,
-            'message': f'恢复完成，共恢复 {total_restored} 条记录' + (f'，{total_failed} 条失败' if total_failed else ''),
+            'message': msg,
             'restored': restored,
             'failed': failed,
+            'media_restored': media_ok,
         })
 
+    except (json.JSONDecodeError, zipfile.BadZipFile, KeyError, OSError) as e:
+        return jsonify({'success': False, 'message': f'读取备份失败: {str(e)}'}), 400
     except Exception as e:
-        db.rollback()
+        get_db().rollback()
         return jsonify({'success': False, 'message': f'恢复失败: {str(e)}'}), 500
+    finally:
+        if zf:
+            try:
+                zf.close()
+            except Exception:
+                pass
+        if tmp_path and os.path.isfile(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
 
 def _format_size(size):
     """格式化文件大小"""
     for unit in ['B', 'KB', 'MB', 'GB']:
-        if size < 1024:
-            return f'{size:.1f} {unit}'
-        size /= 1024
-    return f'{size:.1f} TB'
+        if size < 1024.0:
+            return f"{size:.1f}{unit}"
+        size /= 1024.0
+    return f"{size:.1f}TB"
+
+
+# ==================== API: 共享目录导出 / 恢复 ====================
+
+@bp.route('/api/backup/share-info', methods=['GET'])
+@require_admin
+def share_info():
+    """返回 fnOS 共享目录 + 应用中心授权目录状态"""
+    try:
+        from fnos_open_api import get_shared_accessible_folders
+        authorized = get_shared_accessible_folders()
+    except Exception:
+        authorized = []
+    backup_dir = _get_backup_dir()
+    export_dir = _get_export_share_dir()
+    return jsonify({
+        'success': True,
+        'data': {
+            'backup_dir': backup_dir,
+            'export_dir': export_dir,
+            'backup_is_share': bool(_get_share_dir('backups')),
+            'export_is_share': bool(_get_share_dir('exports')),
+            'share_roots': [
+                _get_share_dir('backups'),
+                _get_share_dir('exports'),
+            ],
+            # 应用中心「授权目录」：管理员在应用设置里配置的固定目录
+            'authorized_paths': authorized,
+        },
+    })
+
+
+@bp.route('/api/backup/export-to-share', methods=['POST'])
+@require_admin
+def export_to_share():
+    """把完整备份导出到共享目录（默认 babycare-fpk/exports，文件管理器可见）"""
+    data = json_body()
+    note = str(data.get('note') or '')[:200]
+    # 默认写 exports 共享（用户可见导出）；backups 共享留给备份轮转
+    share_dir = _get_export_share_dir()
+    # 可选：导出到应用中心「授权目录」中的某个子目录（须是已授权路径）
+    target = str(data.get('target_path') or '').strip()
+    if target:
+        try:
+            from fnos_open_api import get_shared_accessible_folders
+            allowed = get_shared_accessible_folders()
+        except Exception:
+            allowed = []
+        real_target = os.path.realpath(target)
+        if not any(real_target == os.path.realpath(p) or real_target.startswith(os.path.realpath(p) + os.sep)
+                   for p in allowed):
+            return jsonify({'success': False, 'message': '目标目录不在应用中心授权目录内'}), 403
+        share_dir = real_target
+        os.makedirs(share_dir, exist_ok=True)
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f'backup_{timestamp}.zip'
+    filepath = os.path.join(share_dir, filename)
+
+    all_data = _collect_all_data()
+    all_data['note'] = note
+    all_data['backup_type'] = 'export-to-share'
+    all_data['share_dir'] = os.path.basename(share_dir)
+
+    media_count = 0
+    try:
+        # 与 create_backup 一致：优先 zip（含相册），失败再退 JSON
+        try:
+            media_count = write_backup_archive(filepath, all_data)
+        except Exception:
+            filepath = os.path.join(share_dir, f'backup_{timestamp}.json')
+            filename = os.path.basename(filepath)
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(all_data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'导出到共享目录失败: {e}'}), 500
+
+    return jsonify({
+        'success': True,
+        'message': f'已导出到共享目录（含 {media_count} 个相册/照片文件）',
+        'filename': filename,
+        'path': filepath,
+        'share': os.path.basename(share_dir),
+        'media_count': media_count,
+        'size': os.path.getsize(filepath),
+        'size_human': _format_size(os.path.getsize(filepath)),
+    })
+
+
+@bp.route('/api/backup/share-files', methods=['GET'])
+@require_admin
+def list_share_files():
+    """列出备份文件：共享目录（backups/exports）+ 应用中心授权目录 + 应用私有目录"""
+    dirs = []
+    for d in (_get_backup_dir(), _get_export_share_dir()):
+        if d and os.path.isdir(d) and d not in dirs:
+            dirs.append(d)
+    try:
+        from fnos_open_api import get_shared_accessible_folders
+        for p in get_shared_accessible_folders():
+            if p and os.path.isdir(p) and os.path.realpath(p) not in [os.path.realpath(x) for x in dirs]:
+                dirs.append(p)
+    except Exception:
+        pass
+    items = []
+    for d in dirs:
+        for fp in iter_backup_files(d):
+            st = os.stat(fp)
+            items.append({
+                'filename': os.path.basename(fp),
+                'dir': d,
+                'size': st.st_size,
+                'size_human': _format_size(st.st_size),
+                'created_at': datetime.datetime.fromtimestamp(st.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+            })
+    return jsonify({'success': True, 'data': items, 'count': len(items)})
+
+
+@bp.route('/api/backup/restore-from-share', methods=['POST'])
+@require_admin
+def restore_from_share():
+    """从共享备份目录恢复（必须安全码，仅允许目录内白名单文件名）"""
+    data = json_body()
+    filename = str(data.get('filename') or '')
+    code = str(data.get('safety_code') or '')
+    dir_hint = str(data.get('dir') or '').strip()
+    ok, msg = safety_code.verify(get_db(), code)
+    if not ok:
+        return jsonify({'success': False, 'message': msg, 'needSafetyCode': True}), 403
+    if not _validate_backup_filename(filename):
+        return jsonify({'success': False, 'message': '非法的备份文件名'}), 400
+
+    search_dirs = []
+    for d in (_get_backup_dir(), _get_export_share_dir()):
+        if d and os.path.isdir(d) and d not in search_dirs:
+            search_dirs.append(d)
+    if dir_hint:
+        real_hint = os.path.realpath(dir_hint)
+        try:
+            from fnos_open_api import get_shared_accessible_folders
+            allowed = [os.path.realpath(p) for p in get_shared_accessible_folders()]
+        except Exception:
+            allowed = []
+        known = {os.path.realpath(d) for d in search_dirs}
+        if real_hint in allowed or real_hint in known:
+            search_dirs.insert(0, real_hint)
+
+    filepath = None
+    for d in search_dirs:
+        candidate = os.path.join(d, filename)
+        if os.path.isfile(candidate):
+            filepath = candidate
+            break
+    if not filepath:
+        return jsonify({'success': False, 'message': '目录中不存在该备份'}), 404
+
+    zf = None
+    try:
+        backup_data, media_iter, zf = _load_backup_file(filepath)
+        if 'babies' not in backup_data:
+            return jsonify({'success': False, 'message': '无效的备份格式'}), 400
+        db = get_db()
+        restored, failed = _restore_from_data(db, backup_data, source='共享目录恢复')
+        media_ok, media_fail = _extract_media_files(media_iter, zf, _get_data_dir())
+        db.commit()
+        total_restored = sum(restored.values())
+        total_failed = sum(failed.values()) if failed else 0
+        msg = f'恢复完成，共恢复 {total_restored} 条记录'
+        if total_failed:
+            msg += f'，{total_failed} 条失败'
+        return jsonify({
+            'success': True,
+            'message': msg,
+            'restored': restored,
+            'failed': failed,
+            'media_restored': media_ok,
+        })
+    except Exception as e:
+        get_db().rollback()
+        return jsonify({'success': False, 'message': f'恢复失败: {e}'}), 500
+    finally:
+        if zf:
+            try:
+                zf.close()
+            except Exception:
+                pass

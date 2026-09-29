@@ -1,1 +1,16 @@
-{}
+{
+  "data-share": {
+    "shares": [
+      {
+        "name": "babycare-fpk/backups"
+      },
+      {
+        "name": "babycare-fpk/exports"
+      }
+    ]
+  },
+  "api-scope": [
+    "trim.file.sharedAccess",
+    "trim.file.path"
+  ]
+}

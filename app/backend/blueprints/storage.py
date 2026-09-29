@@ -194,18 +194,16 @@ def _run_auto_backup(now):
         os.makedirs(backup_dir, exist_ok=True)
 
         timestamp = now.strftime("%Y%m%d_%H%M%S")
-        filename = f"auto_backup_{timestamp}.json"
+        filename = f"auto_backup_{timestamp}.zip"
         filepath = os.path.join(backup_dir, filename)
 
         # 收集数据（复用备份蓝图的逻辑，避免 import 循环则内联轻量版）
-        from blueprints.backup import _collect_all_data
+        from blueprints.backup import _collect_all_data, write_backup_archive
         all_data = _collect_all_data(baby_id=None)
         all_data["note"] = f"自动备份（间隔 {_auto_backup_state['interval_hours']} 小时）"
         all_data["backup_type"] = "auto"
 
-        with open(filepath, "w", encoding="utf-8") as f:
-            import json as _json
-            _json.dump(all_data, f, ensure_ascii=False, indent=2)
+        write_backup_archive(filepath, all_data, baby_id=None)
 
         # 清理旧备份：只清自动备份这一类，手动备份不受影响
         keep = max(1, int(_auto_backup_state.get("keep_count", 10)))
