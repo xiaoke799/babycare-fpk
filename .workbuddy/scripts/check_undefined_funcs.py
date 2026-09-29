@@ -82,6 +82,71 @@ def _skip_quoted(src: str, i: int, quote: str) -> int:
     return i
 
 
+# 这些关键字后面出现 `/` 一定是正则（而不是除法）
+REGEX_PRECEDING_KEYWORDS = {
+    "return", "typeof", "instanceof", "in", "of", "new", "delete", "void",
+    "case", "do", "else", "yield", "await", "throw",
+}
+
+
+def _is_regex_start(src: str, i: int) -> bool:
+    """判断 src[i] == '/' 是不是正则字面量的起点。
+
+    JS 里 `/` 既是除法也是正则起点，标准做法是看前一个有效 token：
+    运算符 / 左括号 / 逗号 / 冒号 / 关键字之后 => 正则；标识符或数字之后 => 除法。
+
+    为什么必须做这一步（2026-09-29 实测踩坑）：日记渲染里有
+    ``t.replace(/`([^`]+)`/g, ...)``——正则内部含反引号，词法扫描器会把它
+    当成模板字符串起点，一路吞掉后续 62 行代码，把 renderDiaryContent /
+    diaryPreviewText 两个真实存在的函数定义"吃掉"，于是被误报成未定义。
+    同一类问题还有 `/^https?:\\/\\//` 里的 `//` 被当成行注释。
+    """
+    j = i - 1
+    while j >= 0 and src[j] in " \t\r\n":
+        j -= 1
+    if j < 0:
+        return True
+    c = src[j]
+    if c in "(,=:[!&|?{};+-*%~^<>":
+        return True
+    if c == "/":
+        return False  # a / b 的除法（也可能是正则，保守按除法）
+    m = re.search(r"([A-Za-z_$][\w$]*)$", src[: j + 1])
+    if m and m.group(1) in REGEX_PRECEDING_KEYWORDS:
+        return True
+    return False
+
+
+def _skip_regex(src: str, i: int) -> int:
+    """src[i] == '/' 且已判定为正则起点，返回正则（含标志位）结束后的下标。"""
+    n = len(src)
+    i += 1
+    in_class = False
+    while i < n:
+        c = src[i]
+        if c == "\\":
+            i += 2
+            continue
+        if c == "\n":
+            return i  # 正则不跨行，视为未闭合，就地停下
+        if in_class:
+            if c == "]":
+                in_class = False
+            i += 1
+            continue
+        if c == "[":
+            in_class = True
+            i += 1
+            continue
+        if c == "/":
+            i += 1
+            break
+        i += 1
+    while i < n and src[i] in "gimsuyd":  # 正则标志
+        i += 1
+    return i
+
+
 def strip_noise(src: str) -> str:
     """去掉注释与字符串字面量，只留代码骨架。
 
@@ -121,13 +186,25 @@ def strip_noise(src: str) -> str:
             continue
 
         # ---- 代码上下文 ----
-        if c == "/" and i + 1 < n and src[i + 1] == "/":
-            j = src.find("\n", i)
-            i = n if j < 0 else j
-            continue
-        if c == "/" and i + 1 < n and src[i + 1] == "*":
-            j = src.find("*/", i + 2)
-            i = n if j < 0 else j + 2
+        if c == "/":
+            # 顺序要紧：JS 里 `//` 与 `/*` 恒为注释（不存在以 `//` 开头的合法正则），
+            # 必须**先判注释再判正则**——反过来会把行注释当成空正则吃掉，
+            # 注释正文反而变成代码，里面的 `/`、引号、反引号继续污染词法状态
+            # （2026-09-29 实测：反序时 12196 行起 37 个函数定义被吞）。
+            if i + 1 < n and src[i + 1] == "/":
+                j = src.find("\n", i)
+                i = n if j < 0 else j
+                continue
+            if i + 1 < n and src[i + 1] == "*":
+                j = src.find("*/", i + 2)
+                i = n if j < 0 else j + 2
+                continue
+            if _is_regex_start(src, i):
+                i = _skip_regex(src, i)
+                out.append('""')  # 正则整体抹掉，内部引号/反引号不再干扰
+                continue
+            out.append(c)  # 除法
+            i += 1
             continue
         if c in "'\"":
             i = _skip_quoted(src, i, c)

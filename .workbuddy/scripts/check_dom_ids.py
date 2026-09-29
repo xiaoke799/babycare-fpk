@@ -50,6 +50,65 @@ def git_show(path):
     return out.stdout.decode('utf-8', 'replace')
 
 
+def fn_sentinel_protected(src, existing):
+    """函数级哨兵：函数开头 `if (!document.getElementById('X')) return;` 且 X 确实不存在。
+
+    函数一开头就退出，函数体内**所有**引用都不会执行，等效于整体保护 ——
+    不必要求每个 id 各自带 `?.`。（2026-09-29 实测：initAllergyTest 用
+    allergyTestModal 当哨兵，护住 allergyTestForm / allergyDay / allergyStatus
+    等 5 个节点；只认「同一 id 的哨兵」会把它们全误报成会抛错。）
+
+    只看函数体前 800 字符，避免把函数深处的无关判空也算成哨兵。
+    """
+    protected = set()
+    starts = [m.start() for m in re.finditer(
+        r"(?m)^(?:async\s+)?function\s+[A-Za-z_$][\w$]*", src)]
+    if not starts:
+        return protected
+    for a, b in zip(starts, starts[1:] + [len(src)]):
+        head = src[a:min(b, a + 800)]
+        sids = re.findall(
+            r"if\s*\(\s*!\s*document\.getElementById\(\s*['\"]([A-Za-z0-9_\-]+)['\"]\s*\)\s*\)\s*return",
+            head)
+        # 哨兵节点必须确实缺失，函数才会真的提前 return
+        if not any(s not in existing for s in sids):
+            continue
+        protected |= set(re.findall(
+            r"getElementById\(\s*['\"]([A-Za-z0-9_\-]+)['\"]", src[a:b]))
+    return protected
+
+
+def dynamic_ids(src):
+    """JS 里动态生成的节点 id（弹窗、列表项等的模板字符串）。
+
+    这些 id 在 index.html 里必然找不到，但运行时由 showModal/render 插进 DOM，
+    属于**合法存在**。不把它们算作「已定义」，弹窗类代码会被成片误报。
+    （2026-09-29 实测：quickCustomAmount / amountLabel 就是这类，
+    且调用处还带 ?. 与 if 判空，本来就抛不了错。）
+    """
+    return set(re.findall(r'id\s*=\s*["\']([A-Za-z0-9_\-]+)["\']', src))
+
+
+def guarded_by_variable(src, ident):
+    """先用变量接住再判空，也算保护。
+
+    写法如 `const b = getElementById('x'); if (b) {...}` —— 比 `?.` 更彻底
+    （判空后才用，缺失时整段跳过）。只认 `?.` 会把这种写法误报成风险。
+    """
+    m = re.search(
+        r"(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*document\.getElementById\(\s*['\"]"
+        + re.escape(ident) + r"['\"]\s*\)", src)
+    if not m:
+        return False
+    var = re.escape(m.group(1))
+    return any(re.search(p, src) for p in (
+        r"if\s*\(\s*!\s*" + var + r"\s*\)",
+        r"if\s*\(\s*" + var + r"\s*\)",
+        var + r"\s*\?\.",
+        var + r"\s*&&",
+    ))
+
+
 def guarded_by_sentinel(src, ident):
     """函数开头写 `if (!document.getElementById('x')) return;` 也算保护。
 
@@ -67,7 +126,10 @@ def main():
     risky = js_ids(js, safe_only=True)
     # 用变量接住再 if 判断（如 const b = getElementById('x'); if (b) ...）也算保护
     risky = {i for i in risky if not guarded_by_sentinel(js, i)}
-    missing_now = sorted(risky - have)
+    risky = {i for i in risky if not guarded_by_variable(js, i)}
+    risky -= fn_sentinel_protected(js, have)
+    injected = dynamic_ids(js)
+    missing_now = sorted(risky - have - injected)
 
     old_js = git_show('app/frontend/js/app.js')
     old_html = git_show('app/frontend/index.html')
@@ -76,11 +138,16 @@ def main():
         for i in missing_now:
             print('  MISSING', i)
         return 0
-    missing_old = set(js_ids(old_js, safe_only=True) - html_ids(old_html))
+    # 旧版本用同一套口径算，否则「旧版本来就报、现在修好了」会被误当成新债
+    old_risky = js_ids(old_js, safe_only=True)
+    old_risky = {i for i in old_risky if not guarded_by_sentinel(old_js, i)}
+    old_risky = {i for i in old_risky if not guarded_by_variable(old_js, i)}
+    old_risky -= fn_sentinel_protected(old_js, html_ids(old_html))
+    missing_old = set(old_risky - html_ids(old_html) - dynamic_ids(old_js))
     new_missing = [i for i in missing_now if i not in missing_old]
 
-    print('JS 引用 id 数：%d（其中无 ?. 保护的：%d），HTML 定义 id 数：%d'
-          % (len(used), len(risky), len(have)))
+    print('JS 引用 id 数：%d（其中无保护的：%d），HTML 定义 id 数：%d，JS 动态注入：%d'
+          % (len(used), len(risky), len(have), len(injected)))
     print('会真抛错的缺失：%d（其中本次新增：%d）' % (len(missing_now), len(new_missing)))
     if new_missing:
         print('\n>>> NEW（本次改动引入，必须处理）：')

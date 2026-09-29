@@ -222,8 +222,23 @@ chk("宫格渲染会插分组标题（JS + CSS 都在）",
     "hub-group-title" in js and ".hub-group-title {" in css)
 chk("组名与图标同行（.hub-group flex，不做跨整行标题）",
     "hub-group-items" in js and ".hub-group-items {" in css)
-chk("桌面端没有再把图标按整屏均分（不许出现 hub-grid 的 grid-template-columns）",
-    not re.search(r"\.hub-grid\s*\{[^}]*grid-template-columns", css))
+# 桌面端真正要防的是「图标被按整屏宽度拉伸」：
+#   - 图标容器 .hub-group-items 必须是 flex 且图标定宽（一旦写网格列就会被拉宽）
+#   - 分组容器 .hub-grid 允许分两栏并排（把整页宽度用起来），但列数不得超过 2
+# 旧判据是「hub-grid 出现 grid-template-columns 就报错」，会把上面这种
+# 「分组两栏 + 图标仍定宽」的合理布局误判成回归（2026-09-29 实测）。
+# 判「允许」而不是判「禁止」：写成负向前瞻 `(?!repeat\(\s*[12]\s*,)` 会被正则回溯绕过
+# （`\s*` 少吞一个空格，前瞻就在空白处成立，于是合法写法也被判违规）。
+_HUB_GRID_BLOCKS = re.findall(r"\.hub-grid\s*\{([^}]*)\}", css)
+_HUB_GRID_OK = re.compile(r"grid-template-columns\s*:\s*repeat\(\s*[12]\s*,")
+_HUB_GRID_BAD = [
+    b for b in _HUB_GRID_BLOCKS
+    if "grid-template-columns" in b and not _HUB_GRID_OK.search(b)]
+chk("桌面端图标没被按整屏均分（图标容器 flex 定宽，分组最多两栏）",
+    not _HUB_GRID_BAD
+    and not re.search(r"\.hub-group-items\s*\{[^}]*grid-template-columns", css)
+    and re.search(r"\.hub-group-items\s+\.nav-item\s*\{\s*width:\s*\d+px", css)
+    is not None)
 chk("记录栏 6 个分组标题",
     titles_in(rec) == ['喂养', '睡眠', '日常', '发育', '生活', '健康'])
 chk("成长栏 4 个分组标题",
