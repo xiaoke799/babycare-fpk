@@ -74,6 +74,11 @@ with client.session_transaction() as sess:
 
 NO = 999999  # 绝不可能存在的 id
 
+# 删除宝宝现在必须先过安全码（防误删）。先设好码，再发 DELETE + body，
+# 才能测到「id 不存在 → 404」这一步；否则会停在 403 安全码校验。
+r = client.put("/api/settings/safety-code", json={"code": "2580"})
+check("设置删除安全码（前置）", r.status_code == 200, r.get_json())
+
 # (方法只会有 DELETE, 路径, 说明)
 CASES = [
     # ---- 无 baby 前缀：按 record_id 删 ----
@@ -124,7 +129,11 @@ CASES = [
 
 print("\n=== 1. 删不存在的 id 必须回 404（而不是 200 + success）===")
 for url, label in CASES:
-    r = client.delete(url)
+    # 宝宝本体：删除带安全码，其余接口不需要
+    if url == f"/api/babies/{NO}":
+        r = client.delete(url, json={"safety_code": "2580"})
+    else:
+        r = client.delete(url)
     try:
         d = r.get_json()
     except Exception:

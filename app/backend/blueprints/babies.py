@@ -7,9 +7,10 @@
 """
 
 from flask import Blueprint, request, jsonify
-from utils import get_db, get_baby_age, get_baby_age_months, row_to_dict, rows_to_list
+from utils import get_db, get_baby_age, get_baby_age_months, row_to_dict, rows_to_list, json_body
 from user_context import require_admin
 from constants import BABY_SCOPED_TABLES
+import safety_code
 
 bp = Blueprint("babies", __name__, url_prefix="/api/babies")
 
@@ -70,11 +71,93 @@ def add_baby():
     return jsonify({"success": True, "data": result})
 
 
+def _validate_baby_payload(data, partial=False, current=None):
+    """校验宝宝资料。partial=True 时只校验传入了的字段；current 为库中现值。"""
+    if not isinstance(data, dict):
+        return "请求格式错误"
+    if not partial and (not data.get("name") or not data.get("birthday")):
+        return "请填写宝宝昵称和生日"
+    if "name" in data:
+        name = (data.get("name") or "").strip()
+        if not name:
+            return "请填写宝宝昵称"
+        if len(name) > 50:
+            return "昵称不超过 50 字"
+    if "birthday" in data:
+        birthday = (data.get("birthday") or "").strip()
+        if not birthday:
+            return "请填写生日"
+        if len(birthday) > 20:
+            return "生日格式不正确"
+    if "gender" in data and data.get("gender") not in ("boy", "girl", "other"):
+        return "性别取值不正确"
+    birthday_val = data.get("birthday") or (current or {}).get("birthday") or ""
+    if "due_date" in data and data.get("due_date"):
+        due = str(data["due_date"])
+        if len(due) > 20:
+            return "预产期格式不正确"
+        if birthday_val and due > str(birthday_val):
+            return "预产期不能晚于生日"
+    return None
+
+
+@bp.route("/<int:baby_id>", methods=["PUT"])
+def update_baby(baby_id):
+    """修改宝宝信息（昵称 / 生日 / 性别 / 预产期）"""
+    data = request.get_json()
+    db = get_db()
+    existing = db.execute("SELECT * FROM babies WHERE id = ?", (baby_id,)).fetchone()
+    if not existing:
+        return jsonify({"success": False, "message": "宝宝不存在"}), 404
+
+    err = _validate_baby_payload(data, partial=True, current=row_to_dict(existing))
+    if err:
+        return jsonify({"success": False, "message": err}), 400
+    if not any(k in data for k in ("name", "birthday", "gender", "due_date")):
+        return jsonify({"success": False, "message": "没有需要更新的字段"}), 400
+
+    fields = []
+    values = []
+    for key in ("name", "birthday", "gender", "due_date"):
+        if key in data:
+            fields.append(f"{key} = ?")
+            if key == "name":
+                values.append(data[key].strip())
+            elif key == "due_date":
+                values.append(data.get("due_date") or None)
+            else:
+                values.append(data[key])
+    values.append(baby_id)
+
+    db.execute(
+        f"UPDATE babies SET {', '.join(fields)}, updated_at = datetime('now', 'localtime') WHERE id = ?",
+        tuple(values),
+    )
+    db.commit()
+
+    baby = db.execute("SELECT * FROM babies WHERE id = ?", (baby_id,)).fetchone()
+    result = row_to_dict(baby)
+    result["age"] = get_baby_age(result.get("birthday", ""))
+    result["age_months"] = get_baby_age_months(
+        result.get("birthday", ""), result.get("due_date")
+    )
+    return jsonify({"success": True, "data": result})
+
+
 @bp.route("/<int:baby_id>", methods=["DELETE"])
 @require_admin
 def delete_baby(baby_id):
-    """删除宝宝及其所有记录（危险操作，仅管理员）"""
+    """删除宝宝及其所有记录（危险操作，仅管理员，且必须通过安全码）"""
+    data = json_body()
+    ok, msg = safety_code.verify(get_db(), data.get("safety_code", ""))
+    if not ok:
+        return jsonify({"success": False, "message": msg, "needSafetyCode": True}), 403
+
     db = get_db()
+    # 先查存在，避免「假成功」：删不存在的 id 也回 success
+    existing = db.execute("SELECT id, name FROM babies WHERE id = ?", (baby_id,)).fetchone()
+    if not existing:
+        return jsonify({"success": False, "message": "宝宝不存在"}), 404
     cur = db.execute("DELETE FROM babies WHERE id = ?", (baby_id,))
     db.commit()
     if cur.rowcount == 0:
