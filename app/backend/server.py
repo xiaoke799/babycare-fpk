@@ -1552,6 +1552,7 @@ def require_login():
     """
     全局登录校验：
     - 网关模式：X-Trim-Userid 头部存在即视为已认证（fnOS 网关已验证）
+    - 集成 Token：Authorization: Bearer/Token <api_token>（Home Assistant 等）
     - 开发模式：回退到 session-based 认证
     """
     path = request.path
@@ -1559,6 +1560,15 @@ def require_login():
             or path.startswith(_AUTH_WHITELIST_PREFIXES)
             or path in _AUTH_WHITELIST_API):
         return None
+
+    # 外部集成（HA）API Token
+    try:
+        from api_token import extract_bearer_token, verify_api_token
+        if verify_api_token(extract_bearer_token()):
+            request.integration_auth = True
+            return None
+    except Exception:
+        pass
 
     # 网关模式：只有请求确实带网关前缀（BABYCARE_GATEWAY_TRUSTED）时，
     # X-Trim-Userid 才可信。直连 socket 的请求即使伪造该头也不会被采信，

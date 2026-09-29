@@ -72,6 +72,14 @@ def get_current_user() -> UserContext:
         user.is_admin = trim_is_admin.lower() == "true"
         user.is_authenticated = True
         user.source = "gateway"
+    elif getattr(request, "integration_auth", False):
+        # 外部集成（HA 等）API Token：已认证但非管理员
+        # 写接口仍按路由上的 require_admin 控制，集成 Token 不能越权改设置/删宝宝
+        user.user_id = "integration"
+        user.username = "API 集成"
+        user.is_admin = False
+        user.is_authenticated = True
+        user.source = "api_token"
     else:
         # 2. 回退到会话认证（本地密码登录）
         from flask import session

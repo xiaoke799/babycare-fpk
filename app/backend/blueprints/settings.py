@@ -13,6 +13,7 @@ from flask import Blueprint, request, jsonify, current_app
 from utils import get_db, row_to_dict, rows_to_list, json_body
 from logger import get_logger, get_recent_logs, get_log_stats, clear_logs
 from user_context import require_admin
+import safety_code
 # 导出表清单与备份蓝图共用一份（constants.py），避免两处各写一份走岔
 from constants import EXPORT_TABLES, BABY_SCOPED_TABLES as _BABY_SCOPED_TABLES
 
@@ -60,12 +61,57 @@ def start_timer(baby_id):
 
 @bp.route('/api/timers/<int:timer_id>/stop', methods=['POST'])
 def stop_timer(timer_id):
-    """停止计时器"""
+    """停止计时器；可选 body.create_record=true 时按 timer_type 写入喂奶/睡眠记录。"""
     now = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
     db = get_db()
+    timer = db.execute('SELECT * FROM timers WHERE id = ?', (timer_id,)).fetchone()
+    if not timer:
+        return jsonify({'success': False, 'message': '计时器不存在'}), 404
     db.execute('UPDATE timers SET end_time = ?, is_active = 0 WHERE id = ?', (now, timer_id))
+
+    created = None
+    data = json_body()
+    if data.get('create_record') and timer['is_active'] in (1, True, '1'):
+        start = (timer['start_time'] or now)[:19].replace('T', ' ')
+        end = now[:19].replace('T', ' ')
+        baby_id = timer['baby_id']
+        ttype = (timer['timer_type'] or '').lower()
+        try:
+            if ttype == 'sleep':
+                try:
+                    s0 = datetime.datetime.strptime(start[:19], '%Y-%m-%d %H:%M:%S')
+                    e0 = datetime.datetime.strptime(end[:19], '%Y-%m-%d %H:%M:%S')
+                    if e0 < s0:
+                        e0 += datetime.timedelta(days=1)
+                    duration = int((e0 - s0).total_seconds() // 60)
+                except Exception:
+                    duration = 0
+                cur = db.execute(
+                    '''INSERT INTO sleep_records
+                       (baby_id, start_time, end_time, duration_minutes, note)
+                       VALUES (?, ?, ?, ?, ?)''',
+                    (baby_id, start, end, duration, f'计时器#{timer_id}'),
+                )
+                created = {'table': 'sleep_records', 'id': cur.lastrowid}
+            elif ttype in ('feeding', 'pumping', 'solid'):
+                feed_type = 'bottle' if ttype == 'feeding' else ttype
+                cur = db.execute(
+                    '''INSERT INTO feeding_records
+                       (baby_id, start_time, end_time, feeding_type, note)
+                       VALUES (?, ?, ?, ?, ?)''',
+                    (baby_id, start, end, feed_type, f'计时器#{timer_id}'),
+                )
+                created = {'table': 'feeding_records', 'id': cur.lastrowid}
+        except Exception as e:
+            db.rollback()
+            return jsonify({'success': False, 'message': f'计时器已停止，但写入记录失败: {e}'}), 500
+
     db.commit()
-    return jsonify({'success': True, 'message': '计时器已停止'})
+    return jsonify({
+        'success': True,
+        'message': '计时器已停止' + ('，记录已生成' if created else ''),
+        'record': created,
+    })
 
 
 # ==================== API: 设置 ====================
@@ -95,6 +141,66 @@ def update_settings():
         )
     db.commit()
     return jsonify({'success': True, 'message': '设置已更新'})
+
+
+# ==================== API: 删除安全码 ====================
+
+@bp.route('/api/settings/safety-code', methods=['GET'])
+@require_admin
+def get_safety_code_status():
+    """查询是否已设置删除安全码（不返回码本身）
+
+    与同组的 PUT/DELETE 保持一致：集成 Token（HA 等）已认证但非管理员，
+    不该知道本机有没有设安全码。
+    """
+    db = get_db()
+    return jsonify({'success': True, 'data': {'enabled': safety_code.is_set(db)}})
+
+
+@bp.route('/api/settings/safety-code', methods=['PUT'])
+@require_admin
+def set_safety_code():
+    """设置/修改删除安全码（仅管理员）"""
+    data = json_body()
+    code = data.get('code', '')
+    ok, msg = safety_code.set_code(get_db(), code)
+    if not ok:
+        return jsonify({'success': False, 'message': msg}), 400
+    get_db().commit()
+    return jsonify({'success': True, 'message': msg, 'data': {'enabled': True}})
+
+
+@bp.route('/api/settings/integration-token', methods=['GET', 'POST', 'DELETE'])
+@require_admin
+def integration_token():
+    """智能家居集成 API Token：GET 状态 / POST 重新生成 / DELETE 吊销。
+
+    明文 Token 只在 POST 时返回一次，之后仅能查是否已配置。
+    """
+    from api_token import generate_api_token, has_api_token, revoke_api_token
+
+    if request.method == 'GET':
+        return jsonify({'success': True, 'data': {'configured': has_api_token()}})
+    if request.method == 'DELETE':
+        revoke_api_token()
+        return jsonify({'success': True, 'message': 'Token 已吊销'})
+    token = generate_api_token()
+    return jsonify({
+        'success': True,
+        'message': 'Token 已生成，请立即保存，不会再次显示',
+        'token': token,
+    })
+
+
+@bp.route('/api/settings/safety-code', methods=['DELETE'])
+@require_admin
+def clear_safety_code():
+    """清除删除安全码（清除后无法删除宝宝）"""
+    ok, msg = safety_code.clear_code(get_db())
+    if not ok:
+        return jsonify({'success': False, 'message': msg}), 400
+    get_db().commit()
+    return jsonify({'success': True, 'message': msg, 'data': {'enabled': False}})
 
 
 # ==================== API: 数据导入导出 ====================
