@@ -8,7 +8,7 @@
 
 from flask import Blueprint, request, jsonify
 from utils import get_db, get_baby_age, get_baby_age_months, row_to_dict, rows_to_list, json_body
-from user_context import require_admin
+from user_context import require_admin, require_not_integration
 from constants import BABY_SCOPED_TABLES
 import safety_code
 
@@ -51,8 +51,17 @@ def get_baby(baby_id):
 
 
 @bp.route("", methods=["POST"])
+@require_not_integration
 def add_baby():
-    """添加宝宝"""
+    """添加宝宝
+
+    集成 Token（Home Assistant 等）按对外承诺只能读数据 + 写记录类
+    （喂养/睡眠/尿布/生长/计时），不能增改宝宝档案。此前这里没挂守卫，
+    与 ha-integration/README 的承诺不符。
+
+    这里刻意用 require_not_integration 而不是 require_admin：
+    家庭里的非管理员成员也是真人，本就该能添加宝宝，不该被机器凭证的规则误伤。
+    """
     data = request.get_json()
     if not data or not data.get("name") or not data.get("birthday"):
         return jsonify({"success": False, "message": "请填写宝宝昵称和生日"}), 400
@@ -102,8 +111,13 @@ def _validate_baby_payload(data, partial=False, current=None):
 
 
 @bp.route("/<int:baby_id>", methods=["PUT"])
+@require_not_integration
 def update_baby(baby_id):
-    """修改宝宝信息（昵称 / 生日 / 性别 / 预产期）"""
+    """修改宝宝信息（昵称 / 生日 / 性别 / 预产期）
+
+    宝宝档案属于资料变更，集成 Token 不该能改（同 add_baby）。
+    同样用 require_not_integration：非管理员的家庭成员仍可改。
+    """
     data = request.get_json()
     db = get_db()
     existing = db.execute("SELECT * FROM babies WHERE id = ?", (baby_id,)).fetchone()

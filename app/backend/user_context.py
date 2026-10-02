@@ -137,3 +137,31 @@ def require_admin(f):
             }), 403
         return f(*args, **kwargs)
     return wrapper
+
+
+def require_not_integration(f):
+    """装饰器：只拦外部集成 Token（Home Assistant 等），真人用户一律放行。
+
+    与 require_admin 的区别：fnOS 上家庭里的非管理员成员（网关
+    X-Trim-Isadmin=false）也是真人，添加宝宝、编辑宝宝资料这类操作他们本就该
+    能用；真正要挡的是机器凭证。所以这里判来源而不是判管理员身份。
+    """
+    from functools import wraps
+    from flask import jsonify
+
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        user = get_current_user()
+        if not user.is_authenticated:
+            return jsonify({
+                "success": False,
+                "message": "请先登录",
+                "needAuth": True,
+            }), 401
+        if user.source == "api_token":
+            return jsonify({
+                "success": False,
+                "message": "集成 Token 无权执行此操作",
+            }), 403
+        return f(*args, **kwargs)
+    return wrapper
