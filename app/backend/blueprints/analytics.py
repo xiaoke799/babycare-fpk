@@ -685,6 +685,223 @@ def get_timeline(baby_id):
     return jsonify({"success": True, "data": events})
 
 
+@bp.route("/api/babies/<int:baby_id>/memories/today", methods=["GET"])
+def get_memories_today(baby_id):
+    """「那年今天」：往年同月同日发生过什么。
+
+    与时间线共用一套数据源（_TIMELINE_SOURCES，18 类），只是把过滤条件
+    从「某段日期」换成「月-日 相同且年份更早」。所以不只是日记，
+    喂养/睡眠/里程碑/出牙/照片全都能命中——比只翻日记更有看头。
+
+    参数：
+      date  —— 可选，指定「哪一天的往年」（YYYY-MM-DD），默认今天。
+               首页选了某一天回看时，就能顺带看「那年的这一天」。
+      limit —— 可选，默认 30，上限 200。
+
+    库里时间列既有 'YYYY-MM-DD'（日期列）也有 'YYYY-MM-DD HH:MM:SS'（时间列），
+    strftime 两种都能吃，不必分支处理。
+    """
+    db = get_db()
+    baby = db.execute("SELECT id FROM babies WHERE id = ?", (baby_id,)).fetchone()
+    if not baby:
+        return jsonify({"success": False, "message": "宝宝不存在"}), 404
+
+    limit, err = _get_int_arg("limit", 30, minimum=1, maximum=200)
+    if err:
+        return err
+
+    date_arg = (request.args.get("date") or "").strip()
+    if date_arg:
+        try:
+            anchor = datetime.datetime.strptime(date_arg[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify({"success": False, "message": "日期格式不正确"}), 400
+    else:
+        anchor = datetime.date.today()
+
+    md = anchor.strftime("%m-%d")
+    anchor_year = anchor.year
+
+    events = []
+    for type_key, table, time_col, columns, extra_where in _TIMELINE_SOURCES:
+        select_sql = "".join(", {} AS {}".format(expr, alias) for alias, expr in columns)
+        q = (
+            "SELECT id, {t} AS time{cols} FROM {tbl} WHERE baby_id = ? "
+            "AND strftime('%m-%d', {t}) = ? "
+            "AND CAST(strftime('%Y', {t}) AS INTEGER) < ?"
+        ).format(t=time_col, cols=select_sql, tbl=table)
+        params = [baby_id, md, anchor_year]
+        if extra_where:
+            q += " AND " + extra_where
+
+        # 单表失败不能让整块回忆挂掉（列名/表名对不上就跳过它）
+        try:
+            rows = db.execute(q, params).fetchall()
+        except Exception as e:
+            logger.warning("那年今天跳过数据源 %s(%s)：%s", type_key, table, e)
+            continue
+
+        for r in rows:
+            if not r["time"]:
+                continue  # 时间列为空的历史脏数据，算不出「几年前的今天」
+            try:
+                year = int(str(r["time"])[:4])
+            except ValueError:
+                continue
+            ev = {
+                "id": r["id"],
+                "type": type_key,
+                "time": r["time"],
+                "years_ago": anchor_year - year,
+            }
+            for alias, _expr in columns:
+                ev[alias] = r[alias]
+            events.append(ev)
+
+    events.sort(key=lambda x: x["time"], reverse=True)
+    events = events[:limit]
+    return jsonify({
+        "success": True,
+        "data": events,
+        "date": anchor.isoformat(),
+        "month_day": md,
+        "count": len(events),
+    })
+
+
+def _count_in_year(db, table, time_col, year, baby_id, extra_where=""):
+    """按年计数。表/列不存在就当 0 —— 年度报告是锦上添花，不能因为一张表缺列整个挂掉。"""
+    try:
+        q = ("SELECT COUNT(*) AS c FROM {} WHERE baby_id = ? "
+             "AND CAST(strftime('%Y', {}) AS INTEGER) = ?").format(table, time_col)
+        if extra_where:
+            q += " AND " + extra_where
+        row = db.execute(q, (baby_id, year)).fetchone()
+        return row["c"] or 0
+    except Exception as e:
+        logger.warning("年度统计跳过 %s：%s", table, e)
+        return 0
+
+
+@bp.route("/api/babies/<int:baby_id>/yearly-report", methods=["GET"])
+def get_yearly_report(baby_id):
+    """年度成长报告：把一年的记录汇成一份能回头看的东西。
+
+    数据攒久了是需要回望的——这也是本地私有存储真正的价值所在。
+    统计全部来自库里真实数据；AI 总结可选（summary=1），
+    未配置模型或调用失败时只给数据，不影响报告本身。
+
+    参数：
+      year    —— 可选，默认今年
+      summary —— 可选，1 表示附带 AI 文字回顾
+    """
+    db = get_db()
+    baby = db.execute("SELECT * FROM babies WHERE id = ?", (baby_id,)).fetchone()
+    if not baby:
+        return jsonify({"success": False, "message": "宝宝不存在"}), 404
+
+    year, err = _get_int_arg("year", datetime.date.today().year,
+                             minimum=1970, maximum=datetime.date.today().year)
+    if err:
+        return err
+    want_summary = (request.args.get("summary") or "") == "1"
+
+    y = str(year)
+    next_y = str(year + 1)
+
+    def _range_where(time_col):
+        """时间列既有日期也有时间戳，统一用 date() 比较"""
+        return "date({}) >= ? AND date({}) < ?".format(time_col, time_col)
+
+    def _sum(table, col, time_col):
+        try:
+            q = ("SELECT SUM({}) AS s FROM {} WHERE baby_id = ? AND {}").format(
+                col, table, _range_where(time_col))
+            row = db.execute(q, (baby_id, y + "-01-01", next_y + "-01-01")).fetchone()
+            return row["s"] or 0
+        except Exception as e:
+            logger.warning("年度求和跳过 %s.%s：%s", table, col, e)
+            return 0
+
+    feeding_count = _count_in_year(db, "feeding_records", "start_time", year, baby_id)
+    feeding_ml = round(float(_sum("feeding_records", "amount", "start_time") or 0))
+    sleep_count = _count_in_year(db, "sleep_records", "start_time", year, baby_id)
+    sleep_minutes = _sum("sleep_records", "duration_minutes", "start_time")
+    sleep_hours = round(float(sleep_minutes or 0) / 60, 1)
+    diaper_count = _count_in_year(db, "diaper_records", "change_time", year, baby_id)
+    diary_count = _count_in_year(db, "diary_entries", "entry_date", year, baby_id)
+    photo_count = _count_in_year(db, "photos", "photo_date", year, baby_id)
+    milestone_count = _count_in_year(db, "milestones", "achieved_date", year, baby_id)
+    vaccine_count = _count_in_year(db, "vaccine_details", "actual_date", year, baby_id)
+    checkup_count = _count_in_year(db, "checkup_records", "checkup_date", year, baby_id)
+    teething_count = _count_in_year(db, "teething_records", "erupt_date", year, baby_id)
+
+    # 年初/年末的身高体重：一年里最早与最近的一次测量
+    height_from = height_to = weight_from = weight_to = None
+    try:
+        rows = db.execute(
+            "SELECT height, weight FROM growth_records WHERE baby_id = ? AND {} "
+            "ORDER BY date(record_date) ASC".format(_range_where("record_date")),
+            (baby_id, y + "-01-01", next_y + "-01-01"),
+        ).fetchall()
+        if rows:
+            height_from = rows[0]["height"]
+            weight_from = rows[0]["weight"]
+            height_to = rows[-1]["height"]
+            weight_to = rows[-1]["weight"]
+    except Exception as e:
+        logger.warning("年度生长数据读取失败：%s", e)
+
+    milestone_titles = []
+    try:
+        mrows = db.execute(
+            "SELECT title, achieved_date FROM milestones WHERE baby_id = ? AND {} "
+            "ORDER BY date(achieved_date) ASC".format(_range_where("achieved_date")),
+            (baby_id, y + "-01-01", next_y + "-01-01"),
+        ).fetchall()
+        milestone_titles = [r["title"] for r in mrows if r["title"]]
+    except Exception as e:
+        logger.warning("年度里程碑读取失败：%s", e)
+
+    data = {
+        "year": year,
+        "baby_name": baby["name"],
+        "diary_count": diary_count,
+        "photo_count": photo_count,
+        "feeding_count": feeding_count,
+        "feeding_ml": feeding_ml,
+        "sleep_count": sleep_count,
+        "sleep_hours": sleep_hours,
+        "diaper_count": diaper_count,
+        "milestone_count": milestone_count,
+        "milestone_titles": milestone_titles,
+        "vaccine_count": vaccine_count,
+        "checkup_count": checkup_count,
+        "teething_count": teething_count,
+        "height_from": height_from,
+        "height_to": height_to,
+        "weight_from": weight_from,
+        "weight_to": weight_to,
+    }
+
+    summary = None
+    if want_summary:
+        try:
+            from ai_writer import generate_yearly_summary
+            from ai_engine import get_age_months
+            ok, text = generate_yearly_summary(
+                {"name": baby["name"],
+                 "age_months": get_age_months(baby["birthday"], baby["due_date"] if "due_date" in baby.keys() else None)},
+                data,
+            )
+            if ok:
+                summary = text
+        except Exception as e:
+            logger.warning("年度 AI 总结生成失败（报告仍返回数据）：%s", e)
+
+    return jsonify({"success": True, "data": data, "summary": summary})
+
+
 @bp.route("/api/babies/<int:baby_id>/percentiles", methods=["GET"])
 def get_percentiles(baby_id):
     """获取宝宝最新 WHO 生长百分位（早产儿自动使用纠正月龄）"""

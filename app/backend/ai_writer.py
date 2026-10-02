@@ -380,6 +380,53 @@ def generate_weekly_summary(baby_context: Dict[str, Any], weekly_data: Dict[str,
     return False, None
 
 
+def generate_yearly_summary(baby_context: Dict[str, Any], yearly_data: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+    """
+    生成年度成长报告的文字总结（本地模型优先，未配置时返回 False 由调用方降级）。
+
+    与周报的区别：年度报告是「回望」而不是「待办」——重点是这一年长了多少、
+    学会了什么、全家一起经历了什么，不写育儿建议那一套。
+
+    Args:
+        baby_context: 宝宝信息
+        yearly_data: 年度统计数据
+
+    Returns:
+        (success, summary_text)
+    """
+    milestones = yearly_data.get('milestone_titles') or []
+    milestone_txt = "、".join(milestones[:12]) if milestones else "（这一年没有记录里程碑）"
+
+    prompt = f"""你是一位育儿记录助手。请根据这一年的真实数据，写一段年度成长回顾。
+
+宝宝信息：
+姓名：{baby_context.get('name', '宝宝')}
+当前月龄：{baby_context.get('age_months', '?')} 个月
+
+{yearly_data.get('year', '?')} 年数据：
+- 写了 {yearly_data.get('diary_count', 0)} 篇日记，存了 {yearly_data.get('photo_count', 0)} 张照片
+- 喂奶 {yearly_data.get('feeding_count', 0)} 次，累计 {yearly_data.get('feeding_ml', 0)} ml
+- 睡眠 {yearly_data.get('sleep_count', 0)} 次，共 {yearly_data.get('sleep_hours', 0)} 小时
+- 换尿布 {yearly_data.get('diaper_count', 0)} 次
+- 身高：{yearly_data.get('height_from', '无数据')} → {yearly_data.get('height_to', '无数据')}
+- 体重：{yearly_data.get('weight_from', '无数据')} → {yearly_data.get('weight_to', '无数据')}
+- 这一年学会的：{milestone_txt}
+- 接种疫苗 {yearly_data.get('vaccine_count', 0)} 次，体检 {yearly_data.get('checkup_count', 0)} 次
+
+要求：
+1. 以「回望这一年」的口吻写给家长看，温但不煽情
+2. 必须引用上面的真实数字，不要编造数据里没有的事
+3. 点出这一年最值得记住的一两件事（从里程碑和日记数量里挑）
+4. 400-800 字，纯文本，不要用 Markdown 标题符号
+
+请生成年度成长回顾："""
+
+    ok, content = _call_llm_for_generation(prompt, max_tokens=1600)
+    if ok and content:
+        return True, content.strip()
+    return False, None
+
+
 # ==================== 更多记录类型的 AI 提取 ====================
 
 DIAPER_EXTRACTION_PROMPT = """你是一位婴儿护理记录助手。根据用户描述，提取换尿布记录的结构化信息。
