@@ -58,6 +58,33 @@
     background: linear-gradient(135deg, #1a2a4a, #2a1a3a);
 }
 
+/* ---- 深色下仍是「一块白板」的容器 ----
+   只处理容器型浅底（大块背景），小圆底/状态徽章那类浅色块保留原样：
+   它们本身是「浅底 + 高饱和前景」的配色，深色界面里作为强调色块反而是对的。
+   注意：二维码容器（.about-support-qr / .qr-zoom-overlay img）的白底
+   **必须保留**，扫码识别需要白底静区，别顺手一起"修"成深色。 */
+
+/* 生长曲线画布：canvas 不吃 CSS 变量，白底在深色下是一整块白板 */
+[data-theme="dark"] #whoChartCanvas {
+    background: var(--card-bg);
+}
+
+/* 自动换算提示框（原本浅蓝底） */
+[data-theme="dark"] .auto-calc {
+    background: #2C3A45;
+}
+
+/* 睡眠目标轨道 / 质量条的底槽（原本浅灰底） */
+[data-theme="dark"] .sleep-goal-track,
+[data-theme="dark"] .sleep-quality-bar {
+    background: #3A3634;
+}
+
+/* 只读形态的提示条（原本 #F7F0F4 浅底） */
+[data-theme="dark"] .only-view-hint {
+    background: var(--card-bg);
+}
+
 * {
     margin: 0;
     padding: 0;

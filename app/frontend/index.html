@@ -44,6 +44,18 @@
     <meta name="theme-color" content="#FFAD7A">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="育儿宝">
+<script>
+        // 主题预置：必须在样式生效前把 data-theme 定好，否则深色用户首屏会先闪一下浅色。
+        // 没手动选过时跟随系统（prefers-color-scheme），选过就以选择为准。
+        (function () {
+            try {
+                var saved = localStorage.getItem('babycare_theme');
+                var dark = saved ? saved === 'dark'
+                    : !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+            } catch (e) { /* 隐私模式下 localStorage 可能不可用，忽略即可 */ }
+        })();
+    </script>
 <link rel="stylesheet" href="/app/babycare-fpk/css/main.css">
     <script>
         // 网关前缀：优先从 URL 路径自动提取 /app/<应用名>，兜底为 /app/babycare-fpk

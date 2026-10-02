@@ -5628,7 +5628,7 @@ function drawWhoChart(refData, records, metric, sex) {
     ctx.clearRect(0, 0, w, h);
 
     if (refData.length === 0) {
-        ctx.fillStyle = '#999';
+        ctx.fillStyle = axisText;
         ctx.font = '14px sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText('暂无参考数据', w / 2, h / 2);
@@ -5645,10 +5645,10 @@ function drawWhoChart(refData, records, metric, sex) {
     const maxVal = Math.ceil(Math.max(...allValues) * 1.1);
 
     // 绘制网格和标签
-    ctx.strokeStyle = '#eee';
+    ctx.strokeStyle = gridLine;
     ctx.lineWidth = 1;
     ctx.font = '11px sans-serif';
-    ctx.fillStyle = '#999';
+    ctx.fillStyle = axisText;
     ctx.textAlign = 'right';
 
     const ySteps = 5;
@@ -5764,8 +5764,8 @@ function drawWhoChart(refData, records, metric, sex) {
                     ctx.lineWidth = 2.5;
                     ctx.stroke();
 
-                    // 数值标签
-                    ctx.fillStyle = '#2d3436';
+                    // 数值标签（深色底上必须换成浅色，否则数值看不见）
+                    ctx.fillStyle = isDarkChart ? '#F5EDE8' : '#2d3436';
                     ctx.font = 'bold 10px sans-serif';
                     ctx.textAlign = 'center';
                     ctx.fillText(val.toFixed(1), x, y - 12);
@@ -6082,6 +6082,12 @@ function loadClinicSummary() {
             milestoneHtml = data.recent_milestones.map(m =>
                 `<div class="clinic-milestone-item"> ${escapeHtml(m.achieved_date)} ${escapeHtml(m.title)}</div>`
             ).join('');
+    // canvas 是画上去的，不吃 CSS 变量：深色主题下要把网格线/文字改成深色底能看清的颜色，
+    // 否则 #eee 网格线在深色画布上直接消失。
+    const isDarkChart = document.documentElement.getAttribute('data-theme') === 'dark';
+    const axisText = isDarkChart ? '#B5A8A0' : '#999';
+    const gridLine = isDarkChart ? '#4A3A37' : '#eee';
+
         } else {
             milestoneHtml = '<p style="color:var(--text-light);font-size:12px;">暂无里程碑记录</p>';
         }
@@ -13011,25 +13017,39 @@ function handleBackupUpload(e) {
 }
 
 // ==================== 深色模式 ====================
-function initDarkMode() {
-    // 读取保存的主题设置
-    const savedTheme = localStorage.getItem('babycare_theme') || 'light';
-    if (savedTheme === 'dark') {
+
+/**
+ * 应用主题：切 data-theme、同步开关状态、同步移动端状态栏配色。
+ * 单独抽出来是因为三个地方要用：初始化、手动切换、系统偏好变化。
+ */
+function applyTheme(isDark, toggle) {
+    if (isDark) {
         document.documentElement.setAttribute('data-theme', 'dark');
-        const toggle = document.getElementById('darkModeToggle');
-        if (toggle) toggle.checked = true;
+    } else {
+        document.documentElement.removeAttribute('data-theme');
     }
 
-    // 绑定切换事件
-    document.getElementById('darkModeToggle')?.addEventListener('change', function() {
-        if (this.checked) {
-            document.documentElement.setAttribute('data-theme', 'dark');
-            localStorage.setItem('babycare_theme', 'dark');
-        } else {
-            document.documentElement.removeAttribute('data-theme');
-            localStorage.setItem('babycare_theme', 'light');
-        }
+function initDarkMode() {
+    const toggle = document.getElementById('darkModeToggle');
+    // 没手动选过（localStorage 里没有）就跟随系统；选过一律以选择为准
+    const saved = localStorage.getItem('babycare_theme');
+    const mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+    applyTheme(saved ? saved === 'dark' : !!(mq && mq.matches), toggle);
+
+    // 手动切换：写入偏好后，系统怎么变都不再覆盖用户的选择
+    toggle?.addEventListener('change', function() {
+        applyTheme(this.checked, toggle);
+        localStorage.setItem('babycare_theme', this.checked ? 'dark' : 'light');
     });
+
+    // 系统主题变化：只在用户从未手动选过时跟随
+    if (mq && mq.addEventListener) {
+        mq.addEventListener('change', function(e) {
+            if (!localStorage.getItem('babycare_theme')) {
+                applyTheme(e.matches, toggle);
+            }
+        });
+    }
 }
 
 // ==================== 睡眠预测 ====================
@@ -13479,6 +13499,11 @@ function createRainNode(ctx) {
     hp.frequency.value = 300;
 
     const lp = ctx.createBiquadFilter();
+    if (toggle) toggle.checked = !!isDark;
+    // 手机浏览器 / PWA 的地址栏配色跟着变，否则深色界面配一个橙色状态栏
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', isDark ? '#2A1F1E' : '#FFAD7A');
+}
     lp.type = 'lowpass';
     lp.frequency.value = 2600;
     lp.Q.value = 0.5;
