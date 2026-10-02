@@ -13,7 +13,7 @@
 import datetime
 from flask import Blueprint, request, jsonify
 
-from utils import get_db, json_body
+from utils import get_db, json_body, normalize_author
 from validators import (
     validate_enum, validate_text_length, validate_datetime, parse_datetime,
     VALID_SLEEP_QUALITY, NOTE_MAX_LENGTH,
@@ -134,16 +134,17 @@ def _clean_sleep_payload(data, existing=None):
 @bp.route("/api/babies/<int:baby_id>/sleep", methods=["POST"])
 def add_sleep_record(baby_id):
     """添加睡眠记录"""
-    clean, err = _clean_sleep_payload(json_body())
+    data = json_body()
+    clean, err = _clean_sleep_payload(data)
     if err:
         return jsonify({"success": False, "message": err}), 400
 
     db = get_db()
     cur = db.execute(
-        """INSERT INTO sleep_records (baby_id, start_time, end_time, duration_minutes, sleep_quality, is_nap, note)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO sleep_records (baby_id, start_time, end_time, duration_minutes, sleep_quality, is_nap, note, author)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (baby_id, clean["start_time"], clean["end_time"], clean["duration_minutes"],
-         clean["sleep_quality"], clean["is_nap"], clean["note"]),
+         clean["sleep_quality"], clean["is_nap"], clean["note"], normalize_author(data)),
     )
     db.commit()
     return jsonify({"success": True, "message": "记录已添加", "id": cur.lastrowid})

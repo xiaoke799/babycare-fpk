@@ -53,6 +53,7 @@ conn.executescript(
         note TEXT DEFAULT '',
         left_duration INTEGER DEFAULT NULL,
         right_duration INTEGER DEFAULT NULL,
+        author TEXT,
         created_at TEXT DEFAULT (datetime('now','localtime'))
     );
     CREATE TABLE pumping_records (

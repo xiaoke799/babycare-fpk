@@ -60,6 +60,7 @@ conn.executescript(
         sleep_quality TEXT DEFAULT NULL,
         is_nap INTEGER DEFAULT NULL,
         note TEXT DEFAULT '',
+        author TEXT,
         created_at TEXT DEFAULT (datetime('now','localtime'))
     );
     """

@@ -171,5 +171,21 @@ def scrub_secrets_from_settings_rows(rows):
     return scrubbed
 
 
+AUTHOR_MAX_LEN = 20
+
+
+def normalize_author(data):
+    """取「谁记的」字段：可选，空则存 None。
+
+    称呼是用户自己填的（妈妈/爸爸/奶奶），不做枚举白名单——
+    各家叫法不一样，写死反而逼用户将就。只做长度收口与空白清理。
+    返回 None 表示「没写」，老数据也是 NULL，前端按空处理。
+    """
+    v = str(data.get('author') or '').strip()
+    if not v:
+        return None
+    return v[:AUTHOR_MAX_LEN]
+
+
 # 为了向后兼容：从 server.py 导出的函数名称相同
 # blueprints 应改为 from utils import get_db, row_to_dict, ...

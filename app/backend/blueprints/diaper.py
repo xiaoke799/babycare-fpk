@@ -9,7 +9,7 @@
 import datetime
 from flask import Blueprint, request, jsonify
 
-from utils import get_db, json_body
+from utils import get_db, json_body, normalize_author
 from blueprints.analytics import _parse_datetime
 from validators import (validate_enum, validate_text_length, validate_datetime,
                         VALID_DIAPER_TYPES, NOTE_MAX_LENGTH)
@@ -70,9 +70,9 @@ def add_diaper_record(baby_id):
     db = get_db()
     db.execute(
         """INSERT INTO diaper_records
-           (baby_id, change_time, diaper_type, color, skin_condition, brand, note)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (baby_id,) + tuple(values),
+           (baby_id, change_time, diaper_type, color, skin_condition, brand, note, author)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (baby_id,) + tuple(values) + (normalize_author(data),),
     )
     db.commit()
     return jsonify({"success": True, "message": "记录已添加"})

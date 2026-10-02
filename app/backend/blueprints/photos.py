@@ -14,7 +14,7 @@ import datetime
 
 from flask import Blueprint, request, jsonify, send_file
 
-from utils import get_db, row_to_dict, rows_to_list, json_body
+from utils import get_db, row_to_dict, rows_to_list, json_body, normalize_author
 from user_context import require_admin
 from constants import DATA_DIR
 from logger import get_logger
@@ -168,10 +168,10 @@ def add_diary_entry(baby_id):
 
     db = get_db()
     db.execute(
-        """INSERT INTO diary_entries (baby_id, title, content, entry_date, mood, photos)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO diary_entries (baby_id, title, content, entry_date, mood, photos, author)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (baby_id, data["title"], data.get("content", ""),
-         data["entry_date"], data.get("mood"), photos),
+         data["entry_date"], data.get("mood"), photos, normalize_author(data)),
     )
     db.commit()
     return jsonify({"success": True, "message": "日记已添加"})
@@ -220,11 +220,21 @@ def update_diary_entry(baby_id, entry_id):
         return jsonify({"success": False, "message": "无效数据"}), 400
 
     db = get_db()
-    cur = db.execute(
-        """UPDATE diary_entries SET title=?, content=?, entry_date=?, mood=?
-           WHERE id=? AND baby_id=?""",
-        (data.get("title"), data.get("content", ""), data.get("entry_date"), data.get("mood"), entry_id, baby_id)
-    )
+    # author 是可选的：只有传了才改（不传就保持原值，别把它抹成空）
+    if "author" in data:
+        cur = db.execute(
+            """UPDATE diary_entries SET title=?, content=?, entry_date=?, mood=?, author=?
+               WHERE id=? AND baby_id=?""",
+            (data.get("title"), data.get("content", ""), data.get("entry_date"),
+             data.get("mood"), normalize_author(data), entry_id, baby_id)
+        )
+    else:
+        cur = db.execute(
+            """UPDATE diary_entries SET title=?, content=?, entry_date=?, mood=?
+               WHERE id=? AND baby_id=?""",
+            (data.get("title"), data.get("content", ""), data.get("entry_date"),
+             data.get("mood"), entry_id, baby_id)
+        )
     db.commit()
     if cur.rowcount == 0:
         return jsonify({"success": False, "message": "日记不存在"}), 404

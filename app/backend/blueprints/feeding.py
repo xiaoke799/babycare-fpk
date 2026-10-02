@@ -15,7 +15,7 @@
 import datetime
 from flask import Blueprint, request, jsonify
 
-from utils import get_db, json_body
+from utils import get_db, json_body, normalize_author
 from validators import (
     validate_amount, validate_duration, validate_enum,
     validate_text_length, validate_datetime, validate_seconds, parse_datetime,
@@ -119,16 +119,18 @@ def _clean_feeding_payload(data, existing=None):
 @bp.route("/api/babies/<int:baby_id>/feeding", methods=["POST"])
 def add_feeding_record(baby_id):
     """添加喂奶记录"""
-    clean, err = _clean_feeding_payload(json_body())
+    data = json_body()
+    clean, err = _clean_feeding_payload(data)
     if err:
         return jsonify({"success": False, "message": err}), 400
 
     db = get_db()
     cur = db.execute(
-        """INSERT INTO feeding_records (baby_id, start_time, end_time, feeding_type, amount, side, note, left_duration, right_duration)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO feeding_records (baby_id, start_time, end_time, feeding_type, amount, side, note, left_duration, right_duration, author)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (baby_id, clean["start_time"], clean["end_time"], clean["feeding_type"], clean["amount"],
-         clean["side"], clean["note"], clean["left_duration"], clean["right_duration"]),
+         clean["side"], clean["note"], clean["left_duration"], clean["right_duration"],
+         normalize_author(data)),
     )
     db.commit()
     return jsonify({"success": True, "message": "记录已添加", "id": cur.lastrowid, "data": clean})

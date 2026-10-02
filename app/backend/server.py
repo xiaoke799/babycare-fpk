@@ -715,6 +715,18 @@ def init_db():
             FOREIGN KEY (baby_id) REFERENCES babies(id) ON DELETE CASCADE
         );
 
+        -- 家庭成员：谁在记录（妈妈/爸爸/奶奶…）
+        -- 注意这是「标签」不是账号：本应用跑在自家 NAS 上、一家人共用一个入口，
+        -- 真做多用户体系要动权限与数据隔离，代价不成比例。这里只需要知道
+        -- 「这条是谁记的」，所以存一个称呼即可。
+        CREATE TABLE IF NOT EXISTS family_members (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now', 'localtime'))
+        );
+
         -- 应用设置表
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -1266,6 +1278,10 @@ def _run_migrations():
     _ensure_column('baby_recipes', 'tips TEXT DEFAULT \'\'')
     _ensure_column('baby_recipes', 'difficulty TEXT DEFAULT \'简单\'')
     _ensure_column('baby_activities', 'icon TEXT DEFAULT \'\'')
+    # 「谁记的」：日常记录挂在一家人名下（妈妈/爸爸/奶奶），回看时才知道这条出自谁手。
+    # 可选字段，老数据为 NULL（前端显示为空，不报错）。
+    for _t in ('diary_entries', 'feeding_records', 'sleep_records', 'diaper_records'):
+        _ensure_column(_t, 'author TEXT')
     _ensure_column('baby_activities', 'summary TEXT DEFAULT \'\'')
     _ensure_column('baby_activities', 'duration TEXT DEFAULT \'\'')
     _ensure_column('baby_activities', 'tips TEXT DEFAULT \'\'')

@@ -203,6 +203,106 @@ def clear_safety_code():
     return jsonify({'success': True, 'message': msg, 'data': {'enabled': False}})
 
 
+# ==================== API: 家庭成员（谁在记录） ====================
+# 一家子共用一个 NAS 入口，回看时想知道「这条是谁记的」。
+# 这里只是称呼标签，不是账号：不做密码、不做数据隔离。
+# 记在记录上的是 author 文本（冗余一份称呼），成员删掉后老记录上的名字仍在，
+# 避免出现「这条记录的人不见了」的空引用。
+
+FAMILY_MEMBER_NAME_MAX = 20
+
+
+def _member_rows():
+    db = get_db()
+    return db.execute(
+        "SELECT * FROM family_members ORDER BY sort_order ASC, id ASC"
+    ).fetchall()
+
+
+@bp.route('/api/settings/family-members', methods=['GET'])
+def list_family_members():
+    """家庭成员列表（录入表单的「谁记的」下拉直接用这个）"""
+    return jsonify({'success': True, 'data': rows_to_list(_member_rows())})
+
+
+@bp.route('/api/settings/family-members', methods=['POST'])
+@require_admin
+def add_family_member():
+    data = json_body()
+    name = str(data.get('name', '')).strip()
+    if not name:
+        return jsonify({'success': False, 'message': '请输入称呼'}), 400
+    if len(name) > FAMILY_MEMBER_NAME_MAX:
+        return jsonify({'success': False,
+                        'message': '称呼最多 %d 个字' % FAMILY_MEMBER_NAME_MAX}), 400
+
+    db = get_db()
+    dup = db.execute(
+        "SELECT id FROM family_members WHERE name = ?", (name,)).fetchone()
+    if dup:
+        return jsonify({'success': False, 'message': '已经有这个称呼了'}), 400
+
+    cur = db.execute(
+        "INSERT INTO family_members (name, sort_order) VALUES (?, ?)",
+        (name, data.get('sort_order', 0) or 0),
+    )
+    db.commit()
+    row = db.execute(
+        "SELECT * FROM family_members WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return jsonify({'success': True, 'data': row_to_dict(row)})
+
+
+@bp.route('/api/settings/family-members/<int:member_id>', methods=['PUT'])
+@require_admin
+def update_family_member(member_id):
+    data = json_body()
+    db = get_db()
+    row = db.execute(
+        "SELECT * FROM family_members WHERE id = ?", (member_id,)).fetchone()
+    if not row:
+        return jsonify({'success': False, 'message': '成员不存在'}), 404
+
+    name = data.get('name')
+    if name is not None:
+        name = str(name).strip()
+        if not name or len(name) > FAMILY_MEMBER_NAME_MAX:
+            return jsonify({'success': False,
+                            'message': '称呼为空或超过 %d 个字' % FAMILY_MEMBER_NAME_MAX}), 400
+        dup = db.execute(
+            "SELECT id FROM family_members WHERE name = ? AND id != ?",
+            (name, member_id)).fetchone()
+        if dup:
+            return jsonify({'success': False, 'message': '已经有这个称呼了'}), 400
+
+    # 部分更新：传了才算数（别用 `data.get(k) or 原值`，那样清不掉 0/False）
+    name = name if name is not None else row['name']
+    is_active = data.get('is_active')
+    is_active = 1 if is_active is None else (1 if is_active else 0)
+    sort_order = data.get('sort_order')
+    sort_order = row['sort_order'] if sort_order is None else (sort_order or 0)
+
+    db.execute(
+        "UPDATE family_members SET name = ?, is_active = ?, sort_order = ? WHERE id = ?",
+        (name, is_active, sort_order, member_id),
+    )
+    db.commit()
+    row = db.execute(
+        "SELECT * FROM family_members WHERE id = ?", (member_id,)).fetchone()
+    return jsonify({'success': True, 'data': row_to_dict(row)})
+
+
+@bp.route('/api/settings/family-members/<int:member_id>', methods=['DELETE'])
+@require_admin
+def delete_family_member(member_id):
+    db = get_db()
+    cur = db.execute("DELETE FROM family_members WHERE id = ?", (member_id,))
+    db.commit()
+    if cur.rowcount == 0:
+        # 删不存在的 id 必须 404 —— 否则前端以为删成功了（假成功）
+        return jsonify({'success': False, 'message': '成员不存在'}), 404
+    return jsonify({'success': True, 'message': '已删除'})
+
+
 # ==================== API: 数据导入导出 ====================
 
 @bp.route('/api/babies/<int:baby_id>/import', methods=['POST'])

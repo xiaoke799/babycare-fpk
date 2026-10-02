@@ -138,6 +138,8 @@ EXPORT_TABLES = [
     'knowledge_articles', 'baby_wiki',
     # --- 用户配置（全局，不含 babies）---
     'settings', 'app_settings',
+    # --- 家庭成员：谁在记录（全局，不按宝宝分）---
+    'family_members',
 ]
 
 # 带 baby_id 外键、需要按宝宝筛选/恢复的表
