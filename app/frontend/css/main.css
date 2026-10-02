@@ -12541,6 +12541,351 @@ input:checked + .toggle-slider:before {
     margin-bottom: 0;
 }
 
+/* 「那年今天」回忆卡：往年同月同日发生过什么。
+   用暖色渐变边把它和下面的「今日概览」区分开 —— 它讲的是回忆，不是今天的待办。 */
+.home-memories {
+    margin: 12px 16px 4px;
+    padding: 14px 14px 6px;
+    background: linear-gradient(135deg, rgba(255, 173, 122, 0.14), rgba(255, 134, 161, 0.12));
+    border: 1px solid rgba(209, 90, 122, 0.18);
+    border-radius: var(--radius-md, 14px);
+}
+
+.memories-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.memories-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--primary-strong, #d15a7a);
+}
+
+.memories-sub {
+    font-size: 12px;
+    color: var(--text-secondary, #8a8a8a);
+}
+
+.memories-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.memory-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-top: 1px solid rgba(209, 90, 122, 0.10);
+}
+
+.memory-item:first-child {
+    border-top: none;
+}
+
+.memory-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.memory-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.memory-detail {
+    font-size: 12px;
+    color: var(--text-secondary, #8a8a8a);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.memory-ago {
+    flex-shrink: 0;
+    text-align: right;
+    font-size: 12px;
+    color: var(--primary-strong, #d15a7a);
+    font-weight: 600;
+}
+
+.memory-year {
+    display: block;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-secondary, #8a8a8a);
+}
+
+/* 首页全局搜索条 */
+.home-search-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 16px 10px;
+    padding: 6px 10px;
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+}
+
+.home-search-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    color: var(--text-secondary, #8a8a8a);
+}
+
+.home-search-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 14px;
+    color: var(--text-primary);
+    min-height: 34px;
+}
+
+.home-search-input::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+}
+
+.home-search-btn {
+    flex-shrink: 0;
+    padding: 6px 14px;
+    border: none;
+    border-radius: 999px;
+    background: var(--primary-color, #ffad7a);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    min-height: 34px;
+}
+
+/* 搜索结果（弹窗内） */
+.search-result-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.search-result-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 6px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.search-result-item:last-child {
+    border-bottom: none;
+}
+
+.search-result-item.is-clickable {
+    cursor: pointer;
+    border-radius: var(--radius-sm, 10px);
+}
+
+.search-result-item.is-clickable:hover {
+    background: var(--bg-color, #fff7f2);
+}
+
+.search-result-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.search-result-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.search-result-snippet {
+    font-size: 12px;
+    color: var(--text-secondary, #8a8a8a);
+    margin-top: 3px;
+    line-height: 1.5;
+}
+
+.search-result-time {
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--text-secondary, #8a8a8a);
+    padding-top: 2px;
+}
+
+/* 设置页：家庭成员（谁记的） */
+.family-member-editor {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+.family-member-editor .settings-input {
+    flex: 1;
+    min-width: 120px;
+}
+
+.family-member-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.family-member-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    background: var(--bg-color, #fff7f2);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.family-member-del {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary, #8a8a8a);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+    min-width: 20px;
+    min-height: 20px;
+}
+
+.family-member-del:hover {
+    color: var(--primary-strong, #d15a7a);
+}
+
+/* 年度成长报告（弹窗内） */
+.yr-year-pick {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: var(--text-secondary, #8a8a8a);
+}
+
+.yr-year-pick select {
+    padding: 6px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm, 10px);
+    background: var(--card-bg, #fff);
+    color: var(--text-primary);
+}
+
+.yr-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+    gap: 8px;
+}
+
+.yr-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 4px;
+    background: var(--bg-color, #fff7f2);
+    border-radius: var(--radius-sm, 10px);
+}
+
+.yr-stat-num {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--primary-strong, #d15a7a);
+    line-height: 1.2;
+}
+
+.yr-stat-unit {
+    font-size: 11px;
+    color: var(--text-secondary, #8a8a8a);
+}
+
+.yr-stat-label {
+    font-size: 12px;
+    color: var(--text-secondary, #8a8a8a);
+    margin-top: 2px;
+}
+
+.yr-growth {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm, 10px);
+}
+
+.yr-growth-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    padding: 3px 0;
+    color: var(--text-primary);
+}
+
+.yr-growth-row span {
+    color: var(--text-secondary, #8a8a8a);
+}
+
+.yr-subtitle {
+    margin: 16px 0 8px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.yr-milestones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.yr-milestone-chip {
+    padding: 4px 10px;
+    background: rgba(255, 173, 122, 0.18);
+    color: var(--primary-strong, #d15a7a);
+    border-radius: 999px;
+    font-size: 12px;
+}
+
+.yr-summary {
+    font-size: 13px;
+    line-height: 1.75;
+    color: var(--text-primary);
+    padding: 10px 12px;
+    background: var(--bg-color, #fff7f2);
+    border-radius: var(--radius-sm, 10px);
+}
+
+/* 日记卡片上的「谁记的」小标签 */
+.diary-author-tag {
+    padding: 2px 8px;
+    background: rgba(255, 173, 122, 0.18);
+    color: var(--primary-strong, #d15a7a);
+    border-radius: 999px;
+    font-size: 12px;
+}
+
 .home-date-pick input[type="date"] {
     padding: 8px 10px;
     border: 1px solid var(--border-color);

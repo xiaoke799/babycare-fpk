@@ -1375,6 +1375,144 @@ function performDeleteBaby(babyId, safetyCode) {
     });
 }
 
+/* ==================== 家庭成员：谁在记录 ====================
+   一家人共用一个 NAS 入口，回看时想知道「这条是谁记的」。
+   注意这只是称呼标签，不是账号——不做密码、不做数据隔离。 */
+
+let familyMembersCache = null;   // 预加载，表单渲染时同步可用（表单 HTML 是同步拼的）
+
+async function loadFamilyMembers(force) {
+    if (familyMembersCache && !force) return familyMembersCache;
+    try {
+        const res = await api('/api/settings/family-members');
+        const all = (res && res.success && Array.isArray(res.data)) ? res.data : [];
+        familyMembersCache = all.filter(m => Number(m.is_active) !== 0);
+    } catch (e) {
+        familyMembersCache = familyMembersCache || [];
+    }
+    return familyMembersCache;
+}
+
+function getLastAuthor() {
+    try {
+        return localStorage.getItem('babycare_last_author') || '';
+    } catch (e) {
+        return '';   // 隐私模式下 localStorage 会抛，忽略即可
+    }
+}
+
+function rememberAuthor(name) {
+    try {
+        if (name) localStorage.setItem('babycare_last_author', name);
+    } catch (e) { /* 忽略 */ }
+}
+
+/** 录入表单里的「谁记的」下拉。没配成员就整块不出现，不给用户添乱。 */
+function authorSelectHtml(selectId) {
+    const list = familyMembersCache || [];
+    if (!list.length) return '';
+    const last = getLastAuthor();
+    return `
+        <div class="form-group">
+            <label>谁记的</label>
+            <select id="${selectId}" class="form-control">
+                <option value="">不指定</option>
+                ${list.map(m => `<option value="${escapeHtml(String(m.name))}"${m.name === last ? ' selected' : ''}>${escapeHtml(String(m.name))}</option>`).join('')}
+            </select>
+        </div>`;
+}
+
+/** 提交时读下拉值并记住：一家人通常连续用同一个人记录。 */
+function readAuthor(selectId) {
+    const el = document.getElementById(selectId);
+    const v = el ? String(el.value || '').trim() : '';
+    rememberAuthor(v);
+    return v || undefined;
+}
+
+async function initFamilyMembers() {
+    const input = document.getElementById('familyMemberInput');
+    const btn = document.getElementById('addFamilyMemberBtn');
+    if (btn && input) {
+        btn.addEventListener('click', addFamilyMember);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addFamilyMember();
+            }
+        });
+    }
+    await renderFamilyMembers();
+}
+
+async function renderFamilyMembers() {
+    const box = document.getElementById('familyMemberList');
+    const list = await loadFamilyMembers(false);
+
+    // 日记表单是静态 HTML（不像其它表单那样由 JS 拼），选项只能在这里填
+    const group = document.getElementById('diaryAuthorGroup');
+    const sel = document.getElementById('diaryAuthor');
+    if (group && sel) {
+        if (!list.length) {
+            group.style.display = 'none';
+        } else {
+            const last = getLastAuthor();
+            sel.innerHTML = '<option value="">不指定</option>' + list.map(m =>
+                `<option value="${escapeHtml(String(m.name))}"${m.name === last ? ' selected' : ''}>${escapeHtml(String(m.name))}</option>`
+            ).join('');
+            group.style.display = '';
+        }
+    }
+
+    if (!box) return;
+    if (!list.length) {
+        box.innerHTML = '<p class="settings-tip">还没有家庭成员</p>';
+        return;
+    }
+    box.innerHTML = list.map(m => `
+        <span class="family-member-chip">
+            ${escapeHtml(String(m.name))}
+            <button type="button" class="family-member-del" title="删除"
+                    onclick="deleteFamilyMember(${Number(m.id)})">&times;</button>
+        </span>`).join('');
+}
+
+async function addFamilyMember() {
+    const input = document.getElementById('familyMemberInput');
+    const tip = document.getElementById('familyMemberTip');
+    const name = input ? String(input.value || '').trim() : '';
+    if (!name) {
+        if (tip) tip.textContent = '请输入称呼';
+        return;
+    }
+    try {
+        const res = await api('/api/settings/family-members', {
+            method: 'POST',
+            body: JSON.stringify({ name })
+        });
+        if (res && res.success) {
+            if (input) input.value = '';
+            if (tip) tip.textContent = '';
+            await loadFamilyMembers(true);
+            await renderFamilyMembers();
+        } else {
+            if (tip) tip.textContent = (res && res.message) || '添加失败';
+        }
+    } catch (e) {
+        if (tip) tip.textContent = '添加失败';
+    }
+}
+
+async function deleteFamilyMember(id) {
+    try {
+        await api('/api/settings/family-members/' + id, { method: 'DELETE' });
+        await loadFamilyMembers(true);
+        await renderFamilyMembers();
+    } catch (e) {
+        showToast.warning('删除失败');
+    }
+}
+
 function initSafetyCode() {
     const saveBtn = document.getElementById('saveSafetyCodeBtn');
     const clearBtn = document.getElementById('clearSafetyCodeBtn');
@@ -2353,8 +2491,317 @@ function currentGreeting() {
     return '早安，';
 }
 
+/**
+ * 首页「那年今天」：往年同月同日发生过什么。
+ *
+ * 后端复用时间线那 18 类数据源，所以不只是日记 —— 喂养、里程碑、出牙、
+ * 体检、照片全都能命中，比只翻日记有看头。
+ * 没有往年记录时整块隐藏：刚出生的宝宝不该看到一张空卡片。
+ * 这块属于锦上添花，所以它自己挂了绝不能连累首页其它区块。
+ */
+async function loadHomeMemories(viewDate) {
+    const box = document.getElementById('homeMemories');
+    if (!box) return;
+    if (!App.currentBaby) {
+        box.style.display = 'none';
+        return;
+    }
+    const date = viewDate || getToday();
+    try {
+        const res = await api(`/api/babies/${App.currentBaby}/memories/today?date=${encodeURIComponent(date)}&limit=6`);
+        const list = (res && res.success && Array.isArray(res.data)) ? res.data : [];
+        if (!list.length) {
+            box.style.display = 'none';
+            return;
+        }
+        setText('memoriesTitle', viewDate ? '那年的这一天' : '那年今天');
+        setText('memoriesSub', `共 ${list.length} 条`);
+        document.getElementById('memoriesList').innerHTML = list.map(memoryItemHtml).join('');
+        box.style.display = '';
+    } catch (e) {
+        box.style.display = 'none';
+    }
+}
+
+/** 单条回忆：图标与标题沿用时间线那一套（视觉一致），右侧标「N 年前的今天」。 */
+function memoryItemHtml(ev) {
+    const t = TIMELINE_TYPE_MAP[ev.type] || { icon: '记', class: '', title: () => '记录' };
+    const years = Number(ev.years_ago) || 0;
+    const ago = years <= 1 ? '去年的今天' : `${years} 年前的今天`;
+    const year = ev.time ? String(ev.time).substring(0, 4) : '';
+    let detail = '';
+    try {
+        detail = getTimelineDetail(ev) || '';
+    } catch (e) {
+        detail = '';   // 少一类的详情不影响这条回忆显示出来
+    }
+    return `
+        <div class="memory-item">
+            <div class="timeline-icon ${t.class}">${t.icon}</div>
+            <div class="memory-body">
+                <div class="memory-title">${escapeHtml(String(t.title(ev) || '记录'))}</div>
+                ${detail ? `<div class="memory-detail">${escapeHtml(String(detail))}</div>` : ''}
+            </div>
+            <div class="memory-ago">${ago}${year ? `<span class="memory-year">${year}</span>` : ''}</div>
+        </div>
+    `;
+}
+
+/* ==================== 全局搜索 ====================
+   数据攒久了没有搜索就是死数据：日记里写过的某句话、上次过敏是什么时候、
+   那次体检医生怎么说的，靠翻页面翻不出来。 */
+
+// 搜索结果点击后跳到哪个页面。跳之前会先确认 section 真的存在，
+// 免得配错 page id 时出现「点了没反应」（飞牛内置浏览器里最难查的一类问题）。
+const SEARCH_JUMP_PAGE = {
+    diary: 'diary',
+    milestone: 'milestones',
+    growth: 'growth',
+    vaccine: 'health',
+    medication: 'health',
+    allergy: 'health',
+    checkup: 'health',
+    health: 'health',
+    temperature: 'health',
+    feeding: 'feeding',
+    sleep: 'sleep',
+    diaper: 'diaper',
+    solidfood: 'solidfood',
+    photo: 'photos',
+};
+
+function initHomeSearch() {
+    const input = document.getElementById('homeSearchInput');
+    const btn = document.getElementById('homeSearchBtn');
+    if (!input || !btn) return;
+    const run = () => {
+        const q = (input.value || '').trim();
+        if (!q) {
+            showToast.warning('请输入搜索关键字');
+            return;
+        }
+        doGlobalSearch(q);
+    };
+    btn.addEventListener('click', run);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            run();
+        }
+    });
+}
+
+async function doGlobalSearch(q) {
+    if (!App.currentBaby) {
+        showToast.warning('请先选择宝宝');
+        return;
+    }
+    const shell = (inner) => `
+        <div class="modal-header"><h3>搜索「${escapeHtml(q)}」</h3></div>
+        <div class="modal-body">${inner}</div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" type="button" onclick="closeModal()">关闭</button>
+        </div>`;
+    showModal(shell('<p class="empty-tip">搜索中…</p>'));
+    try {
+        const res = await api(`/api/babies/${App.currentBaby}/search?q=${encodeURIComponent(q)}`);
+        const list = (res && res.success && Array.isArray(res.data)) ? res.data : [];
+        const body = list.length
+            ? `<div class="search-result-list">${list.map(searchResultItemHtml).join('')}</div>`
+            : '<p class="empty-tip">没有找到相关记录</p>';
+        showModal(shell(body));
+    } catch (e) {
+        showModal(shell('<p class="empty-tip">搜索失败，请稍后重试</p>'));
+    }
+}
+
+function searchResultItemHtml(h) {
+    const t = TIMELINE_TYPE_MAP[h.type] || { icon: '记', class: '', title: () => '记录' };
+    const title = h.title || t.title(h) || '记录';
+    const time = h.time ? String(h.time).substring(0, 10) : '';
+    const jump = SEARCH_JUMP_PAGE[h.type];
+    return `
+        <div class="search-result-item${jump ? ' is-clickable' : ''}"
+             ${jump ? `onclick="openSearchResult('${h.type}', ${Number(h.id) || 0})"` : ''}>
+            <div class="timeline-icon ${t.class}">${t.icon}</div>
+            <div class="search-result-body">
+                <div class="search-result-title">${escapeHtml(String(title))}</div>
+                ${h.snippet ? `<div class="search-result-snippet">${escapeHtml(String(h.snippet))}</div>` : ''}
+            </div>
+            <span class="search-result-time">${escapeHtml(time)}</span>
+        </div>`;
+}
+
+/** 搜索结果点击：日记直接开详情，其余跳到对应页面（section 不存在则不跳）。 */
+function openSearchResult(type, id) {
+    closeModal();
+    if (type === 'diary' && id) {
+        switchPage('diary');
+        setTimeout(() => viewDiary(id), 60);
+        return;
+    }
+    const page = SEARCH_JUMP_PAGE[type];
+    if (page && document.getElementById('page-' + page)) {
+        switchPage(page);
+        return;
+    }
+    showToast.info('这条记录请在对应页面里查看');
+}
+
+/* ==================== 年度成长报告 ====================
+   数据攒久了需要回望 —— 这也是数据存在自家 NAS 上真正的价值。
+   统计全来自库里真实数字；AI 文字回顾可选，没配模型就只给数据。 */
+
+let lastYearlyReport = null;
+let lastYearlySummary = null;
+
+function initYearlyReport() {
+    document.getElementById('yearlyReportBtn')?.addEventListener('click', () => showYearlyReport());
+}
+
+async function showYearlyReport(year) {
+    if (!App.currentBaby) {
+        showToast.warning('请先选择宝宝');
+        return;
+    }
+    const y = year || Number(String(getToday()).slice(0, 4));
+    showModal(`
+        <div class="modal-header"><h3>年度成长报告</h3></div>
+        <div class="modal-body"><p class="empty-tip">正在汇总这一年的记录…</p></div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" type="button" onclick="closeModal()">关闭</button>
+        </div>`);
+    try {
+        const res = await api(`/api/babies/${App.currentBaby}/yearly-report?year=${y}&summary=1`);
+        if (!res || !res.success) {
+            showModal(`
+                <div class="modal-header"><h3>年度成长报告</h3></div>
+                <div class="modal-body"><p class="empty-tip">${escapeHtml((res && res.message) || '生成失败')}</p></div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" type="button" onclick="closeModal()">关闭</button>
+                </div>`);
+            return;
+        }
+        lastYearlyReport = res.data || {};
+        lastYearlySummary = res.summary || null;
+        showModal(yearlyReportHtml(lastYearlyReport, lastYearlySummary));
+    } catch (e) {
+        showToast.error('生成失败');
+    }
+}
+
+function yearlyReportHtml(d, summary) {
+    const y = d.year || '';
+    const thisYear = Number(String(getToday()).slice(0, 4));
+    const years = [];
+    for (let i = 0; i < 10; i++) {
+        years.push(thisYear - i);
+    }
+    const stat = (num, unit, label) => `
+        <div class="yr-stat">
+            <span class="yr-stat-num">${num}</span>
+            <span class="yr-stat-unit">${unit}</span>
+            <span class="yr-stat-label">${label}</span>
+        </div>`;
+    const grow = (from, to, unit) => (from != null && to != null)
+        ? `${from}${unit} → ${to}${unit}` : '无数据';
+
+    const milestones = (d.milestone_titles || []).length
+        ? `<div class="yr-milestones">${(d.milestone_titles || []).map(t =>
+            `<span class="yr-milestone-chip">${escapeHtml(String(t))}</span>`).join('')}</div>`
+        : '<p class="empty-tip">这一年没有记录里程碑</p>';
+
+    return `
+        <div class="modal-header">
+            <h3>${escapeHtml(String(d.baby_name || '宝宝'))} 的 ${y} 年</h3>
+        </div>
+        <div class="modal-body">
+            <div class="yr-year-pick">
+                <label>年份</label>
+                <select id="yrYearSelect" onchange="showYearlyReport(Number(this.value))">
+                    ${years.map(v => `<option value="${v}"${v === Number(y) ? ' selected' : ''}>${v}</option>`).join('')}
+                </select>
+            </div>
+            <div class="yr-stats">
+                ${stat(d.diary_count || 0, '篇', '日记')}
+                ${stat(d.photo_count || 0, '张', '照片')}
+                ${stat(d.feeding_count || 0, '次', '喂奶')}
+                ${stat(d.feeding_ml || 0, 'ml', '累计奶量')}
+                ${stat(d.sleep_hours || 0, '小时', '睡眠')}
+                ${stat(d.diaper_count || 0, '次', '换尿布')}
+                ${stat(d.milestone_count || 0, '个', '里程碑')}
+                ${stat(d.teething_count || 0, '颗', '出牙')}
+                ${stat(d.vaccine_count || 0, '剂', '疫苗')}
+                ${stat(d.checkup_count || 0, '次', '体检')}
+            </div>
+            <div class="yr-growth">
+                <div class="yr-growth-row"><span>身高</span><b>${grow(d.height_from, d.height_to, 'cm')}</b></div>
+                <div class="yr-growth-row"><span>体重</span><b>${grow(d.weight_from, d.weight_to, 'kg')}</b></div>
+            </div>
+            <h4 class="yr-subtitle">这一年学会的</h4>
+            ${milestones}
+            <h4 class="yr-subtitle">AI 年度回顾</h4>
+            ${summary
+                ? `<div class="yr-summary">${escapeHtml(String(summary)).replace(/\n/g, '<br>')}</div>`
+                : '<p class="empty-tip">还没配本地大模型，配置后可以自动生成一段文字回顾</p>'}
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" type="button" onclick="exportYearlyReport()">导出</button>
+            <button class="btn btn-primary" type="button" onclick="closeModal()">关闭</button>
+        </div>`;
+}
+
+/** 导出成 Markdown：文本最耐放，十几年后也打得开（这也是本地存储的意义）。 */
+function exportYearlyReport() {
+    const d = lastYearlyReport;
+    if (!d) {
+        showToast.warning('请先生成报告');
+        return;
+    }
+    const grow = (from, to, unit) => (from != null && to != null) ? `${from}${unit} → ${to}${unit}` : '无数据';
+    const lines = [
+        `# ${d.baby_name || '宝宝'} 的 ${d.year} 年度成长报告`,
+        '',
+        '## 这一年',
+        `- 日记：${d.diary_count || 0} 篇`,
+        `- 照片：${d.photo_count || 0} 张`,
+        `- 喂奶：${d.feeding_count || 0} 次，累计 ${d.feeding_ml || 0} ml`,
+        `- 睡眠：${d.sleep_count || 0} 次，共 ${d.sleep_hours || 0} 小时`,
+        `- 换尿布：${d.diaper_count || 0} 次`,
+        `- 身高：${grow(d.height_from, d.height_to, 'cm')}`,
+        `- 体重：${grow(d.weight_from, d.weight_to, 'kg')}`,
+        `- 疫苗：${d.vaccine_count || 0} 剂；体检：${d.checkup_count || 0} 次；出牙：${d.teething_count || 0} 颗`,
+        '',
+        '## 这一年学会的',
+    ];
+    const ms = d.milestone_titles || [];
+    lines.push(ms.length ? ms.map(t => `- ${t}`).join('\n') : '- （没有记录）');
+    if (lastYearlySummary) {
+        lines.push('', '## AI 年度回顾', '', lastYearlySummary);
+    }
+    const text = lines.join('\n');
+    try {
+        const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `成长报告_${d.year}_${d.baby_name || '宝宝'}.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast.success('已导出');
+    } catch (e) {
+        showToast.error('导出失败');
+    }
+}
+
 function loadDashboard() {
     if (!App.currentBaby) return;
+
+    // 「那年今天」两条分支都要：看今天就找往年的今天，
+    // 回看某天就找往年的那一天（接口收 date 参数）。
+    loadHomeMemories(homeViewDate);
 
     // 回看某一天时走独立分支：复用时间线接口取那天的数据。
     // 放在这里（而不是只在点日期条时）是为了让 switchPage、切宝宝等
@@ -2555,6 +3002,7 @@ function feedingFormHtml(r) {
                 <label>备注</label>
                 <input type="text" id="feedingNote" value="${escapeHtml(rec.note || '')}" placeholder="可选">
             </div>
+            ${authorSelectHtml('feedingAuthor')}
             <div class="form-actions">
                 <button type="button" class="btn btn-cancel" id="cancelRecordForm">取消</button>
                 <button type="submit" class="btn btn-primary">保存</button>
@@ -2618,6 +3066,7 @@ function collectFeedingForm() {
         note: document.getElementById('feedingNote')?.value || '',
         left_duration: leftTimerSeconds > 0 ? leftTimerSeconds : null,
         right_duration: rightTimerSeconds > 0 ? rightTimerSeconds : null,
+        author: readAuthor('feedingAuthor'),
     };
 }
 
@@ -2697,6 +3146,7 @@ function showRecordModal(type) {
                     <label>备注</label>
                     <input type="text" id="sleepNote" placeholder="可选">
                 </div>
+                ${authorSelectHtml('sleepAuthor')}
                 <div class="form-actions">
                     <button type="button" class="btn btn-cancel" id="cancelRecordForm">取消</button>
                     <button type="submit" class="btn btn-primary">保存</button>
@@ -2744,6 +3194,7 @@ function showRecordModal(type) {
                     <label>备注</label>
                     <input type="text" id="diaperNote" placeholder="可选">
                 </div>
+                ${authorSelectHtml('diaperAuthor')}
                 <div class="form-actions">
                     <button type="button" class="btn btn-cancel" id="cancelRecordForm">取消</button>
                     <button type="submit" class="btn btn-primary">保存</button>
@@ -2780,7 +3231,8 @@ function bindRecordFormEvents(type) {
                 start_time: document.getElementById('sleepStart')?.value || '',
                 end_time: document.getElementById('sleepEnd')?.value || null,
                 sleep_quality: document.getElementById('sleepQuality')?.value || null,
-                note: document.getElementById('sleepNote')?.value || ''
+                note: document.getElementById('sleepNote')?.value || '',
+                author: readAuthor('sleepAuthor')
             };
 
             api(`/api/babies/${App.currentBaby}/sleep`, {
@@ -2818,7 +3270,8 @@ function bindRecordFormEvents(type) {
                 diaper_type: diaperType,
                 color: (diaperType === 'dirty' || diaperType === 'both') ? document.getElementById('diaperColor')?.value || null : null,
                 skin_condition: skinCondition || null,
-                note: document.getElementById('diaperNote')?.value || ''
+                note: document.getElementById('diaperNote')?.value || '',
+                author: readAuthor('diaperAuthor')
             };
 
             api(`/api/babies/${App.currentBaby}/diaper`, {
@@ -4359,7 +4812,8 @@ function initDiaryModal() {
             entry_date: document.getElementById('diaryDate').value,
             content: document.getElementById('diaryContent').value,
             mood: document.getElementById('diaryMood').value || null,
-            photos: currentDiaryPhotos
+            photos: currentDiaryPhotos,
+            author: readAuthor('diaryAuthor')
         };
 
         api(`/api/babies/${App.currentBaby}/diary`, {
@@ -4457,6 +4911,7 @@ function loadDiaryList() {
                     <div class="diary-meta">
                         <span>${escapeHtml(entry.entry_date)}</span>
                         ${mood ? `<span class="diary-mood-tag" style="background:${mood.color}20;color:${mood.color}">${mood.label}</span>` : ''}
+                        ${entry.author ? `<span class="diary-author-tag">${escapeHtml(entry.author)} 记的</span>` : ''}
                         ${photos.length > 0 ? `<span class="diary-photo-count">📷 ${photos.length}</span>` : ''}
                     </div>
                     <div class="diary-content">${escapeHtml(diaryPreviewText(entry.content).slice(0, 100))}${diaryPreviewText(entry.content).length > 100 ? '...' : ''}</div>
@@ -5627,6 +6082,12 @@ function drawWhoChart(refData, records, metric, sex) {
 
     ctx.clearRect(0, 0, w, h);
 
+    // canvas 是画上去的，不吃 CSS 变量：深色主题下要把网格线/文字改成深色底能看清的颜色，
+    // 否则 #eee 网格线在深色画布上直接消失。
+    const isDarkChart = document.documentElement.getAttribute('data-theme') === 'dark';
+    const axisText = isDarkChart ? '#B5A8A0' : '#999';
+    const gridLine = isDarkChart ? '#4A3A37' : '#eee';
+
     if (refData.length === 0) {
         ctx.fillStyle = axisText;
         ctx.font = '14px sans-serif';
@@ -6082,12 +6543,6 @@ function loadClinicSummary() {
             milestoneHtml = data.recent_milestones.map(m =>
                 `<div class="clinic-milestone-item"> ${escapeHtml(m.achieved_date)} ${escapeHtml(m.title)}</div>`
             ).join('');
-    // canvas 是画上去的，不吃 CSS 变量：深色主题下要把网格线/文字改成深色底能看清的颜色，
-    // 否则 #eee 网格线在深色画布上直接消失。
-    const isDarkChart = document.documentElement.getAttribute('data-theme') === 'dark';
-    const axisText = isDarkChart ? '#B5A8A0' : '#999';
-    const gridLine = isDarkChart ? '#4A3A37' : '#eee';
-
         } else {
             milestoneHtml = '<p style="color:var(--text-light);font-size:12px;">暂无里程碑记录</p>';
         }
@@ -6292,6 +6747,9 @@ function initSettings() {
 
     // 删除安全码
     initSafetyCode();
+
+    // 家庭成员（谁记的）：异步预加载，供各录入表单的「谁记的」下拉使用
+    initFamilyMembers();
 }
 
 // LLM 全局状态和配置
@@ -11869,6 +12327,8 @@ function mainInit() {
     safeCall(initSettings, 'initSettings');
     safeCall(initTimeline, 'initTimeline');
     safeCall(initHomeDateBar, 'initHomeDateBar');
+    safeCall(initHomeSearch, 'initHomeSearch');
+    safeCall(initYearlyReport, 'initYearlyReport');
     safeCall(initAboutActions, 'initAboutActions');
     safeCall(initGrowthTabs, 'initGrowthTabs');
     safeCall(initTimerBar, 'initTimerBar');
@@ -13028,6 +13488,11 @@ function applyTheme(isDark, toggle) {
     } else {
         document.documentElement.removeAttribute('data-theme');
     }
+    if (toggle) toggle.checked = !!isDark;
+    // 手机浏览器 / PWA 的地址栏配色跟着变，否则深色界面配一个橙色状态栏
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', isDark ? '#2A1F1E' : '#FFAD7A');
+}
 
 function initDarkMode() {
     const toggle = document.getElementById('darkModeToggle');
@@ -13499,11 +13964,6 @@ function createRainNode(ctx) {
     hp.frequency.value = 300;
 
     const lp = ctx.createBiquadFilter();
-    if (toggle) toggle.checked = !!isDark;
-    // 手机浏览器 / PWA 的地址栏配色跟着变，否则深色界面配一个橙色状态栏
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', isDark ? '#2A1F1E' : '#FFAD7A');
-}
     lp.type = 'lowpass';
     lp.frequency.value = 2600;
     lp.Q.value = 0.5;
