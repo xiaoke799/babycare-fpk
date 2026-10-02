@@ -34,6 +34,7 @@ from blueprints.health_records import bp as health_records_bp
 from blueprints.notifications import bp as notifications_bp
 from blueprints.admin_logs import bp as admin_logs_bp
 from blueprints.backup import bp as backup_bp
+from blueprints.search import bp as search_bp
 
 # 导出所有 Blueprint 列表（供 register_blueprints 使用）
 ALL_BLUEPRINTS = [
@@ -58,6 +59,7 @@ ALL_BLUEPRINTS = [
     notifications_bp,
     admin_logs_bp,
     backup_bp,
+    search_bp,
 ]
 
 
