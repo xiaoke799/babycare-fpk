@@ -1,6 +1,7 @@
 """Data update coordinator for BabyCare."""
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -8,11 +9,14 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .client import BabyCareClient, BabyCareError
+from .client import BabyCareAuthError, BabyCareClient, BabyCareError
 from .const import CONF_API_KEY, CONF_PATH, DEFAULT_PATH, DEFAULT_SCAN_INTERVAL, DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -27,9 +31,10 @@ class BabyCareCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         super().__init__(
             hass,
-            logger=__import__("logging").getLogger(__name__),
+            logger=_LOGGER,
             name=DOMAIN,
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
+            config_entry=entry,
         )
         self.entry = entry
         self.client = BabyCareClient(
@@ -55,5 +60,10 @@ class BabyCareCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 result["timers"][bid] = await self.client.async_get_timers(bid)
                 result["stats"][bid] = await self.client.async_get_today_stats(bid)
             return result
+        except BabyCareAuthError as err:
+            # Token 失效/被吊销。抛这个 HA 才会自动发起重新认证，
+            # 用户在弹窗里重填 Token 即可，不必删掉整个集成重来
+            #（删了会丢实体 ID，自动化里引用的实体要重做）。
+            raise ConfigEntryAuthFailed(str(err)) from err
         except BabyCareError as err:
             raise UpdateFailed(str(err)) from err

@@ -10,6 +10,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import BabyCareCoordinator
+from .entity import baby_device_info
 
 
 async def async_setup_entry(
@@ -43,8 +44,11 @@ class BabyCareTimerSwitch(SwitchEntity):
         self._bid = int(baby["id"])
         self._timer_type = timer_type
         label = "喂奶计时" if timer_type == "feeding" else "睡眠计时"
-        self._attr_name = f"{baby.get('name', '宝宝')} {label}"
+        # 设备名 = 宝宝名，实体名只放实体部分（见 sensor.py 同处注释）
+        self._label = label
+        self._attr_name = label
         self._attr_unique_id = f"{DOMAIN}_{self._bid}_{timer_type}_timer"
+        self._attr_device_info = baby_device_info(baby)
         self._timer_id: int | None = None
 
     def _active_timer(self) -> dict[str, Any] | None:
@@ -72,7 +76,12 @@ class BabyCareTimerSwitch(SwitchEntity):
         if self._active_timer():
             return
         res = await self._coordinator.client.async_start_timer(
-            self._bid, {"timer_type": self._timer_type, "name": self._attr_name}
+            self._bid,
+            {
+                "timer_type": self._timer_type,
+                # 计时器名字要带宝宝名，否则多宝宝时在育儿宝里分不清是谁的
+                "name": f"{self._baby.get('name', '宝宝')} {self._label}",
+            },
         )
         data = res.get("data") if isinstance(res, dict) else None
         if data and data.get("id"):

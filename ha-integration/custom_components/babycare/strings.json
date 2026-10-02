@@ -1,0 +1,33 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "连接育儿宝",
+        "description": "填写育儿宝的访问地址，以及在「设置 → 智能家居集成」生成的 API Token。",
+        "data": {
+          "host": "地址",
+          "port": "端口",
+          "path": "子路径（反向代理时填写，可留空）",
+          "api_key": "API Token"
+        }
+      },
+      "reauth_confirm": {
+        "title": "重新认证",
+        "description": "育儿宝的 API Token 已失效（可能已重新生成或被吊销），请重新输入。",
+        "data": {
+          "api_key": "API Token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "连不上育儿宝，请检查地址、端口与子路径。",
+      "invalid_auth": "Token 无效、已被吊销，或没有访问权限。",
+      "unknown": "发生未知错误，请查看 Home Assistant 日志。"
+    },
+    "abort": {
+      "already_configured": "这个地址已经配置过了。",
+      "reauth_successful": "重新认证成功。",
+      "reauth_failed": "重新认证失败：找不到原来的配置条目，请删除集成后重新添加。"
+    }
+  }
+}

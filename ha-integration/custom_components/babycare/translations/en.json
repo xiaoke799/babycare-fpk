@@ -1,0 +1,33 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect BabyCare",
+        "description": "Enter the address of your BabyCare instance and the API Token generated in Settings → Smart Home Integration.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "path": "Path (only for reverse proxy, may be empty)",
+          "api_key": "API Token"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate",
+        "description": "The BabyCare API Token is no longer valid (it may have been regenerated or revoked). Please enter a new one.",
+        "data": {
+          "api_key": "API Token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to BabyCare. Check host, port and path.",
+      "invalid_auth": "Token is invalid, revoked, or lacks permission.",
+      "unknown": "Unknown error. Check the Home Assistant log."
+    },
+    "abort": {
+      "already_configured": "This address is already configured.",
+      "reauth_successful": "Reauthentication succeeded.",
+      "reauth_failed": "Reauthentication failed: the original config entry was not found. Remove the integration and add it again."
+    }
+  }
+}

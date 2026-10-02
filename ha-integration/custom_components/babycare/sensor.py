@@ -11,6 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import BabyCareCoordinator
+from .entity import baby_device_info
 
 
 async def async_setup_entry(
@@ -53,8 +54,11 @@ class BabyCareLastSensor(CoordinatorEntity[BabyCareCoordinator], SensorEntity):
         self._baby = baby
         self._kind = kind
         self._bid = int(baby["id"])
-        self._attr_name = f"{baby.get('name', '宝宝')} {label}"
+        # has_entity_name=True 时 HA 显示「设备名 + 实体名」，所以这里只放实体部分，
+        # 宝宝名由设备承载（否则会显示成「小甲 小甲 最近喂奶」）
+        self._attr_name = label
         self._attr_unique_id = f"{DOMAIN}_{self._bid}_{kind}"
+        self._attr_device_info = baby_device_info(baby)
 
     @property
     def native_value(self) -> str | None:
@@ -84,8 +88,9 @@ class BabyCareStatsSensor(CoordinatorEntity[BabyCareCoordinator], SensorEntity):
         super().__init__(coordinator)
         self._bid = int(baby["id"])
         self._kind = kind
-        self._attr_name = f"{baby.get('name', '宝宝')} {label}"
+        self._attr_name = label
         self._attr_unique_id = f"{DOMAIN}_{self._bid}_{kind}"
+        self._attr_device_info = baby_device_info(baby)
 
     @property
     def native_value(self) -> float | int | None:

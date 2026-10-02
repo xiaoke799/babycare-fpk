@@ -27,11 +27,16 @@ config/custom_components/babycare/
   config_flow.py
   const.py
   coordinator.py
+  entity.py          # 设备注册（一个宝宝 = 一个设备）
   manifest.json
   sensor.py
   services.py
   services.yaml
+  strings.json       # 配置流程文案（源文件）
   switch.py
+  translations/
+    en.json
+    zh-Hans.json
 ```
 
 重启 HA → 设置 → 设备与服务 → 添加集成 → **BabyCare 育儿宝**
@@ -42,6 +47,16 @@ config/custom_components/babycare/
 | Port | 默认 `8090`（fnOS 网关请填网关端口，Path 填 `/app/babycare-fpk`） |
 | Path | 反代子路径，默认空 |
 | API Key | 育儿宝生成的 Token（`bcb_...`） |
+
+## 设备与实体
+
+每个宝宝在 HA 里是一个**设备**，其下挂着该宝宝的传感器与开关：
+
+- 传感器：最近喂奶 / 最近睡眠 / 最近尿布 / 最近身高体重 / 今日喂奶次数 / 今日奶量
+- 开关：喂奶计时 / 睡眠计时（开 = 启动计时器，关 = 停止并写入记录）
+
+实体 ID 基于 `babycare_<宝宝id>_<种类>`，重启或重新配置不会变，
+所以自动化里引用的实体不会因为重装集成而失效。
 
 ## 自动化示例
 
@@ -66,6 +81,13 @@ data:
 请求头：`Authorization: Bearer <token>`（也支持 `Token <token>`）  
 Token 仅存哈希；泄露后请在育儿宝重新生成或吊销。  
 集成 Token 可读数据、写喂养/睡眠/尿布/生长/计时记录，**不能**改设置、删宝宝或动备份。
+
+### Token 失效怎么办
+
+在育儿宝里重新生成或吊销 Token 后，HA 会自动弹窗让你重新填新 Token，
+**不需要删掉集成重加**（重加会丢实体 ID，自动化里引用的实体要重做）。
+
+如果没弹窗、实体显示不可用，去「设置 → 设备与服务 → BabyCare 育儿宝」点「配置」重新填一次即可。
 
 ## 与 Baby Buddy 集成的差异
 
