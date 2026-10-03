@@ -169,10 +169,16 @@ chk("健康档案里程碑仍用独立接口（milestone_details）",
 
 print()
 print("=== 七、设置页「系统诊断」集成度 ===")
-# 从「系统诊断」那张 settings-card 的开头切起，直到下一张卡（推送通知）为止。
-_diag_anchor = html.index("系统诊断")
-diag_start = html.rindex('<div class="settings-card">', 0, _diag_anchor)
-diag_block = html[diag_start:html.index("<!-- 推送通知设置 -->", diag_start)]
+# 从「系统诊断」那张卡的开头切起，到下一张卡为止。
+# 用卡片标题做锚点、用「下一张 settings-card 开头」定边界 ——
+# 不依赖卡片上的修饰 class（如 settings-card--diag）或注释文字，避免改版面就误伤门禁。
+# 注意：卡片内部还有 settings-card-head / -head-text / -desc 等同前缀的 div，
+# 所以这里必须用「class 值到 settings-card 为止」的精确匹配，不能用字符串前缀查找。
+_diag_anchor = html.index('settings-card-title">系统诊断<')
+_card_opens = [m.start() for m in re.finditer(r'<div class="settings-card(?=[\s"])', html)]
+diag_start = max(o for o in _card_opens if o < _diag_anchor)
+_after = [o for o in _card_opens if o > _diag_anchor]
+diag_block = html[diag_start:(_after[0] if _after else len(html))]
 for eid in ["appInfoGrid", "refreshAppInfoBtn", "storageOverview", "storageGrid",
             "storageHealth", "checkDbHealthBtn", "optimizeDbBtn", "cleanOrphanBtn",
             "logFileList", "refreshLogBtn", "logTypeSelect", "logLinesSelect",

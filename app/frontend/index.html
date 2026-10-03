@@ -1271,576 +1271,576 @@
         <h3 class="section-title">应用设置</h3>
     </div>
 
-    <!-- 通用偏好 -->
-    <div class="settings-card">
-        <div class="settings-card-head">
-            <span class="settings-card-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
-            </span>
-            <div class="settings-card-head-text">
-                <div class="settings-card-title">通用偏好</div>
-                <div class="settings-card-desc">单位、列表分页与外观显示</div>
-            </div>
-        </div>
-
-        <div class="settings-row">
-            <label class="settings-row-label" for="settingsWeightUnit">体重单位</label>
-            <select id="settingsWeightUnit" class="settings-select">
-                <option value="kg">千克 (kg)</option>
-                <option value="lb">磅 (lb)</option>
-            </select>
-        </div>
-        <div class="settings-row">
-            <label class="settings-row-label" for="settingsHeightUnit">身高单位</label>
-            <select id="settingsHeightUnit" class="settings-select">
-                <option value="cm">厘米 (cm)</option>
-                <option value="in">英寸 (in)</option>
-            </select>
-        </div>
-        <div class="settings-row">
-            <label class="settings-row-label" for="settingsTempUnit">温度单位</label>
-            <select id="settingsTempUnit" class="settings-select">
-                <option value="°C">摄氏度 (°C)</option>
-                <option value="°F">华氏度 (°F)</option>
-            </select>
-        </div>
-        <div class="settings-row">
-            <label class="settings-row-label" for="settingsPageSize">每页记录数</label>
-            <select id="settingsPageSize" class="settings-select">
-                <option value="10">10 条</option>
-                <option value="20">20 条</option>
-                <option value="50">50 条</option>
-            </select>
-        </div>
-        <div class="settings-row">
-            <label class="settings-row-label" for="darkModeToggle">深色模式</label>
-            <label class="toggle-switch">
-                <input type="checkbox" id="darkModeToggle">
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
-        <div class="settings-row">
-            <div>
-                <label class="settings-row-label" for="keepLoginToggle">保持登录状态</label>
-                <div class="settings-row-hint">开启后 30 天内无需重复登录</div>
-            </div>
-            <label class="toggle-switch">
-                <input type="checkbox" id="keepLoginToggle">
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
-
-        <div class="settings-row settings-row--stack">
-            <div>
-                <div class="settings-row-label">删除安全码</div>
-                <div class="settings-row-hint" id="safetyCodeHint">删除宝宝前必须输入安全码，防止误删</div>
-            </div>
-            <div class="safety-code-actions">
-                <input type="password" id="safetyCodeInput" class="settings-input"
-                       placeholder="至少 4 位" maxlength="64" autocomplete="new-password">
-                <button type="button" class="btn btn-primary btn-sm" id="saveSafetyCodeBtn">设置</button>
-                <button type="button" class="btn btn-cancel btn-sm" id="clearSafetyCodeBtn">清除</button>
-            </div>
-            <p class="settings-tip" id="safetyCodeTip"></p>
-        </div>
-
-        <!-- 家庭成员：谁在记录。一家人共用一个 NAS 入口，记下来的东西得知道出自谁手 -->
-        <div class="settings-row settings-row--stack">
-            <div>
-                <div class="settings-row-label">家庭成员</div>
-                <div class="settings-row-hint">记录时可以选「谁记的」，回看时一眼看出这条出自谁手</div>
-            </div>
-            <div class="family-member-editor">
-                <input type="text" id="familyMemberInput" class="settings-input"
-                       placeholder="如 妈妈" maxlength="20">
-                <button type="button" class="btn btn-primary btn-sm" id="addFamilyMemberBtn">添加</button>
-            </div>
-            <div class="family-member-list" id="familyMemberList">
-                <p class="settings-tip">还没有家庭成员</p>
-            </div>
-            <p class="settings-tip" id="familyMemberTip"></p>
-        </div>
-
-        <button class="btn btn-primary settings-save-btn" id="saveSettingsBtn">保存设置</button>
-        <p class="settings-tip" id="settingsTip"></p>
-    </div>
-
-    <!-- AI 大模型配置 -->
-    <div class="settings-card settings-card--llm" id="llmSettingsSection">
-        <div class="settings-card-head">
-            <span class="settings-card-icon settings-card-icon--ai">
-                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l2.3 5.9 5.9 2.3-5.9 2.3L12 18.9l-2.3-5.9-5.9-2.3 5.9-2.3L12 2.5z"/><path d="M19 14.5l1.1 2.9 2.9 1.1-2.9 1.1L19 22.5l-1.1-2.9-2.9-1.1 2.9-1.1L19 14.5z" opacity=".55"/></svg>
-            </span>
-            <div class="settings-card-head-text">
-                <div class="settings-card-title">AI 大模型</div>
-                <div class="settings-card-desc">配置后可获得更智能的 AI 回答，未配置时使用本地规则引擎（无需联网）</div>
-            </div>
-            <span class="llm-status-badge" id="llmStatusBadge">规则引擎</span>
-        </div>
-
-        <div class="llm-panel">
-            <!-- 提供商 -->
-            <div class="llm-field">
-                <div class="llm-field-head">
-                    <label class="llm-field-label" for="llmProvider">提供商</label>
-                    <a href="#" class="llm-get-key-link" id="getKeyLink" target="_blank" rel="noopener" style="display:none;">查看文档</a>
-                </div>
-                <select id="llmProvider" class="settings-select settings-select-block">
-                    <option value="">关闭（使用规则引擎）</option>
-                </select>
-            </div>
-
-            <!-- 接口地址 -->
-            <div class="llm-field" id="llmUrlRow" style="display:none;">
-                <label class="llm-field-label" for="llmApiUrl">API 地址</label>
-                <input type="text" id="llmApiUrl" class="settings-input" placeholder="自动根据提供商填充，可自定义">
-                <p class="settings-field-hint" id="llmApiUrlHint">默认由提供商模板自动填充，支持修改为代理地址</p>
-            </div>
-
-            <!-- Base URL（高级） -->
-            <div class="llm-field" id="llmBaseUrlRow" style="display:none;">
-                <label class="llm-field-label" for="llmBaseUrl">Base URL</label>
-                <input type="text" id="llmBaseUrl" class="settings-input" placeholder="https://api.openai.com/v1">
-                <p class="settings-field-hint">API 服务的基础地址，留空则使用提供商默认值</p>
-            </div>
-
-            <!-- API Key（仅云端服务） -->
-            <div class="llm-field" id="llmApiKeyRow" style="display:none;">
-                <label class="llm-field-label" for="llmApiKey">API Key</label>
-                <div class="llm-apikey-wrapper">
-                    <input type="password" id="llmApiKey" class="settings-input" placeholder="输入 API Key（本地 AES-256 加密存储）" autocomplete="new-password">
-                    <button type="button" class="llm-toggle-pwd" id="toggleApiKeyBtn" title="显示/隐藏">显示</button>
-                </div>
-                <div class="llm-apikey-status" id="llmApiKeyStatus" style="display:none;">
-                    <span class="llm-apikey-status-dot"></span>
-                    <span class="llm-apikey-status-ok">已配置</span>
-                    <span class="llm-apikey-status-masked" id="llmApiKeyMasked"></span>
-                </div>
-            </div>
-
-            <!-- 模型名称 -->
-            <div class="llm-field" id="llmModelRow" style="display:none;">
-                <div class="llm-field-head">
-                    <label class="llm-field-label" for="llmModel">模型名称</label>
-                    <span class="llm-field-hint-inline" id="llmModelHint">选择具体使用的模型</span>
-                </div>
-                <select id="llmModel" class="settings-select settings-select-block"></select>
-                <!-- 自定义模型输入 -->
-                <div class="llm-custom-model" id="llmCustomModelRow" style="display:none; margin-top:8px;">
-                    <div class="llm-custom-model-input">
-                        <input type="text" id="llmCustomModelInput" class="settings-input" placeholder="输入自定义模型名称，按回车添加">
-                        <button type="button" class="btn btn-sm" id="addCustomModelBtn">添加</button>
+    <div class="settings-col settings-col-left">
+        <!-- 通用偏好 -->
+            <div class="settings-card settings-card--prefs">
+                <div class="settings-card-head">
+                    <span class="settings-card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+                    </span>
+                    <div class="settings-card-head-text">
+                        <div class="settings-card-title">通用偏好</div>
+                        <div class="settings-card-desc">单位、列表分页与外观显示</div>
                     </div>
-                    <div class="llm-custom-model-tags" id="llmCustomModelTags"></div>
-                    <p class="settings-field-hint">添加自定义模型后可在上方下拉框选择</p>
                 </div>
-                <div class="llm-model-tags" id="llmModelTags"></div>
-                <p class="settings-field-hint settings-field-hint--accent" id="llmModelHintText" style="display:none;"></p>
-            </div>
 
-            <!-- 视觉增强 -->
-            <div class="llm-field" id="llmVisionModelRow" style="display:none;">
-                <div class="llm-field-head">
-                    <label class="llm-field-label" for="llmVisionEnabled">视觉增强</label>
+                <div class="settings-row">
+                    <label class="settings-row-label" for="settingsWeightUnit">体重单位</label>
+                    <select id="settingsWeightUnit" class="settings-select">
+                        <option value="kg">千克 (kg)</option>
+                        <option value="lb">磅 (lb)</option>
+                    </select>
+                </div>
+                <div class="settings-row">
+                    <label class="settings-row-label" for="settingsHeightUnit">身高单位</label>
+                    <select id="settingsHeightUnit" class="settings-select">
+                        <option value="cm">厘米 (cm)</option>
+                        <option value="in">英寸 (in)</option>
+                    </select>
+                </div>
+                <div class="settings-row">
+                    <label class="settings-row-label" for="settingsTempUnit">温度单位</label>
+                    <select id="settingsTempUnit" class="settings-select">
+                        <option value="°C">摄氏度 (°C)</option>
+                        <option value="°F">华氏度 (°F)</option>
+                    </select>
+                </div>
+                <div class="settings-row">
+                    <label class="settings-row-label" for="settingsPageSize">每页记录数</label>
+                    <select id="settingsPageSize" class="settings-select">
+                        <option value="10">10 条</option>
+                        <option value="20">20 条</option>
+                        <option value="50">50 条</option>
+                    </select>
+                </div>
+                <div class="settings-row">
+                    <label class="settings-row-label" for="darkModeToggle">深色模式</label>
                     <label class="toggle-switch">
-                        <input type="checkbox" id="llmVisionEnabled">
+                        <input type="checkbox" id="darkModeToggle">
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
-                <p class="llm-field-desc">开启后可发送图片给 AI 分析（如身高曲线图、疫苗记录）</p>
-            </div>
-
-            <div class="llm-field" id="llmVisionSelectRow" style="display:none;">
-                <label class="llm-field-label" for="llmVisionModel">视觉模型</label>
-                <select id="llmVisionModel" class="settings-select settings-select-block"></select>
-                <p class="llm-field-desc" id="llmVisionModelHint">选择支持图片分析的模型</p>
-            </div>
-
-            <!-- 高级配置折叠面板 -->
-            <div class="llm-advanced-toggle" id="llmAdvancedToggle">
-                <span class="llm-advanced-toggle-text">高级配置</span>
-                <span class="llm-advanced-toggle-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-                </span>
-            </div>
-            <div class="llm-advanced-panel" id="llmAdvancedPanel" style="display:none;">
-                <div class="llm-field">
-                    <div class="llm-field-head">
-                        <label class="llm-field-label" for="llmTemperature">回复随机性 (Temperature)</label>
-                        <span class="settings-range-val" id="llmTemperatureVal">0.7</span>
+                <div class="settings-row">
+                    <div>
+                        <label class="settings-row-label" for="keepLoginToggle">保持登录状态</label>
+                        <div class="settings-row-hint">开启后 30 天内无需重复登录</div>
                     </div>
-                    <div class="llm-range-wrapper">
-                        <input type="range" id="llmTemperature" class="settings-range" min="0" max="1" step="0.1" value="0.7">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="keepLoginToggle">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="settings-row settings-row--stack">
+                    <div>
+                        <div class="settings-row-label">删除安全码</div>
+                        <div class="settings-row-hint" id="safetyCodeHint">删除宝宝前必须输入安全码，防止误删</div>
                     </div>
-                    <div class="llm-range-labels">
-                        <span>稳定</span>
-                        <span>平衡</span>
-                        <span>创意</span>
+                    <div class="safety-code-actions">
+                        <input type="password" id="safetyCodeInput" class="settings-input"
+                               placeholder="至少 4 位" maxlength="64" autocomplete="new-password">
+                        <button type="button" class="btn btn-primary btn-sm" id="saveSafetyCodeBtn">设置</button>
+                        <button type="button" class="btn btn-cancel btn-sm" id="clearSafetyCodeBtn">清除</button>
+                    </div>
+                    <p class="settings-tip" id="safetyCodeTip"></p>
+                </div>
+
+                <!-- 家庭成员：谁在记录。一家人共用一个 NAS 入口，记下来的东西得知道出自谁手 -->
+                <div class="settings-row settings-row--stack">
+                    <div>
+                        <div class="settings-row-label">家庭成员</div>
+                        <div class="settings-row-hint">记录时可以选「谁记的」，回看时一眼看出这条出自谁手</div>
+                    </div>
+                    <div class="family-member-editor">
+                        <input type="text" id="familyMemberInput" class="settings-input"
+                               placeholder="如 妈妈" maxlength="20">
+                        <button type="button" class="btn btn-primary btn-sm" id="addFamilyMemberBtn">添加</button>
+                    </div>
+                    <div class="family-member-list" id="familyMemberList">
+                        <p class="settings-tip">还没有家庭成员</p>
+                    </div>
+                    <p class="settings-tip" id="familyMemberTip"></p>
+                </div>
+
+                <button class="btn btn-primary settings-save-btn" id="saveSettingsBtn">保存设置</button>
+                <p class="settings-tip" id="settingsTip"></p>
+            </div>
+        <!-- AI 大模型 -->
+            <div class="settings-card settings-card--llm" id="llmSettingsSection">
+                <div class="settings-card-head">
+                    <span class="settings-card-icon settings-card-icon--ai">
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l2.3 5.9 5.9 2.3-5.9 2.3L12 18.9l-2.3-5.9-5.9-2.3 5.9-2.3L12 2.5z"/><path d="M19 14.5l1.1 2.9 2.9 1.1-2.9 1.1L19 22.5l-1.1-2.9-2.9-1.1 2.9-1.1L19 14.5z" opacity=".55"/></svg>
+                    </span>
+                    <div class="settings-card-head-text">
+                        <div class="settings-card-title">AI 大模型</div>
+                        <div class="settings-card-desc">配置后可获得更智能的 AI 回答，未配置时使用本地规则引擎（无需联网）</div>
+                    </div>
+                    <span class="llm-status-badge" id="llmStatusBadge">规则引擎</span>
+                </div>
+
+                <div class="llm-panel">
+                    <!-- 提供商 -->
+                    <div class="llm-field">
+                        <div class="llm-field-head">
+                            <label class="llm-field-label" for="llmProvider">提供商</label>
+                            <a href="#" class="llm-get-key-link" id="getKeyLink" target="_blank" rel="noopener" style="display:none;">查看文档</a>
+                        </div>
+                        <select id="llmProvider" class="settings-select settings-select-block">
+                            <option value="">关闭（使用规则引擎）</option>
+                        </select>
+                    </div>
+
+                    <!-- 接口地址 -->
+                    <div class="llm-field" id="llmUrlRow" style="display:none;">
+                        <label class="llm-field-label" for="llmApiUrl">API 地址</label>
+                        <input type="text" id="llmApiUrl" class="settings-input" placeholder="自动根据提供商填充，可自定义">
+                        <p class="settings-field-hint" id="llmApiUrlHint">默认由提供商模板自动填充，支持修改为代理地址</p>
+                    </div>
+
+                    <!-- Base URL（高级） -->
+                    <div class="llm-field" id="llmBaseUrlRow" style="display:none;">
+                        <label class="llm-field-label" for="llmBaseUrl">Base URL</label>
+                        <input type="text" id="llmBaseUrl" class="settings-input" placeholder="https://api.openai.com/v1">
+                        <p class="settings-field-hint">API 服务的基础地址，留空则使用提供商默认值</p>
+                    </div>
+
+                    <!-- API Key（仅云端服务） -->
+                    <div class="llm-field" id="llmApiKeyRow" style="display:none;">
+                        <label class="llm-field-label" for="llmApiKey">API Key</label>
+                        <div class="llm-apikey-wrapper">
+                            <input type="password" id="llmApiKey" class="settings-input" placeholder="输入 API Key（本地 AES-256 加密存储）" autocomplete="new-password">
+                            <button type="button" class="llm-toggle-pwd" id="toggleApiKeyBtn" title="显示/隐藏">显示</button>
+                        </div>
+                        <div class="llm-apikey-status" id="llmApiKeyStatus" style="display:none;">
+                            <span class="llm-apikey-status-dot"></span>
+                            <span class="llm-apikey-status-ok">已配置</span>
+                            <span class="llm-apikey-status-masked" id="llmApiKeyMasked"></span>
+                        </div>
+                    </div>
+
+                    <!-- 模型名称 -->
+                    <div class="llm-field" id="llmModelRow" style="display:none;">
+                        <div class="llm-field-head">
+                            <label class="llm-field-label" for="llmModel">模型名称</label>
+                            <span class="llm-field-hint-inline" id="llmModelHint">选择具体使用的模型</span>
+                        </div>
+                        <select id="llmModel" class="settings-select settings-select-block"></select>
+                        <!-- 自定义模型输入 -->
+                        <div class="llm-custom-model" id="llmCustomModelRow" style="display:none; margin-top:8px;">
+                            <div class="llm-custom-model-input">
+                                <input type="text" id="llmCustomModelInput" class="settings-input" placeholder="输入自定义模型名称，按回车添加">
+                                <button type="button" class="btn btn-sm" id="addCustomModelBtn">添加</button>
+                            </div>
+                            <div class="llm-custom-model-tags" id="llmCustomModelTags"></div>
+                            <p class="settings-field-hint">添加自定义模型后可在上方下拉框选择</p>
+                        </div>
+                        <div class="llm-model-tags" id="llmModelTags"></div>
+                        <p class="settings-field-hint settings-field-hint--accent" id="llmModelHintText" style="display:none;"></p>
+                    </div>
+
+                    <!-- 视觉增强 -->
+                    <div class="llm-field" id="llmVisionModelRow" style="display:none;">
+                        <div class="llm-field-head">
+                            <label class="llm-field-label" for="llmVisionEnabled">视觉增强</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="llmVisionEnabled">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <p class="llm-field-desc">开启后可发送图片给 AI 分析（如身高曲线图、疫苗记录）</p>
+                    </div>
+
+                    <div class="llm-field" id="llmVisionSelectRow" style="display:none;">
+                        <label class="llm-field-label" for="llmVisionModel">视觉模型</label>
+                        <select id="llmVisionModel" class="settings-select settings-select-block"></select>
+                        <p class="llm-field-desc" id="llmVisionModelHint">选择支持图片分析的模型</p>
+                    </div>
+
+                    <!-- 高级配置折叠面板 -->
+                    <div class="llm-advanced-toggle" id="llmAdvancedToggle">
+                        <span class="llm-advanced-toggle-text">高级配置</span>
+                        <span class="llm-advanced-toggle-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                        </span>
+                    </div>
+                    <div class="llm-advanced-panel" id="llmAdvancedPanel" style="display:none;">
+                        <div class="llm-field">
+                            <div class="llm-field-head">
+                                <label class="llm-field-label" for="llmTemperature">回复随机性 (Temperature)</label>
+                                <span class="settings-range-val" id="llmTemperatureVal">0.7</span>
+                            </div>
+                            <div class="llm-range-wrapper">
+                                <input type="range" id="llmTemperature" class="settings-range" min="0" max="1" step="0.1" value="0.7">
+                            </div>
+                            <div class="llm-range-labels">
+                                <span>稳定</span>
+                                <span>平衡</span>
+                                <span>创意</span>
+                            </div>
+                        </div>
+
+                        <div class="llm-field">
+                            <label class="llm-field-label" for="llmMaxTokens">最大回复长度</label>
+                            <input type="number" id="llmMaxTokens" class="settings-input" min="0" max="32000" step="100" placeholder="0 = 使用厂商默认">
+                        </div>
+
+                        <div class="llm-field">
+                            <label class="llm-field-label" for="llmTimeout">请求超时（秒）</label>
+                            <input type="number" id="llmTimeout" class="settings-input" min="5" max="120" step="5" value="30">
+                        </div>
+
+                        <div class="llm-field">
+                            <label class="llm-field-label" for="llmSystemPrompt">系统提示词</label>
+                            <textarea id="llmSystemPrompt" class="settings-textarea" rows="3" placeholder="留空使用内置育儿顾问提示词"></textarea>
+                            <button type="button" class="btn btn-text btn-sm llm-reset-prompt" id="resetSystemPromptBtn">恢复默认</button>
+                        </div>
+                    </div>
+
+                    <!-- 数据外发同意 -->
+                    <div class="llm-consent-row" id="llmConsentRow" style="display:none;">
+                        <div>
+                            <label class="llm-field-label" for="llmConsent">同意数据外发至所选厂商</label>
+                            <p class="llm-field-desc">云端厂商需要此同意才能启用；宝宝的月龄、身高等数据将发送至厂商服务器</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="llmConsent">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <!-- 操作按钮 -->
+                    <div class="llm-actions">
+                        <button type="button" class="btn btn-primary" id="saveLLMBtn">保存配置</button>
+                        <button type="button" class="btn btn-outline" id="testLLMBtn">测试连接</button>
+                    </div>
+                    <p class="settings-tip" id="llmTip"></p>
+
+                    <!-- 连接测试结果 -->
+                    <div class="llm-test-result" id="llmTestResult" style="display:none;">
+                        <div class="llm-test-result-header">
+                            <span class="llm-test-result-icon" id="llmTestResultIcon"></span>
+                            <span class="llm-test-result-text" id="llmTestResultText"></span>
+                        </div>
+                        <div class="llm-test-result-detail" id="llmTestResultDetail"></div>
+                    </div>
+                </div>
+            </div>
+        <!-- 系统诊断 -->
+            <div class="settings-card settings-card--diag">
+                <div class="settings-card-head">
+                    <span class="settings-card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+                    </span>
+                    <div class="settings-card-head-text">
+                        <div class="settings-card-title">系统诊断</div>
+                        <div class="settings-card-desc">应用信息、存储占用、数据库健康、日志与异常记录</div>
                     </div>
                 </div>
 
-                <div class="llm-field">
-                    <label class="llm-field-label" for="llmMaxTokens">最大回复长度</label>
-                    <input type="number" id="llmMaxTokens" class="settings-input" min="0" max="32000" step="100" placeholder="0 = 使用厂商默认">
+                <!-- 应用信息 -->
+                <div class="diag-group">
+                    <div class="diag-group-title">
+                        <span>应用信息</span>
+                        <button class="btn btn-sm btn-link" id="refreshAppInfoBtn">刷新</button>
+                    </div>
+                    <div class="diag-info-grid" id="appInfoGrid">
+                        <p class="empty-tip">加载中...</p>
+                    </div>
                 </div>
 
-                <div class="llm-field">
-                    <label class="llm-field-label" for="llmTimeout">请求超时（秒）</label>
-                    <input type="number" id="llmTimeout" class="settings-input" min="5" max="120" step="5" value="30">
+                <!-- 存储占用 -->
+                <div class="storage-overview" id="storageOverview">
+                    <div class="storage-overview-header">
+                        <span class="storage-overview-title">存储占用</span>
+                        <button class="btn btn-sm btn-link" id="refreshStorageBtn">刷新</button>
+                    </div>
+                    <div class="storage-disk-bar-wrap">
+                        <div class="storage-disk-bar" id="diskUsageBar"><div class="storage-disk-bar-fill" id="diskUsageFill"></div></div>
+                        <span class="storage-disk-pct" id="diskUsagePct">--</span>
+                    </div>
+                    <div class="storage-grid" id="storageGrid">
+                        <div class="storage-item"><span class="storage-item-label">数据库</span><b id="storageDb">--</b></div>
+                        <div class="storage-item"><span class="storage-item-label">照片</span><b id="storagePhotos">--</b></div>
+                        <div class="storage-item"><span class="storage-item-label">备份</span><b id="storageBackups">--</b></div>
+                        <div class="storage-item"><span class="storage-item-label">日志</span><b id="storageLogs">--</b></div>
+                    </div>
+                    <div class="storage-disk-free" id="diskFreeText">可用空间：--</div>
                 </div>
 
-                <div class="llm-field">
-                    <label class="llm-field-label" for="llmSystemPrompt">系统提示词</label>
-                    <textarea id="llmSystemPrompt" class="settings-textarea" rows="3" placeholder="留空使用内置育儿顾问提示词"></textarea>
-                    <button type="button" class="btn btn-text btn-sm llm-reset-prompt" id="resetSystemPromptBtn">恢复默认</button>
+                <!-- 数据库健康 -->
+                <div class="storage-health" id="storageHealth">
+                    <div class="storage-health-header">
+                        <span class="storage-overview-title">数据库健康</span>
+                        <button class="btn btn-sm btn-link" id="checkDbHealthBtn">检查</button>
+                    </div>
+                    <div class="storage-health-status" id="dbHealthStatus">点击"检查"查看完整性</div>
+                    <div class="storage-health-actions">
+                        <button class="btn btn-sm btn-outline" id="optimizeDbBtn" title="VACUUM 回收空闲页">优化数据库</button>
+                        <button class="btn btn-sm btn-outline" id="cleanOrphanBtn" title="清理磁盘上未被引用照片">清理孤立照片</button>
+                    </div>
+                </div>
+
+                <!-- 日志文件 -->
+                <div class="diag-group">
+                    <div class="diag-group-title">
+                        <span>日志文件</span>
+                        <button class="btn btn-sm btn-link" id="refreshLogBtn">刷新</button>
+                    </div>
+                    <div class="diag-log-files" id="logFileList">
+                        <p class="empty-tip">加载中...</p>
+                    </div>
+                    <div class="diag-row">
+                        <select class="settings-input diag-select" id="logTypeSelect">
+                            <option value="main">主日志</option>
+                            <option value="error">错误日志</option>
+                            <option value="access">访问日志</option>
+                            <option value="sql">SQL 日志</option>
+                        </select>
+                        <select class="settings-input diag-select" id="logLinesSelect">
+                            <option value="100">最近 100 行</option>
+                            <option value="300" selected>最近 300 行</option>
+                            <option value="1000">最近 1000 行</option>
+                        </select>
+                        <button class="btn btn-sm btn-outline" id="loadLogBtn">查看</button>
+                        <button class="btn btn-sm btn-outline" id="cleanLogsBtn" title="清空全部日志文件释放空间">清空全部</button>
+                    </div>
+                    <pre class="diag-log-content" id="logContent">点击「查看」加载日志内容</pre>
+                </div>
+
+                <!-- 异常记录 -->
+                <div class="diag-group">
+                    <div class="diag-group-title">
+                        <span>异常记录</span>
+                        <button class="btn btn-sm btn-link" id="refreshErrorsBtn">刷新</button>
+                    </div>
+                    <div class="diag-error-stats" id="errorStats">
+                        <p class="empty-tip">加载中...</p>
+                    </div>
+                    <div class="diag-row">
+                        <select class="settings-input diag-select" id="errorLevelFilter">
+                            <option value="">全部级别</option>
+                            <option value="ERROR">错误</option>
+                            <option value="WARNING">警告</option>
+                            <option value="CRITICAL">严重</option>
+                        </select>
+                        <select class="settings-input diag-select" id="errorDaysFilter">
+                            <option value="1">今天</option>
+                            <option value="7" selected>近 7 天</option>
+                            <option value="30">近 30 天</option>
+                            <option value="90">近 90 天</option>
+                        </select>
+                        <button class="btn btn-sm btn-outline" id="loadErrorsBtn">查询</button>
+                        <button class="btn btn-sm btn-outline" id="clearOldErrorsBtn" title="删除 30 天前的错误记录">清理旧记录</button>
+                        <button class="btn btn-sm btn-outline" id="loadMoreErrorsBtn" style="display:none">加载更多</button>
+                    </div>
+                    <div class="diag-error-list" id="errorList">
+                        <p class="empty-tip">点击「查询」加载异常记录</p>
+                    </div>
                 </div>
             </div>
-
-            <!-- 数据外发同意 -->
-            <div class="llm-consent-row" id="llmConsentRow" style="display:none;">
-                <div>
-                    <label class="llm-field-label" for="llmConsent">同意数据外发至所选厂商</label>
-                    <p class="llm-field-desc">云端厂商需要此同意才能启用；宝宝的月龄、身高等数据将发送至厂商服务器</p>
-                </div>
-                <label class="toggle-switch">
-                    <input type="checkbox" id="llmConsent">
-                    <span class="toggle-slider"></span>
-                </label>
-            </div>
-
-            <!-- 操作按钮 -->
-            <div class="llm-actions">
-                <button type="button" class="btn btn-primary" id="saveLLMBtn">保存配置</button>
-                <button type="button" class="btn btn-outline" id="testLLMBtn">测试连接</button>
-            </div>
-            <p class="settings-tip" id="llmTip"></p>
-
-            <!-- 连接测试结果 -->
-            <div class="llm-test-result" id="llmTestResult" style="display:none;">
-                <div class="llm-test-result-header">
-                    <span class="llm-test-result-icon" id="llmTestResultIcon"></span>
-                    <span class="llm-test-result-text" id="llmTestResultText"></span>
-                </div>
-                <div class="llm-test-result-detail" id="llmTestResultDetail"></div>
-            </div>
-        </div>
     </div>
 
-    <!-- 数据管理 -->
-    <div class="settings-card">
-        <div class="settings-card-head">
-            <span class="settings-card-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
-            </span>
-            <div class="settings-card-head-text">
-                <div class="settings-card-title">数据管理</div>
-                <div class="settings-card-desc">导出或导入本机备份数据（JSON 格式）</div>
-            </div>
-        </div>
-<div class="auto-backup" id="autoBackup">
-            <label class="auto-backup-toggle">
-                <input type="checkbox" id="autoBackupEnabled"> 启用定时自动备份
-            </label>
-            <div class="auto-backup-row">
-                <span>间隔</span>
-                <select id="autoBackupInterval">
-                    <option value="6">每 6 小时</option>
-                    <option value="12">每 12 小时</option>
-                    <option value="24" selected>每天</option>
-                    <option value="48">每 2 天</option>
-                    <option value="168">每周</option>
-                </select>
-                <span>保留</span>
-                <select id="autoBackupKeep">
-                    <option value="5">5 个</option>
-                    <option value="10" selected>10 个</option>
-                    <option value="20">20 个</option>
-                    <option value="30">30 个</option>
-                </select>
-                <button class="btn btn-sm btn-primary" id="saveAutoBackupBtn">保存</button>
-            </div>
-            <div class="auto-backup-status" id="autoBackupStatus">未启用</div>
-        </div>
+    <div class="settings-col settings-col-right">
+        <!-- 数据管理 -->
+            <div class="settings-card settings-card--data">
+                <div class="settings-card-head">
+                    <span class="settings-card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                    </span>
+                    <div class="settings-card-head-text">
+                        <div class="settings-card-title">数据管理</div>
+                        <div class="settings-card-desc">导出或导入本机备份数据（JSON 格式）</div>
+                    </div>
+                </div>
+        <div class="auto-backup" id="autoBackup">
+                    <label class="auto-backup-toggle">
+                        <input type="checkbox" id="autoBackupEnabled"> 启用定时自动备份
+                    </label>
+                    <div class="auto-backup-row">
+                        <span>间隔</span>
+                        <select id="autoBackupInterval">
+                            <option value="6">每 6 小时</option>
+                            <option value="12">每 12 小时</option>
+                            <option value="24" selected>每天</option>
+                            <option value="48">每 2 天</option>
+                            <option value="168">每周</option>
+                        </select>
+                        <span>保留</span>
+                        <select id="autoBackupKeep">
+                            <option value="5">5 个</option>
+                            <option value="10" selected>10 个</option>
+                            <option value="20">20 个</option>
+                            <option value="30">30 个</option>
+                        </select>
+                        <button class="btn btn-sm btn-primary" id="saveAutoBackupBtn">保存</button>
+                    </div>
+                    <div class="auto-backup-status" id="autoBackupStatus">未启用</div>
+                </div>
 
-        <div class="data-mgmt-actions">
-            <button class="btn btn-outline" id="createBackupBtn">创建备份</button>
-            <button class="btn btn-outline" id="exportAllBtn">导出JSON</button>
-            <button class="btn btn-primary" id="exportToShareBtn">导出到共享目录</button>
-            <button class="btn btn-outline btn-sm" id="genIntegrationTokenBtn">生成集成 Token</button>
-            <button class="btn btn-outline btn-sm" id="revokeIntegrationTokenBtn">吊销 Token</button>
-            <p class="empty-tip" id="integrationTokenStatus" style="margin-top:8px">智能家居 Token：未配置</p>
-            <button class="btn btn-outline btn-sm" id="genWebhookTokenBtn">生成 Webhook Token</button>
-            <button class="btn btn-outline btn-sm" id="revokeWebhookTokenBtn">吊销 Webhook Token</button>
-            <p class="empty-tip" id="webhookTokenStatus" style="margin-top:8px">Webhook Token：未配置</p>
-            <div class="webhook-usage">
-                <p class="data-mgmt-tip">给床头智能按钮、语音助手、自动化脚本用的一条「一句话记一笔」通道（POST <code>/api/webhook/log</code>，事件：feeding / diaper / sleep / temperature）。它与上面的集成 Token 相互独立，可单独吊销。</p>
+                <div class="data-mgmt-actions">
+                    <button class="btn btn-outline" id="createBackupBtn">创建备份</button>
+                    <button class="btn btn-outline" id="exportAllBtn">导出JSON</button>
+                    <button class="btn btn-primary" id="exportToShareBtn">导出到共享目录</button>
+                    <button class="btn btn-outline btn-sm" id="genIntegrationTokenBtn">生成集成 Token</button>
+                    <button class="btn btn-outline btn-sm" id="revokeIntegrationTokenBtn">吊销 Token</button>
+                    <p class="empty-tip" id="integrationTokenStatus" style="margin-top:8px">智能家居 Token：未配置</p>
+                    <button class="btn btn-outline btn-sm" id="genWebhookTokenBtn">生成 Webhook Token</button>
+                    <button class="btn btn-outline btn-sm" id="revokeWebhookTokenBtn">吊销 Webhook Token</button>
+                    <p class="empty-tip" id="webhookTokenStatus" style="margin-top:8px">Webhook Token：未配置</p>
+                    <div class="webhook-usage">
+                        <p class="data-mgmt-tip">给床头智能按钮、语音助手、自动化脚本用的一条「一句话记一笔」通道（POST <code>/api/webhook/log</code>，事件：feeding / diaper / sleep / temperature）。它与上面的集成 Token 相互独立，可单独吊销。</p>
+                    </div>
+                    <button class="btn btn-outline" id="restoreFromShareBtn">从共享目录恢复</button>
+                    <button class="btn btn-outline" id="importDataBtn">导入数据</button>
+                    <button class="btn btn-outline" id="triggerAutoBackupBtn">立即自动备份</button>
+                </div>
+                <p class="data-mgmt-tip">JSON 备份包含全部数据，自动保留最近 N 个；升级前亦自动做热备份</p>
+                <input type="file" id="importFileInput" accept=".json" style="display:none">
+                <input type="file" id="importBackupInput" accept=".json" style="display:none">
+                <button class="btn btn-sm btn-link" onclick="document.getElementById('importBackupInput').click()" style="margin-top:4px;font-size:11px;color:var(--text-light)">
+                    从备份文件上传恢复
+                </button>
+                <div class="backup-history" id="backupHistory">
+                    <div class="backup-history-title">备份历史 <span class="backup-auto-tag" id="backupAutoTag" style="display:none">[含自动]</span></div>
+                    <div class="backup-list" id="backupList">
+                        <p class="backup-empty">暂无备份</p>
+                    </div>
+                </div>
+                <p class="data-tip" id="dataTip"></p>
             </div>
-            <button class="btn btn-outline" id="restoreFromShareBtn">从共享目录恢复</button>
-            <button class="btn btn-outline" id="importDataBtn">导入数据</button>
-            <button class="btn btn-outline" id="triggerAutoBackupBtn">立即自动备份</button>
-        </div>
-        <p class="data-mgmt-tip">JSON 备份包含全部数据，自动保留最近 N 个；升级前亦自动做热备份</p>
-        <input type="file" id="importFileInput" accept=".json" style="display:none">
-        <input type="file" id="importBackupInput" accept=".json" style="display:none">
-        <button class="btn btn-sm btn-link" onclick="document.getElementById('importBackupInput').click()" style="margin-top:4px;font-size:11px;color:var(--text-light)">
-            从备份文件上传恢复
-        </button>
-        <div class="backup-history" id="backupHistory">
-            <div class="backup-history-title">备份历史 <span class="backup-auto-tag" id="backupAutoTag" style="display:none">[含自动]</span></div>
-            <div class="backup-list" id="backupList">
-                <p class="backup-empty">暂无备份</p>
-            </div>
-        </div>
-        <p class="data-tip" id="dataTip"></p>
-    </div>
+        <!-- 推送通知 -->
+            <div class="settings-card settings-card--notify">
+                <div class="settings-card-head">
+                    <span class="settings-card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    </span>
+                    <div class="settings-card-head-text">
+                        <div class="settings-card-title">推送通知</div>
+                        <div class="settings-card-desc">配置后可在手机上接收喂奶、换尿布等提醒</div>
+                    </div>
+                </div>
 
-    <!-- 系统诊断：应用信息 / 存储占用 / 数据库健康 / 日志 / 异常记录
-         （存储与健康两块原先误放在看诊摘要页，跟就诊信息无关，2026-09-19 归到设置） -->
-    <div class="settings-card">
-        <div class="settings-card-head">
-            <span class="settings-card-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
-            </span>
-            <div class="settings-card-head-text">
-                <div class="settings-card-title">系统诊断</div>
-                <div class="settings-card-desc">应用信息、存储占用、数据库健康、日志与异常记录</div>
-            </div>
-        </div>
+                <div class="settings-row">
+                    <label class="settings-row-label" for="notifyEnabled">启用推送</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="notifyEnabled">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
 
-        <!-- 应用信息 -->
-        <div class="diag-group">
-            <div class="diag-group-title">
-                <span>应用信息</span>
-                <button class="btn btn-sm btn-link" id="refreshAppInfoBtn">刷新</button>
-            </div>
-            <div class="diag-info-grid" id="appInfoGrid">
-                <p class="empty-tip">加载中...</p>
-            </div>
-        </div>
+                <div class="settings-group-title">推送渠道</div>
+                <div class="settings-field">
+                    <label class="settings-field-label" for="notifyWechat">企业微信 Webhook</label>
+                    <input type="text" id="notifyWechat" class="settings-input" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx">
+                    <p class="settings-tip">群机器人地址；正文按纯文本推送，企业微信与微信插件均可直接阅读</p>
+                </div>
+                <div class="settings-field">
+                    <label class="settings-field-label" for="notifyDingtalk">钉钉 Webhook</label>
+                    <input type="text" id="notifyDingtalk" class="settings-input" placeholder="https://oapi.dingtalk.com/robot/send?access_token=xxx">
+                </div>
+                <div class="settings-field">
+                    <label class="settings-field-label" for="notifyFeishu">飞书 Webhook</label>
+                    <input type="text" id="notifyFeishu" class="settings-input" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/xxx">
+                </div>
+                <div class="settings-field">
+                    <label class="settings-field-label" for="notifyBark">Bark (iOS)</label>
+                    <input type="text" id="notifyBark" class="settings-input" placeholder="https://api.day.app/your-key">
+                </div>
+                <div class="settings-field">
+                    <label class="settings-field-label" for="notifyPushplus">PushPlus Token</label>
+                    <input type="text" id="notifyPushplus" class="settings-input" placeholder="你的 PushPlus Token">
+                    <p class="settings-tip">推送到微信公众号；按 HTML 简单排版，公众号内可正常阅读</p>
+                </div>
+                <!-- 下面两项后端一直支持（在 CONFIG_KEYS 里），只是设置页没暴露出来 -->
+                <div class="settings-field">
+                    <label class="settings-field-label" for="notifyPushplusTopic">PushPlus 群组编码（可选）</label>
+                    <input type="text" id="notifyPushplusTopic" class="settings-input" placeholder="留空推给自己；填群组编码则推到群组">
+                </div>
+                <div class="settings-field">
+                    <label class="settings-field-label" for="notifyTitlePrefix">推送标题前缀（可选）</label>
+                    <input type="text" id="notifyTitlePrefix" class="settings-input" placeholder="如「育儿宝」，多宝宝时便于区分">
+                </div>
 
-        <!-- 存储占用 -->
-        <div class="storage-overview" id="storageOverview">
-            <div class="storage-overview-header">
-                <span class="storage-overview-title">存储占用</span>
-                <button class="btn btn-sm btn-link" id="refreshStorageBtn">刷新</button>
-            </div>
-            <div class="storage-disk-bar-wrap">
-                <div class="storage-disk-bar" id="diskUsageBar"><div class="storage-disk-bar-fill" id="diskUsageFill"></div></div>
-                <span class="storage-disk-pct" id="diskUsagePct">--</span>
-            </div>
-            <div class="storage-grid" id="storageGrid">
-                <div class="storage-item"><span class="storage-item-label">数据库</span><b id="storageDb">--</b></div>
-                <div class="storage-item"><span class="storage-item-label">照片</span><b id="storagePhotos">--</b></div>
-                <div class="storage-item"><span class="storage-item-label">备份</span><b id="storageBackups">--</b></div>
-                <div class="storage-item"><span class="storage-item-label">日志</span><b id="storageLogs">--</b></div>
-            </div>
-            <div class="storage-disk-free" id="diskFreeText">可用空间：--</div>
-        </div>
+                <div class="settings-group-title">勿扰模式</div>
+                <div class="settings-row">
+                    <label class="settings-row-label" for="notifyDndEnabled">启用勿扰</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="notifyDndEnabled">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="settings-field">
+                    <label class="settings-field-label" for="notifyDndStart">勿扰开始时间</label>
+                    <input type="time" id="notifyDndStart" class="settings-input" value="22:00">
+                </div>
+                <div class="settings-field">
+                    <label class="settings-field-label" for="notifyDndEnd">勿扰结束时间</label>
+                    <input type="time" id="notifyDndEnd" class="settings-input" value="07:00">
+                </div>
 
-        <!-- 数据库健康 -->
-        <div class="storage-health" id="storageHealth">
-            <div class="storage-health-header">
-                <span class="storage-overview-title">数据库健康</span>
-                <button class="btn btn-sm btn-link" id="checkDbHealthBtn">检查</button>
-            </div>
-            <div class="storage-health-status" id="dbHealthStatus">点击"检查"查看完整性</div>
-            <div class="storage-health-actions">
-                <button class="btn btn-sm btn-outline" id="optimizeDbBtn" title="VACUUM 回收空闲页">优化数据库</button>
-                <button class="btn btn-sm btn-outline" id="cleanOrphanBtn" title="清理磁盘上未被引用照片">清理孤立照片</button>
-            </div>
-        </div>
+                <div class="settings-group-title">定时提醒</div>
+                <div class="settings-row">
+                    <label class="settings-row-label" for="notifyFeedingEnabled">喂奶提醒</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="notifyFeedingEnabled">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="settings-field">
+                    <label class="settings-field-label" for="notifyFeedingInterval">喂奶间隔（小时）</label>
+                    <input type="number" id="notifyFeedingInterval" class="settings-input" value="3" min="1" max="12" step="0.5">
+                </div>
+                <div class="settings-row">
+                    <label class="settings-row-label" for="notifyDiaperEnabled">换尿布提醒</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="notifyDiaperEnabled">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="settings-field">
+                    <label class="settings-field-label" for="notifyDiaperInterval">换尿布间隔（小时）</label>
+                    <input type="number" id="notifyDiaperInterval" class="settings-input" value="2" min="1" max="8" step="0.5">
+                </div>
+                <div class="settings-row">
+                    <label class="settings-row-label" for="notifyMedEnabled">用药提醒</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="notifyMedEnabled">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="settings-row">
+                    <label class="settings-row-label" for="notifyVaccineEnabled">疫苗提醒</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="notifyVaccineEnabled">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <!-- 后端 vaccine_reminder_days 支持 1-60 天，范围与 _INT_RANGES 一致 -->
+                <div class="settings-field">
+                    <label class="settings-field-label" for="notifyVaccineDays">疫苗提前几天提醒</label>
+                    <input type="number" id="notifyVaccineDays" class="settings-input" value="3" min="1" max="60" step="1">
+                </div>
 
-        <!-- 日志文件 -->
-        <div class="diag-group">
-            <div class="diag-group-title">
-                <span>日志文件</span>
-                <button class="btn btn-sm btn-link" id="refreshLogBtn">刷新</button>
-            </div>
-            <div class="diag-log-files" id="logFileList">
-                <p class="empty-tip">加载中...</p>
-            </div>
-            <div class="diag-row">
-                <select class="settings-input diag-select" id="logTypeSelect">
-                    <option value="main">主日志</option>
-                    <option value="error">错误日志</option>
-                    <option value="access">访问日志</option>
-                    <option value="sql">SQL 日志</option>
-                </select>
-                <select class="settings-input diag-select" id="logLinesSelect">
-                    <option value="100">最近 100 行</option>
-                    <option value="300" selected>最近 300 行</option>
-                    <option value="1000">最近 1000 行</option>
-                </select>
-                <button class="btn btn-sm btn-outline" id="loadLogBtn">查看</button>
-                <button class="btn btn-sm btn-outline" id="cleanLogsBtn" title="清空全部日志文件释放空间">清空全部</button>
-            </div>
-            <pre class="diag-log-content" id="logContent">点击「查看」加载日志内容</pre>
-        </div>
+                <!-- 体检 / 自定义健康提醒：对应后端 health_reminders 表（健康档案 → 提醒 tab） -->
+                <div class="settings-row">
+                    <label class="settings-row-label" for="notifyHealthReminderEnabled">体检提醒</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="notifyHealthReminderEnabled">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <!-- 后端 health_reminder_days 支持 1-60 天，范围与 _INT_RANGES 一致 -->
+                <div class="settings-field">
+                    <label class="settings-field-label" for="notifyHealthReminderDays">体检提前几天提醒</label>
+                    <input type="number" id="notifyHealthReminderDays" class="settings-input" value="1" min="1" max="60" step="1">
+                </div>
 
-        <!-- 异常记录 -->
-        <div class="diag-group">
-            <div class="diag-group-title">
-                <span>异常记录</span>
-                <button class="btn btn-sm btn-link" id="refreshErrorsBtn">刷新</button>
+                <div class="settings-actions">
+                    <button type="button" class="btn btn-primary" id="saveNotifyBtn">保存推送设置</button>
+                    <button type="button" class="btn btn-outline" id="testNotifyBtn">发送测试</button>
+                </div>
+                <p class="settings-tip" id="notifyTip"></p>
             </div>
-            <div class="diag-error-stats" id="errorStats">
-                <p class="empty-tip">加载中...</p>
-            </div>
-            <div class="diag-row">
-                <select class="settings-input diag-select" id="errorLevelFilter">
-                    <option value="">全部级别</option>
-                    <option value="ERROR">错误</option>
-                    <option value="WARNING">警告</option>
-                    <option value="CRITICAL">严重</option>
-                </select>
-                <select class="settings-input diag-select" id="errorDaysFilter">
-                    <option value="1">今天</option>
-                    <option value="7" selected>近 7 天</option>
-                    <option value="30">近 30 天</option>
-                    <option value="90">近 90 天</option>
-                </select>
-                <button class="btn btn-sm btn-outline" id="loadErrorsBtn">查询</button>
-                <button class="btn btn-sm btn-outline" id="clearOldErrorsBtn" title="删除 30 天前的错误记录">清理旧记录</button>
-                <button class="btn btn-sm btn-outline" id="loadMoreErrorsBtn" style="display:none">加载更多</button>
-            </div>
-            <div class="diag-error-list" id="errorList">
-                <p class="empty-tip">点击「查询」加载异常记录</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- 推送通知设置 -->
-    <div class="settings-card">
-        <div class="settings-card-head">
-            <span class="settings-card-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-            </span>
-            <div class="settings-card-head-text">
-                <div class="settings-card-title">推送通知</div>
-                <div class="settings-card-desc">配置后可在手机上接收喂奶、换尿布等提醒</div>
-            </div>
-        </div>
-
-        <div class="settings-row">
-            <label class="settings-row-label" for="notifyEnabled">启用推送</label>
-            <label class="toggle-switch">
-                <input type="checkbox" id="notifyEnabled">
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
-
-        <div class="settings-group-title">推送渠道</div>
-        <div class="settings-field">
-            <label class="settings-field-label" for="notifyWechat">企业微信 Webhook</label>
-            <input type="text" id="notifyWechat" class="settings-input" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx">
-            <p class="settings-tip">群机器人地址；正文按纯文本推送，企业微信与微信插件均可直接阅读</p>
-        </div>
-        <div class="settings-field">
-            <label class="settings-field-label" for="notifyDingtalk">钉钉 Webhook</label>
-            <input type="text" id="notifyDingtalk" class="settings-input" placeholder="https://oapi.dingtalk.com/robot/send?access_token=xxx">
-        </div>
-        <div class="settings-field">
-            <label class="settings-field-label" for="notifyFeishu">飞书 Webhook</label>
-            <input type="text" id="notifyFeishu" class="settings-input" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/xxx">
-        </div>
-        <div class="settings-field">
-            <label class="settings-field-label" for="notifyBark">Bark (iOS)</label>
-            <input type="text" id="notifyBark" class="settings-input" placeholder="https://api.day.app/your-key">
-        </div>
-        <div class="settings-field">
-            <label class="settings-field-label" for="notifyPushplus">PushPlus Token</label>
-            <input type="text" id="notifyPushplus" class="settings-input" placeholder="你的 PushPlus Token">
-            <p class="settings-tip">推送到微信公众号；按 HTML 简单排版，公众号内可正常阅读</p>
-        </div>
-        <!-- 下面两项后端一直支持（在 CONFIG_KEYS 里），只是设置页没暴露出来 -->
-        <div class="settings-field">
-            <label class="settings-field-label" for="notifyPushplusTopic">PushPlus 群组编码（可选）</label>
-            <input type="text" id="notifyPushplusTopic" class="settings-input" placeholder="留空推给自己；填群组编码则推到群组">
-        </div>
-        <div class="settings-field">
-            <label class="settings-field-label" for="notifyTitlePrefix">推送标题前缀（可选）</label>
-            <input type="text" id="notifyTitlePrefix" class="settings-input" placeholder="如「育儿宝」，多宝宝时便于区分">
-        </div>
-
-        <div class="settings-group-title">勿扰模式</div>
-        <div class="settings-row">
-            <label class="settings-row-label" for="notifyDndEnabled">启用勿扰</label>
-            <label class="toggle-switch">
-                <input type="checkbox" id="notifyDndEnabled">
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
-        <div class="settings-field">
-            <label class="settings-field-label" for="notifyDndStart">勿扰开始时间</label>
-            <input type="time" id="notifyDndStart" class="settings-input" value="22:00">
-        </div>
-        <div class="settings-field">
-            <label class="settings-field-label" for="notifyDndEnd">勿扰结束时间</label>
-            <input type="time" id="notifyDndEnd" class="settings-input" value="07:00">
-        </div>
-
-        <div class="settings-group-title">定时提醒</div>
-        <div class="settings-row">
-            <label class="settings-row-label" for="notifyFeedingEnabled">喂奶提醒</label>
-            <label class="toggle-switch">
-                <input type="checkbox" id="notifyFeedingEnabled">
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
-        <div class="settings-field">
-            <label class="settings-field-label" for="notifyFeedingInterval">喂奶间隔（小时）</label>
-            <input type="number" id="notifyFeedingInterval" class="settings-input" value="3" min="1" max="12" step="0.5">
-        </div>
-        <div class="settings-row">
-            <label class="settings-row-label" for="notifyDiaperEnabled">换尿布提醒</label>
-            <label class="toggle-switch">
-                <input type="checkbox" id="notifyDiaperEnabled">
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
-        <div class="settings-field">
-            <label class="settings-field-label" for="notifyDiaperInterval">换尿布间隔（小时）</label>
-            <input type="number" id="notifyDiaperInterval" class="settings-input" value="2" min="1" max="8" step="0.5">
-        </div>
-        <div class="settings-row">
-            <label class="settings-row-label" for="notifyMedEnabled">用药提醒</label>
-            <label class="toggle-switch">
-                <input type="checkbox" id="notifyMedEnabled">
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
-        <div class="settings-row">
-            <label class="settings-row-label" for="notifyVaccineEnabled">疫苗提醒</label>
-            <label class="toggle-switch">
-                <input type="checkbox" id="notifyVaccineEnabled">
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
-        <!-- 后端 vaccine_reminder_days 支持 1-60 天，范围与 _INT_RANGES 一致 -->
-        <div class="settings-field">
-            <label class="settings-field-label" for="notifyVaccineDays">疫苗提前几天提醒</label>
-            <input type="number" id="notifyVaccineDays" class="settings-input" value="3" min="1" max="60" step="1">
-        </div>
-
-        <!-- 体检 / 自定义健康提醒：对应后端 health_reminders 表（健康档案 → 提醒 tab） -->
-        <div class="settings-row">
-            <label class="settings-row-label" for="notifyHealthReminderEnabled">体检提醒</label>
-            <label class="toggle-switch">
-                <input type="checkbox" id="notifyHealthReminderEnabled">
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
-        <!-- 后端 health_reminder_days 支持 1-60 天，范围与 _INT_RANGES 一致 -->
-        <div class="settings-field">
-            <label class="settings-field-label" for="notifyHealthReminderDays">体检提前几天提醒</label>
-            <input type="number" id="notifyHealthReminderDays" class="settings-input" value="1" min="1" max="60" step="1">
-        </div>
-
-        <div class="settings-actions">
-            <button type="button" class="btn btn-primary" id="saveNotifyBtn">保存推送设置</button>
-            <button type="button" class="btn btn-outline" id="testNotifyBtn">发送测试</button>
-        </div>
-        <p class="settings-tip" id="notifyTip"></p>
     </div>
 </section>
 

@@ -2151,24 +2151,51 @@ body {
     margin-bottom: 16px;
 }
 
-/* 设置页：桌面双栏卡片流，手机保持单列 */
+/* 设置页：手机单列；桌面两栏卡片流。
+   两栏各自用纵向 flex 堆叠（同首页 #page-dashboard .home-col 的做法），
+   卡片高度差再大也不会在同一行里被对方撑出空档 —— 用 2 列 grid 自动流时，
+   行高由该行较高的卡决定，矮的一侧下面就会留下大片空白。 */
+#page-settings.page.active {
+    display: flex;
+    flex-direction: column;
+}
+
+/* 手机上两栏容器"消失"，卡片按 order 决定阅读顺序 */
+.settings-col {
+    display: contents;
+}
+
+@media (max-width: 1023px) {
+    #page-settings .settings-card--prefs { order: 1; }
+    #page-settings .settings-card--llm { order: 2; }
+    #page-settings .settings-card--data { order: 3; }
+    #page-settings .settings-card--diag { order: 4; }
+    #page-settings .settings-card--notify { order: 5; }
+}
+
 @media (min-width: 1024px) {
-    #page-settings {
+    #page-settings.page.active {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0 20px;
+        column-gap: 20px;
+        row-gap: 0;
         align-items: start;
     }
     #page-settings .settings-header {
         grid-column: 1 / -1;
     }
-    #page-settings .settings-card {
-        margin-bottom: 20px;
+    /* 每栏一个纵向 flex 堆叠，栏内间距交给 gap，卡片不再自带下边距 */
+    #page-settings .settings-col {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        min-width: 0;
     }
-    /* 通栏卡片（诊断区等）占满两列 */
-    #page-settings .settings-card--wide,
-    #page-settings > .settings-tip,
-    #page-settings > .data-mgmt-tip {
+    #page-settings .settings-card {
+        margin-bottom: 0;
+    }
+    /* 需要通栏的卡片（放满两列） */
+    #page-settings .settings-card--wide {
         grid-column: 1 / -1;
     }
 }
