@@ -1649,64 +1649,87 @@
                     </span>
                     <div class="settings-card-head-text">
                         <div class="settings-card-title">数据管理</div>
-                        <div class="settings-card-desc">导出或导入本机备份数据（JSON 格式）</div>
+                        <div class="settings-card-desc">备份与恢复、智能家居接入、快捷记录 —— 三块互不相干，分开配置</div>
                     </div>
-                </div>
-        <div class="auto-backup" id="autoBackup">
-                    <label class="auto-backup-toggle">
-                        <input type="checkbox" id="autoBackupEnabled"> 启用定时自动备份
-                    </label>
-                    <div class="auto-backup-row">
-                        <span>间隔</span>
-                        <select id="autoBackupInterval">
-                            <option value="6">每 6 小时</option>
-                            <option value="12">每 12 小时</option>
-                            <option value="24" selected>每天</option>
-                            <option value="48">每 2 天</option>
-                            <option value="168">每周</option>
-                        </select>
-                        <span>保留</span>
-                        <select id="autoBackupKeep">
-                            <option value="5">5 个</option>
-                            <option value="10" selected>10 个</option>
-                            <option value="20">20 个</option>
-                            <option value="30">30 个</option>
-                        </select>
-                        <button class="btn btn-sm btn-primary" id="saveAutoBackupBtn">保存</button>
-                    </div>
-                    <div class="auto-backup-status" id="autoBackupStatus">未启用</div>
                 </div>
 
-                <div class="data-mgmt-actions">
-                    <button class="btn btn-outline" id="createBackupBtn">创建备份</button>
-                    <button class="btn btn-outline" id="exportAllBtn">导出JSON</button>
-                    <button class="btn btn-primary" id="exportToShareBtn">导出到共享目录</button>
-                    <button class="btn btn-outline btn-sm" id="genIntegrationTokenBtn">生成集成 Token</button>
-                    <button class="btn btn-outline btn-sm" id="revokeIntegrationTokenBtn">吊销 Token</button>
-                    <p class="empty-tip" id="integrationTokenStatus" style="margin-top:8px">智能家居 Token：未配置</p>
-                    <button class="btn btn-outline btn-sm" id="genWebhookTokenBtn">生成 Webhook Token</button>
-                    <button class="btn btn-outline btn-sm" id="revokeWebhookTokenBtn">吊销 Webhook Token</button>
-                    <p class="empty-tip" id="webhookTokenStatus" style="margin-top:8px">Webhook Token：未配置</p>
+                <!-- 组 1：备份与恢复 -->
+                <div class="settings-group">
+                    <div class="settings-group-title">备份与恢复</div>
+                    <p class="settings-group-desc">把本机数据整体存成 JSON 或存到共享目录；恢复时用同一份文件覆盖回来。</p>
+
+                    <div class="auto-backup" id="autoBackup">
+                        <label class="auto-backup-toggle">
+                            <input type="checkbox" id="autoBackupEnabled"> 启用定时自动备份
+                        </label>
+                        <div class="auto-backup-row">
+                            <span>间隔</span>
+                            <select id="autoBackupInterval">
+                                <option value="6">每 6 小时</option>
+                                <option value="12">每 12 小时</option>
+                                <option value="24" selected>每天</option>
+                                <option value="48">每 2 天</option>
+                                <option value="168">每周</option>
+                            </select>
+                            <span>保留</span>
+                            <select id="autoBackupKeep">
+                                <option value="5">5 个</option>
+                                <option value="10" selected>10 个</option>
+                                <option value="20">20 个</option>
+                                <option value="30">30 个</option>
+                            </select>
+                            <button class="btn btn-sm btn-primary" id="saveAutoBackupBtn">保存</button>
+                        </div>
+                        <div class="auto-backup-status" id="autoBackupStatus">未启用</div>
+                    </div>
+
+                    <div class="data-mgmt-actions">
+                        <button class="btn btn-outline" id="createBackupBtn">创建备份</button>
+                        <button class="btn btn-outline" id="exportAllBtn">导出JSON</button>
+                        <button class="btn btn-primary" id="exportToShareBtn">导出到共享目录</button>
+                        <button class="btn btn-outline" id="restoreFromShareBtn">从共享目录恢复</button>
+                        <button class="btn btn-outline" id="importDataBtn">导入数据</button>
+                        <button class="btn btn-outline" id="triggerAutoBackupBtn">立即自动备份</button>
+                    </div>
+                    <p class="data-mgmt-tip">JSON 备份包含全部数据，自动保留最近 N 个；升级前亦自动做热备份</p>
+                    <input type="file" id="importFileInput" accept=".json" style="display:none">
+                    <input type="file" id="importBackupInput" accept=".json" style="display:none">
+                    <button class="btn btn-sm btn-link" onclick="document.getElementById('importBackupInput').click()" style="margin-top:4px;font-size:11px;color:var(--text-light)">
+                        从备份文件上传恢复
+                    </button>
+                    <div class="backup-history" id="backupHistory">
+                        <div class="backup-history-title">备份历史 <span class="backup-auto-tag" id="backupAutoTag" style="display:none">[含自动]</span></div>
+                        <div class="backup-list" id="backupList">
+                            <p class="backup-empty">暂无备份</p>
+                        </div>
+                    </div>
+                    <p class="data-tip" id="dataTip"></p>
+                </div>
+
+                <!-- 组 2：智能家居接入（Home Assistant） -->
+                <div class="settings-group">
+                    <div class="settings-group-title">智能家居接入</div>
+                    <p class="settings-group-desc">给 Home Assistant 读取宝宝记录、写入新记录；不能改设置、不能删宝宝、不能动备份。</p>
+                    <div class="data-mgmt-actions">
+                        <button class="btn btn-outline btn-sm" id="genIntegrationTokenBtn">生成集成 Token</button>
+                        <button class="btn btn-outline btn-sm" id="revokeIntegrationTokenBtn">吊销 Token</button>
+                        <p class="empty-tip" id="integrationTokenStatus" style="margin-top:8px">智能家居 Token：未配置</p>
+                    </div>
+                </div>
+
+                <!-- 组 3：快捷记录 Webhook -->
+                <div class="settings-group">
+                    <div class="settings-group-title">快捷记录 Webhook</div>
+                    <p class="settings-group-desc">面向外网的「一句话记一笔」入口，与上面的集成 Token 相互独立，可单独吊销。</p>
+                    <div class="data-mgmt-actions">
+                        <button class="btn btn-outline btn-sm" id="genWebhookTokenBtn">生成 Webhook Token</button>
+                        <button class="btn btn-outline btn-sm" id="revokeWebhookTokenBtn">吊销 Webhook Token</button>
+                        <p class="empty-tip" id="webhookTokenStatus" style="margin-top:8px">Webhook Token：未配置</p>
+                    </div>
                     <div class="webhook-usage">
-                        <p class="data-mgmt-tip">给床头智能按钮、语音助手、自动化脚本用的一条「一句话记一笔」通道（POST <code>/api/webhook/log</code>，事件：feeding / diaper / sleep / temperature）。它与上面的集成 Token 相互独立，可单独吊销。</p>
-                    </div>
-                    <button class="btn btn-outline" id="restoreFromShareBtn">从共享目录恢复</button>
-                    <button class="btn btn-outline" id="importDataBtn">导入数据</button>
-                    <button class="btn btn-outline" id="triggerAutoBackupBtn">立即自动备份</button>
-                </div>
-                <p class="data-mgmt-tip">JSON 备份包含全部数据，自动保留最近 N 个；升级前亦自动做热备份</p>
-                <input type="file" id="importFileInput" accept=".json" style="display:none">
-                <input type="file" id="importBackupInput" accept=".json" style="display:none">
-                <button class="btn btn-sm btn-link" onclick="document.getElementById('importBackupInput').click()" style="margin-top:4px;font-size:11px;color:var(--text-light)">
-                    从备份文件上传恢复
-                </button>
-                <div class="backup-history" id="backupHistory">
-                    <div class="backup-history-title">备份历史 <span class="backup-auto-tag" id="backupAutoTag" style="display:none">[含自动]</span></div>
-                    <div class="backup-list" id="backupList">
-                        <p class="backup-empty">暂无备份</p>
+                        <p class="data-mgmt-tip">给床头智能按钮、语音助手、自动化脚本用的一条「一句话记一笔」通道（POST <code>/api/webhook/log</code>，事件：feeding / diaper / sleep / temperature）。</p>
                     </div>
                 </div>
-                <p class="data-tip" id="dataTip"></p>
             </div>
         <!-- 推送通知 -->
             <div class="settings-card settings-card--notify">

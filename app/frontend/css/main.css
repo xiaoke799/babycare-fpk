@@ -2354,6 +2354,46 @@ body {
     line-height: 1.6;
 }
 
+/* ---------- 卡内分组 ----------
+   一张卡里装多件互不相干的事时（设置页「数据管理」＝备份/恢复 + 智能家居接入 +
+   快捷记录），用「分隔线 + 小标题 + 一句话说明」分段，免得所有按钮糊成一堆、
+   用户分不清哪个是备份哪个是接入。
+   注意：用 `.settings-group + .settings-group` 而不是 `:first-of-type` ——
+   卡片第一个 div 是 .settings-card-head，用 :first-of-type 永远匹配不到第一组。 */
+.settings-group + .settings-group {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-color);
+}
+
+.settings-group-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.3px;
+    margin-bottom: 6px;
+}
+
+/* 标题前的小色条，让分组一眼可辨 */
+.settings-group-title::before {
+    content: '';
+    width: 3px;
+    height: 12px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    background: linear-gradient(180deg, var(--primary-color), var(--primary-dark));
+}
+
+.settings-group-desc {
+    font-size: 11.5px;
+    line-height: 1.6;
+    color: var(--text-light);
+    margin: 0 0 10px;
+}
+
 /* ==================== 关于页面 ==================== */
 .about-logo-row {
     display: flex;
@@ -3154,6 +3194,11 @@ body {
     font-size: 12px;
     text-align: center;
     margin-top: 10px;
+}
+
+/* 没内容时别留着 line-height + margin 撑出一段空白（备份历史下面那一坨） */
+.data-tip:empty {
+    display: none;
 }
 
 .data-tip.success {
@@ -4456,7 +4501,7 @@ body {
 .data-mgmt-tip {
     font-size: 11px;
     color: var(--text-light);
-    text-align: center;
+    text-align: left;
     margin: 8px 0;
 }
 
