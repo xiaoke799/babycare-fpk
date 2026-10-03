@@ -5917,6 +5917,22 @@ body {
     margin-top: 4px;
 }
 
+/* 每条记录旁的「几月龄问卷」标签 */
+.asq-interval-tag {
+    padding: 2px 8px;
+    background: rgba(91, 141, 239, 0.12);
+    color: #3A6FC4;
+    border-radius: 999px;
+    font-size: 11px;
+}
+
+/* 每条记录下面那行小字：提醒不是判读 */
+.asq-item-note {
+    margin: 6px 0 0;
+    font-size: 11px;
+    color: #A99A92;
+}
+
 .asq-info-card {
     background: #E3F2FD;
     border-radius: var(--radius);

@@ -17101,18 +17101,24 @@ function loadHealthAsq() {
 function renderHealthAsqList(asqList) {
     const container = document.getElementById('healthAsqList');
     if (!container) return;
-    if (!asqList || asqList.length === 0) { container.innerHTML = '<p class="empty-tip">暂无ASQ筛查记录</p>'; return; }
+    // 免责声明放在列表最上方：健康档案是家长最常逛的地方，提示不能缺席
+    const tip = '<p class="asq-form-hint">⚠️ 以下<strong>仅为自评分数记录</strong>，不能代替专业筛查。'
+        + '对发育有担心请去正规医院的儿童保健科/儿科。</p>';
+    if (!asqList || asqList.length === 0) {
+        container.innerHTML = tip + '<p class="empty-tip">暂无ASQ筛查记录</p>';
+        return;
+    }
     // 非标准 ASQ-3 常模判读，统一显示自评分数
     const resultMap = {
         score_only: '自评分数', normal: '自评分数', monitoring: '自评分数',
         referral: '自评分数', monitor: '自评分数', refer: '自评分数',
     };
     const resultClass = { score_only: 'asq-result-normal', normal: 'asq-result-normal', monitoring: 'asq-result-normal', referral: 'asq-result-normal', monitor: 'asq-result-normal', refer: 'asq-result-normal' };
-    container.innerHTML = asqList.slice(0, 5).map(a => {
+    container.innerHTML = tip + asqList.slice(0, 5).map(a => {
         const rClass = resultClass[a.result] || '';
         const rText = resultMap[a.result] || a.result;
         return `<div class="asq-mini-card ${rClass}">
-            <div class="asq-mini-header"><span class="asq-mini-age">${a.age_months}月龄</span><span class="asq-mini-date">${a.screening_date}</span><span class="asq-mini-result ${rClass}">${rText}</span></div>
+            <div class="asq-mini-header"><span class="asq-mini-age">${a.age_months}月龄</span><span class="asq-mini-date">${a.screening_date}</span><span class="asq-mini-result ${rClass}">${rText}</span>${a.interval ? `<span class="asq-interval-tag">${a.interval} 月龄问卷</span>` : ''}</div>
             <div class="asq-mini-scores">
                 <span>沟通:${a.communication_score}</span><span>大运动:${a.gross_motor_score}</span>
                 <span>精细:${a.fine_motor_score}</span><span>解决:${a.problem_solving_score}</span><span>社交:${a.personal_social_score}</span>
