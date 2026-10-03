@@ -10,6 +10,7 @@ import datetime
 import json
 import os
 import glob
+import hashlib
 import shutil
 import zipfile
 from flask import Blueprint, request, jsonify, send_file, current_app
@@ -211,8 +212,58 @@ def _safe_media_relpath(name):
     return rel
 
 
+def _count_backup_tables(all_data):
+    """统计备份里各表的行数。
+
+    备份的真实结构是**按宝宝分组**的：
+        {"babies": [{"baby": {...}, "records": {"feeding_records": [...]}}]}
+    不是顶层平铺的 {表名: [行]}。统计口径必须跟着这个结构走，
+    否则清单里全是 0，恢复校验会一直报「不一致」——
+    这种错静态检查发现不了，只有真造一份备份跑一遍才暴露。
+    """
+    counts = {}
+    for entry in (all_data or {}).get('babies') or []:
+        if not isinstance(entry, dict):
+            continue
+        for table, rows in (entry.get('records') or {}).items():
+            if isinstance(rows, list):
+                counts[table] = counts.get(table, 0) + len(rows)
+    return counts
+
+
+def _build_backup_manifest(all_data, media_count, data_json_bytes=None):
+    """备份清单：让「这个备份能不能恢复」变成**可验证**的事。
+
+    以前备份文件躺在那儿，从来没人能回答「它到底能不能用」——真到要恢复的
+    那天才发现坏了就晚了。清单里记下：
+      - tables       各表行数（恢复后逐表比对）
+      - data_sha256  data.json 的哈希 —— 光比行数只能发现「少了几行」，
+                     改了一个数值但行数不变是发现不了的（那属于更隐蔽的损坏）
+      - source_integrity  备份当时源库自身的完整性检查结果
+    """
+    tables = _count_backup_tables(all_data)
+    integrity = 'unknown'
+    try:
+        db = get_db()
+        row = db.execute('PRAGMA integrity_check').fetchone()
+        integrity = (row[0] if row else 'unknown') or 'unknown'
+    except Exception as e:  # noqa: BLE001
+        integrity = f'error: {e}'
+    return {
+        'format': 2,
+        'version': (all_data or {}).get('version'),
+        'tables': tables,
+        'table_total': sum(tables.values()),
+        'baby_count': len((all_data or {}).get('babies') or []),
+        'media_count': media_count,
+        'source_integrity': integrity,
+        'data_sha256': (hashlib.sha256(data_json_bytes).hexdigest()
+                        if data_json_bytes else None),
+    }
+
+
 def write_backup_archive(filepath, all_data, baby_id=None):
-    """写备份包：data.json + files/ 相册等媒体。返回 media 文件数。"""
+    """写备份包：data.json + manifest.json + files/ 相册等媒体。返回 media 文件数。"""
     media = _collect_media_files(baby_id)
     all_data = dict(all_data or {})
     all_data['version'] = '2.0'
@@ -220,11 +271,139 @@ def write_backup_archive(filepath, all_data, baby_id=None):
     all_data['media_count'] = len(media)
 
     with zipfile.ZipFile(filepath, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr('data.json', json.dumps(all_data, ensure_ascii=False, indent=2))
+        payload = json.dumps(all_data, ensure_ascii=False, indent=2)
+        zf.writestr('data.json', payload)
+        zf.writestr('manifest.json',
+                    json.dumps(_build_backup_manifest(all_data, len(media),
+                                                      payload.encode('utf-8')),
+                               ensure_ascii=False, indent=2))
         for rel, abs_path in media.items():
             # zip 内统一用 files/<rel>
             zf.write(abs_path, _MEDIA_PREFIX + rel)
     return len(media)
+
+
+def inspect_backup_archive(filepath):
+    """校验一个备份包「能不能恢复」。返回报告字典，不抛异常。
+
+    三种结论：
+      ok          —— 清单与数据一致，可以用
+      no_manifest —— 老版本备份没有清单（兼容），只做能做的检查
+      broken      —— 损坏或被截断，明确不可用
+    """
+    report = {
+        'status': 'broken',
+        'ok': False,
+        'message': '',
+        'tables_checked': 0,
+        'tables_matched': 0,
+        'mismatches': [],
+        'media_expected': None,
+        'media_actual': None,
+        'source_integrity': None,
+        'baby_count': None,
+    }
+    try:
+        if not filepath.lower().endswith('.zip'):
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            report.update(status='no_manifest', ok=True,
+                          message='旧版 JSON 备份，已读取成功（无清单可比对）',
+                          baby_count=len(data.get('babies') or []),
+                          tables_checked=len([v for v in data.values()
+                                              if isinstance(v, list)]))
+            report['tables_matched'] = report['tables_checked']
+            return report
+
+        with zipfile.ZipFile(filepath, 'r') as zf:
+            names = zf.namelist()
+            if 'data.json' not in names:
+                report['message'] = '备份包里没有 data.json，不是有效的育儿宝备份'
+                return report
+            bad = zf.testzip()          # CRC 校验，能抓出截断/损坏的成员
+            if bad:
+                report['message'] = f'备份包内文件已损坏：{bad}'
+                return report
+            zf_raw = zf.read('data.json')
+            data = json.loads(zf_raw.decode('utf-8'))
+            media_actual = len([n for n in names
+                                if n.startswith(_MEDIA_PREFIX) and not n.endswith('/')])
+            manifest = None
+            if 'manifest.json' in names:
+                try:
+                    manifest = json.loads(zf.read('manifest.json').decode('utf-8'))
+                except Exception:
+                    manifest = None
+
+        actual = _count_backup_tables(data)
+        report['baby_count'] = len(data.get('babies') or [])
+        report['media_actual'] = media_actual
+
+        if not manifest:
+            report.update(status='no_manifest', ok=True,
+                          message='这份备份没有清单（生成于旧版本），已确认可以读取',
+                          tables_checked=len(actual),
+                          tables_matched=len(actual))
+            return report
+
+        report['source_integrity'] = manifest.get('source_integrity')
+        report['media_expected'] = manifest.get('media_count')
+        expected = manifest.get('tables') or {}
+        for table, want in expected.items():
+            report['tables_checked'] += 1
+            got = actual.get(table)
+            if got == want:
+                report['tables_matched'] += 1
+            else:
+                report['mismatches'].append(
+                    {'table': table, 'expected': want, 'actual': got})
+        # 清单里有、实际没有的表也算不一致（备份被截断的典型表现）
+        for table, got in actual.items():
+            if table not in expected:
+                report['mismatches'].append(
+                    {'table': table, 'expected': None, 'actual': got})
+
+        if manifest.get('media_count') is not None and \
+                manifest.get('media_count') != media_actual:
+            report['mismatches'].append({'table': '(相册文件)',
+                                         'expected': manifest.get('media_count'),
+                                         'actual': media_actual})
+
+        # 内容哈希：行数一样但值被改过（比如某条记录的奶量被写成 999），
+        # 光比行数发现不了，这类损坏更隐蔽
+        want_hash = manifest.get('data_sha256')
+        if want_hash:
+            got_hash = hashlib.sha256(zf_raw).hexdigest() if zf_raw else None
+            report['data_sha256_matched'] = (got_hash == want_hash)
+            if got_hash != want_hash:
+                report['mismatches'].append(
+                    {'table': '(data.json 内容哈希)', 'expected': '一致', 'actual': '不一致'})
+        else:
+            report['data_sha256_matched'] = None
+
+        if report['mismatches']:
+            report['status'] = 'broken'
+            report['ok'] = False
+            report['message'] = (
+                '备份内容与清单不一致（可能未完整拷贝或已损坏），'
+                f'{len(report["mismatches"])} 处对不上，不建议直接恢复')
+        else:
+            report['status'] = 'ok'
+            report['ok'] = True
+            report['message'] = (
+                f'校验通过：{report["tables_matched"]} 张表行数一致'
+                + (f'，相册 {media_actual} 个文件' if media_actual else '')
+            )
+        return report
+    except FileNotFoundError:
+        report['message'] = '找不到这个备份文件'
+        return report
+    except zipfile.BadZipFile:
+        report['message'] = '不是有效的备份文件（zip 已损坏）'
+        return report
+    except Exception as e:  # noqa: BLE001
+        report['message'] = f'校验失败：{e}'
+        return report
 
 
 def _load_backup_file(filepath):
@@ -963,3 +1142,20 @@ def restore_from_share():
                 zf.close()
             except Exception:
                 pass
+
+
+@bp.route('/api/backup/inspect/<filename>', methods=['GET'])
+@require_admin
+def inspect_backup(filename):
+    """校验某个备份包「能不能恢复」——只读，不碰数据。
+
+    为什么需要：备份文件躺在那儿不动，从来没人能回答它还能不能用。
+    有了这个接口，恢复之前先花一秒验一下，比恢复到一半失败强。
+    """
+    if not _validate_backup_filename(filename):
+        return jsonify({'success': False, 'message': '备份文件名不合法'}), 400
+    path = os.path.join(_get_backup_dir(), filename)
+    if not os.path.isfile(path):
+        return jsonify({'success': False, 'message': '找不到这个备份文件'}), 404
+    report = inspect_backup_archive(path)
+    return jsonify({'success': True, 'data': report})

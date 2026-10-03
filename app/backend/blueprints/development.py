@@ -105,25 +105,167 @@ def delete_milestone(baby_id, record_id):
 
 
 # ==================== API: ASQ筛查 ====================
+# 定位先说清楚：这里是**记录分数**的地方，不是判读工具。
+# ASQ-3 的判读要按月龄区间、对照授权量表上的观察区上下限（cutoff），
+# 那是版权常量且必须由受过训练的专业人员来做，本工具一律不做。
+# 所以下面只有「该用哪一份问卷」这一层公开信息，不内置任何界值。
+
+# ASQ-3 问卷月份表（21 份，覆盖 1~66 月龄无缺口）
+# 来源：ASQ-3 Technical Report 的 Administration chart，与官方培训材料一致：
+#   2~24 月每 2 个月一份（2/4/6/8/9/10/12/14/16/18/20/22/24）
+#   27/30/33/36 月每 3 个月一份
+#   42/48/54/60 月每 6 个月一份
+# 每条：(问卷月龄, 施测下限, 施测上限)
+ASQ_INTERVALS = [
+    (2, "1个月0天", "2个月30天"),
+    (4, "3个月0天", "4个月30天"),
+    (6, "5个月0天", "6个月30天"),
+    (8, "7个月0天", "8个月30天"),
+    (9, "9个月0天", "9个月30天"),
+    (10, "10个月0天", "10个月30天"),
+    (12, "11个月0天", "12个月30天"),
+    (14, "13个月0天", "14个月30天"),
+    (16, "15个月0天", "16个月30天"),
+    (18, "17个月0天", "18个月30天"),
+    (20, "19个月0天", "20个月30天"),
+    (22, "21个月0天", "22个月30天"),
+    (24, "23个月0天", "25个月15天"),
+    (27, "25个月16天", "28个月15天"),
+    (30, "28个月16天", "31个月15天"),
+    (33, "31个月16天", "34个月15天"),
+    (36, "34个月16天", "38个月30天"),
+    (42, "39个月0天", "44个月30天"),
+    (48, "45个月0天", "50个月30天"),
+    (54, "51个月0天", "56个月30天"),
+    (60, "57个月0天", "66个月0天"),
+]
+
+# 五个领域：入库列名 → 中文名
+ASQ_AREAS = [
+    ("communication_score", "沟通"),
+    ("gross_motor_score", "大运动"),
+    ("fine_motor_score", "精细运动"),
+    ("problem_solving_score", "解决问题"),
+    ("personal_social_score", "个人社交"),
+]
+
+# 每个领域 6 题、每题 0/5/10 分 ⇒ 满分 60
+ASQ_MAX_AREA_SCORE = 60
+ASQ_MAX_TOTAL = ASQ_MAX_AREA_SCORE * len(ASQ_AREAS)
+
+ASQ_DISCLAIMER = (
+    "本工具只帮你记录 ASQ 问卷的分数，**不能代替专业筛查**。"
+    "结果仅供参考，不构成任何医疗诊断或发育评估结论。"
+    "早产宝宝请用矫正月龄（早产满 3 周以上，矫正到 2 岁）选择问卷。"
+    "如对发育有任何担心，请前往正规医院的儿童保健科/儿科做标准筛查。"
+)
+
+ASQ_MIN_MONTHS = 1
+ASQ_MAX_MONTHS = 66
+
+
+def _asq_pick_interval(months):
+    """按官方施测节奏，给定月龄推荐用哪一份问卷。返回 (问卷月龄, 说明)。"""
+    if months <= 2:
+        return 2, "当前月龄在 2 月龄问卷的施测窗口内（1 个月 0 天 ~ 2 个月 30 天）"
+    for iv, lo, hi in ASQ_INTERVALS:
+        # 窗口的月数跨度最大 5 个月（60 月龄那档），用问卷月龄做就近匹配
+        if months <= iv:
+            return iv, "%d 月龄问卷的施测窗口为 %s ~ %s" % (iv, lo, hi)
+    return 60, "已超出 60 月龄问卷的施测窗口（%s ~ %s），更大的月龄建议按机构安排" % (
+        ASQ_INTERVALS[-1][1], ASQ_INTERVALS[-1][2])
+
+
+def _asq_int(data, key, lo, hi, default=None):
+    """严格取整数：bool、字符串、浮点、超范围一律判非法。
+
+    这里必须严：旧写法 data.get(key, 0) 直接参与求和，传字符串会 TypeError → 500，
+    而家长看到的只是「保存失败」，不知道是自己填错了。
+
+    缺字段 vs 显式空值是两回事：
+      - 缺字段（没传这个 key）→ 用 default（分数可以只填一部分）
+      - 显式传 null / 空串 → 判非法（客户端发了脏数据，不能悄悄当成 0）
+    """
+    if key not in data:
+        if default is not None:
+            return default
+        raise ValueError("请填写%s" % key)
+    v = data[key]
+    if v is None or v == "":
+        raise ValueError("%s 不能为空" % key)
+    if isinstance(v, bool):
+        raise ValueError("%s 必须是数字" % key)
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        raise ValueError("%s 必须是数字" % key)
+    if n < lo or n > hi:
+        raise ValueError("%s 应在 %d~%d 之间" % (key, lo, hi))
+    return n
+
+
+def _validate_asq_payload(data):
+    """校验并归一化 ASQ 提交数据，非法就抛 ValueError（由调用方转 400）。"""
+    months = _asq_int(data, "age_months", ASQ_MIN_MONTHS, ASQ_MAX_MONTHS)
+    scores = []
+    for col, label in ASQ_AREAS:
+        scores.append(_asq_int(data, col, 0, ASQ_MAX_AREA_SCORE, default=0))
+
+    date_str = str(data.get("screening_date") or "").strip()
+    if not date_str:
+        date_str = datetime.date.today().strftime("%Y-%m-%d")
+    else:
+        try:
+            datetime.datetime.strptime(date_str[:10], "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("筛查日期格式不正确")
+
+    note = str(data.get("note") or "")[:500]
+    return months, scores, sum(scores), date_str, note
+
+
+@bp.route("/api/asq/info", methods=["GET"])
+def get_asq_info():
+    """ASQ 问卷月份表 / 领域 / 免责说明（前端渲染下拉与提示用）"""
+    return jsonify({
+        "success": True,
+        "data": {
+            "intervals": [
+                {"months": iv, "from": lo, "to": hi} for iv, lo, hi in ASQ_INTERVALS
+            ],
+            "areas": [{"key": col, "label": label} for col, label in ASQ_AREAS],
+            "max_area_score": ASQ_MAX_AREA_SCORE,
+            "max_total": ASQ_MAX_TOTAL,
+            "min_months": ASQ_MIN_MONTHS,
+            "max_months": ASQ_MAX_MONTHS,
+            "disclaimer": ASQ_DISCLAIMER,
+        },
+    })
+
 
 @bp.route("/api/babies/<int:baby_id>/asq", methods=["POST"])
 def add_asq_screening(baby_id):
-    """添加ASQ筛查记录"""
-    data = request.get_json()
-    if not data or not data.get("age_months"):
-        return jsonify({"success": False, "message": "请填写月龄"}), 400
+    """添加 ASQ 筛查记录
 
-    comm = data.get("communication_score", 0)
-    gross = data.get("gross_motor_score", 0)
-    fine = data.get("fine_motor_score", 0)
-    prob = data.get("problem_solving_score", 0)
-    pers = data.get("personal_social_score", 0)
-    total = comm + gross + fine + prob + pers
+    只存原始分，不做临床判读：标准 ASQ-3 要按月龄区间对照常模观察区上下限，
+    绝不是五维求和卡 150/100——那会误导家长。所以 result 固定 score_only。
+    """
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not data:
+        return jsonify({"success": False, "message": "请填写筛查内容"}), 400
 
-    # 不做临床结论。标准 ASQ-3 按月龄分区、分维度对照常模（观察区上下限），
-    # 绝不是五维求和卡 150/100——此前的 normal/monitor/refer 会误导家长。
-    # 这里只保存原始分，result 固定 score_only，UI 展示免责声明。
+    if not get_db().execute(
+            "SELECT id FROM babies WHERE id = ?", (baby_id,)).fetchone():
+        return jsonify({"success": False, "message": "宝宝不存在"}), 404
+
+    try:
+        months, scores, total, date_str, note = _validate_asq_payload(data)
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+    comm, gross, fine, prob, pers = scores
     result = "score_only"
+    interval, interval_note = _asq_pick_interval(months)
 
     db = get_db()
     db.execute(
@@ -131,8 +273,7 @@ def add_asq_screening(baby_id):
            communication_score, gross_motor_score, fine_motor_score,
            problem_solving_score, personal_social_score, total_score, result, note)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (baby_id, data.get("screening_date", datetime.date.today().strftime("%Y-%m-%d")),
-         data["age_months"], comm, gross, fine, prob, pers, total, result, data.get("note", ""))
+        (baby_id, date_str, months, comm, gross, fine, prob, pers, total, result, note)
     )
     db.commit()
     return jsonify({
@@ -140,8 +281,11 @@ def add_asq_screening(baby_id):
         "message": "筛查记录已添加",
         "data": {
             "total_score": total,
+            "max_total": ASQ_MAX_TOTAL,
             "result": result,
-            "disclaimer": "本记录为自评分数汇总，不是标准 ASQ-3 常模判读，不构成医疗结论。如需正式筛查请咨询儿科/儿保科。",
+            "interval": interval,
+            "interval_note": interval_note,
+            "disclaimer": ASQ_DISCLAIMER,
         },
     })
 
@@ -163,10 +307,28 @@ def get_asq_screenings(baby_id):
     try:
         db = get_db()
         rows = db.execute("SELECT * FROM asq_screenings WHERE baby_id = ? ORDER BY screening_date DESC", (baby_id,)).fetchall()
-        return jsonify({"success": True, "screenings": rows_to_list(rows)})
+        screenings = rows_to_list(rows)
+        # 附上「每条记录对应哪一份问卷」，方便回看时知道当时做的是哪个月的量表
+        for r in screenings:
+            try:
+                iv, _note = _asq_pick_interval(int(r.get("age_months") or 0))
+                r["interval"] = iv
+            except (TypeError, ValueError):
+                r["interval"] = None
+        return jsonify({
+            "success": True,
+            "screenings": screenings,
+            "disclaimer": ASQ_DISCLAIMER,
+            "max_total": ASQ_MAX_TOTAL,
+            "max_area_score": ASQ_MAX_AREA_SCORE,
+        })
     except Exception as e:
         logger.error("get_asq_screenings error: %s", e, exc_info=True)
-        return jsonify({"success": True, "screenings": []})
+        return jsonify({
+            "success": True,
+            "screenings": [],
+            "disclaimer": ASQ_DISCLAIMER,
+        })
 
 
 # ==================== API: 出牙记录 ====================

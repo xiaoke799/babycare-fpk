@@ -10684,15 +10684,20 @@ function loadAsqScreenings() {
                         <span class="asq-total-label">总分</span>
                         <span class="asq-total-value">${r.total_score}</span>
                         <span class="asq-result ${resultClass}">${resultMap[r.result]}</span>
+                        ${r.interval ? `<span class="asq-interval-tag">${r.interval} 月龄问卷</span>` : ''}
                     </div>
+                    <p class="asq-item-note">仅供参考，不代替专业筛查</p>
                 </div>
             `;
         }).join('');
     });
 }
 
-/** ASQ 的标准筛查月龄点，用来推算"下次该什么时候复筛" */
-const ASQ_AGE_POINTS = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 30, 33, 36];
+/** ASQ-3 的标准问卷档位（官方共 21 份），用来推算"下次该什么时候复筛"。
+ *  2~24 月每 2 个月一份，27/30/33/36 每 3 个月一份，42/48/54/60 每 6 个月一份。
+ *  ⚠️ 这里只是「下一次该做哪一档」的时间提醒，不含任何观察区界值，
+ *     更不能据此判断发育是否正常——判读必须由专业人员做。 */
+const ASQ_AGE_POINTS = [2, 4, 6, 8, 9, 10, 12, 14, 16, 18, 20, 22, 24, 27, 30, 33, 36, 42, 48, 54, 60];
 
 /** 发育筛查概览：筛查次数 / 最近结论 / 下次建议复查月龄。无记录则清空。 */
 function renderAsqOverview(records) {
@@ -10807,56 +10812,100 @@ function renderAsqTrend(records) {
     }
 }
 
-function showAsqModal() {
+/* ==================== ASQ 录入 ====================
+   月龄下拉必须覆盖官方全部 21 份问卷（以前只有 17 份，漏了 9 / 42 / 48 / 54 / 60），
+   否则家长做的是 9 月龄问卷却选不到、60 月龄那档干脆没法录。 */
+let ASQ_INFO = null;
+
+async function loadAsqInfo(force) {
+    if (ASQ_INFO && !force) return ASQ_INFO;
+    try {
+        const res = await api('/api/asq/info');
+        ASQ_INFO = (res && res.success) ? res.data : null;
+    } catch (e) {
+        ASQ_INFO = null;
+    }
+    return ASQ_INFO;
+}
+
+function asqIntervalOptions(selected) {
+    const list = (ASQ_INFO && ASQ_INFO.intervals) || [];
+    if (!list.length) {
+        return '<option value="12">12 个月</option>';
+    }
+    const cur = Number(selected) || 12;
+    const exact = list.some(i => Number(i.months) === cur);
+    const opts = list.map(i => `<option value="${i.months}"${Number(i.months) === cur ? ' selected' : ''}>${i.months} 个月问卷（${i.from} ~ ${i.to}）</option>`).join('');
+    // 宝宝月龄正好落在两档问卷之间（如 25 个月）时，补一个「实际月龄」选项，
+    // 免得家长为了凑下拉里的档位而填错月龄（填错月龄 = 跟错常模）
+    if (!exact) {
+        return `<option value="${cur}" selected>${cur} 个月（不在标准问卷档位，如实记录）</option>` + opts;
+    }
+    return opts;
+}
+
+/** 选月龄后显示这份问卷的施测窗口（早产宝宝请用矫正月龄） */
+function updateAsqWindowHint() {
+    const el = document.getElementById('asqWindowHint');
+    if (!el) return;
+    const sel = document.getElementById('asqAgeMonths');
+    if (!sel) return;
+    const months = Number(sel.value);
+    const hit = ((ASQ_INFO && ASQ_INFO.intervals) || []).find(i => Number(i.months) === months);
+    const win = hit ? `施测窗口：${hit.from} ~ ${hit.to}` : '该月龄不在标准问卷档位内，如实记录即可';
+    el.textContent = `${win}。早产满 3 周以上请用矫正月龄（一般矫正到 2 岁）。`;
+}
+
+async function showAsqModal() {
     if (!App.currentBaby) return;
+    await loadAsqInfo();
+    const max = (ASQ_INFO && ASQ_INFO.max_area_score) || 60;
     const html = `
         <form id="asqForm">
-            <div class="form-group">
-                <label>筛查月龄</label>
-                <select id="asqAgeMonths">
-                    <option value="2">2个月</option>
-                    <option value="4">4个月</option>
-                    <option value="6">6个月</option>
-                    <option value="8">8个月</option>
-                    <option value="10">10个月</option>
-                    <option value="12" selected>12个月</option>
-                    <option value="14">14个月</option>
-                    <option value="16">16个月</option>
-                    <option value="18">18个月</option>
-                    <option value="20">20个月</option>
-                    <option value="22">22个月</option>
-                    <option value="24">24个月</option>
-                    <option value="27">27个月</option>
-                    <option value="30">30个月</option>
-                    <option value="33">33个月</option>
-                    <option value="36">36个月</option>
-                </select>
+            <div class="asq-form-hint">
+                ⚠️ 这里只负责<strong>记录</strong>分数，<strong>不能代替专业筛查</strong>。
+                对发育有担心请去正规医院的儿童保健科/儿科。分数越高表示该领域表现越好，
+                但本工具不做任何判读结论。
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>问卷档位（月龄）</label>
+                    <select id="asqAgeMonths" onchange="updateAsqWindowHint()">
+                        ${asqIntervalOptions(12)}
+                    </select>
+                    <p class="asq-window-hint" id="asqWindowHint"></p>
+                </div>
+                <div class="form-group">
+                    <label>筛查日期</label>
+                    <input type="date" id="asqDate" value="${getToday()}">
+                </div>
             </div>
             <div class="asq-form-scores">
                 <div class="form-group">
-                    <label>沟通 (0-60)</label>
-                    <input type="number" id="asqComm" min="0" max="60" value="50">
+                    <label>沟通 (0-${max})</label>
+                    <input type="number" id="asqComm" min="0" max="${max}" step="5" value="50">
                 </div>
                 <div class="form-group">
-                    <label>大运动 (0-60)</label>
-                    <input type="number" id="asqGross" min="0" max="60" value="50">
+                    <label>大运动 (0-${max})</label>
+                    <input type="number" id="asqGross" min="0" max="${max}" step="5" value="50">
                 </div>
                 <div class="form-group">
-                    <label>精细运动 (0-60)</label>
-                    <input type="number" id="asqFine" min="0" max="60" value="50">
+                    <label>精细运动 (0-${max})</label>
+                    <input type="number" id="asqFine" min="0" max="${max}" step="5" value="50">
                 </div>
                 <div class="form-group">
-                    <label>解决问题 (0-60)</label>
-                    <input type="number" id="asqProblem" min="0" max="60" value="50">
+                    <label>解决问题 (0-${max})</label>
+                    <input type="number" id="asqProblem" min="0" max="${max}" step="5" value="50">
                 </div>
                 <div class="form-group">
-                    <label>个人社交 (0-60)</label>
-                    <input type="number" id="asqPersonal" min="0" max="60" value="50">
+                    <label>个人社交 (0-${max})</label>
+                    <input type="number" id="asqPersonal" min="0" max="${max}" step="5" value="50">
                 </div>
             </div>
+            <p class="asq-window-hint">五个领域各 6 题、每题 0/5/10 分，所以每领域满分 ${max}，总分 ${(ASQ_INFO && ASQ_INFO.max_total) || 300}。可按实际作答填写，不必凑整数。</p>
             <div class="form-group">
                 <label>备注</label>
-                <input type="text" id="asqNote" placeholder="可选">
+                <input type="text" id="asqNote" placeholder="可选，例如「在儿保科做的」">
             </div>
             <div class="form-actions">
                 <button type="button" class="btn btn-cancel" id="cancelAsqForm">取消</button>
@@ -10866,33 +10915,71 @@ function showAsqModal() {
     `;
     document.getElementById('asqModalBody').innerHTML = html;
     showModal('asqModal');
+    updateAsqWindowHint();
 
     document.getElementById('cancelAsqForm')?.addEventListener('click', () => hideModal('asqModal'));
     document.getElementById('asqForm')?.addEventListener('submit', function(e) {
         e.preventDefault();
+        // 前端也做一遍校验：静默把非法输入变成 0 存进去，比报错更难查
+        const num = (id) => {
+            const n = parseInt(document.getElementById(id)?.value, 10);
+            return Number.isFinite(n) ? n : NaN;
+        };
+        const months = num('asqAgeMonths');
+        if (!Number.isFinite(months) || months < 1) {
+            showToast.warning('请选择问卷档位（月龄）');
+            return;
+        }
         const data = {
             baby_id: App.currentBaby,
-            age_months: parseInt(document.getElementById('asqAgeMonths')?.value) || 0,
-            communication_score: parseInt(document.getElementById('asqComm')?.value) || 0,
-            gross_motor_score: parseInt(document.getElementById('asqGross')?.value) || 0,
-            fine_motor_score: parseInt(document.getElementById('asqFine')?.value) || 0,
-            problem_solving_score: parseInt(document.getElementById('asqProblem')?.value) || 0,
-            personal_social_score: parseInt(document.getElementById('asqPersonal')?.value) || 0,
+            age_months: months,
+            screening_date: document.getElementById('asqDate')?.value || getToday(),
+            communication_score: num('asqComm'),
+            gross_motor_score: num('asqGross'),
+            fine_motor_score: num('asqFine'),
+            problem_solving_score: num('asqProblem'),
+            personal_social_score: num('asqPersonal'),
             note: document.getElementById('asqNote')?.value || ''
         };
+        for (const [k, v] of Object.entries(data)) {
+            if (k.endsWith('_score') && !Number.isFinite(v)) {
+                showToast.warning('五个领域的分数都要填 0~60 的数字');
+                return;
+            }
+        }
         api(`/api/babies/${App.currentBaby}/asq`, {
             method: 'POST',
             body: JSON.stringify(data)
         }).then(res => {
             if (res.success) {
                 hideModal('asqModal');
-                showToast('筛查记录已添加');
+                showAsqSavedTip(res.data || {});
                 loadAsqScreenings();
             } else {
                 showToast.error(res.message || '添加失败');
             }
         });
     });
+}
+
+/** 保存后的提示：说清这份分数对应哪份问卷，并再提醒一次不能代替专业筛查。 */
+function showAsqSavedTip(d) {
+    const total = (d.total_score != null) ? `<b>${d.total_score}</b> / ${d.max_total || 300}` : '—';
+    const iv = d.interval ? `，对应 <b>${d.interval}</b> 月龄问卷` : '';
+    showModal(`
+        <div class="modal-header"><h3>筛查记录已保存</h3></div>
+        <div class="modal-body">
+            <p>本次总分 ${total}${iv}。</p>
+            ${d.interval_note ? `<p class="asq-window-hint">${escapeHtml(String(d.interval_note))}</p>` : ''}
+            <div class="asq-form-hint" style="margin-top:12px;">
+                ⚠️ 这个分数<strong>不能代替专业筛查</strong>。本工具只记录、不判读、不给结论。<br>
+                对发育有任何担心，请前往<strong>正规医院的儿童保健科 / 儿科</strong>做标准筛查。
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-primary" type="button" onclick="closeModal()">知道了</button>
+        </div>
+    `);
 }
 
 function deleteAsq(id) {
@@ -13210,6 +13297,7 @@ function loadBackupList() {
                     <div class="backup-item-meta">${escapeHtml(b.created_at)} · ${escapeHtml(b.size_human)}</div>
                 </div>
                 <div class="backup-item-actions">
+                    <button class="btn btn-outline btn-sm" data-action="inspect" data-file="${escapeHtml(b.filename)}">校验</button>
                     <button class="btn btn-outline btn-sm" data-action="download" data-file="${escapeHtml(b.filename)}">下载</button>
                     <button class="btn btn-outline btn-sm" data-action="restore" data-file="${escapeHtml(b.filename)}">恢复</button>
                     <button class="btn btn-danger btn-sm" data-action="delete" data-file="${escapeHtml(b.filename)}">删</button>
@@ -13230,10 +13318,35 @@ document.addEventListener('click', (e) => {
     if (!btn) return;
     const file = btn.dataset.file;
     if (!file) return;
-    if (btn.dataset.action === 'download') downloadBackup(file);
+    if (btn.dataset.action === 'inspect') inspectBackupFile(file);
+    else if (btn.dataset.action === 'download') downloadBackup(file);
     else if (btn.dataset.action === 'restore') restoreBackup(file);
     else if (btn.dataset.action === 'delete') deleteBackup(file);
 });
+
+/** 校验一个备份包「还能不能用」——只读，不碰数据。
+ *  备份躺在那儿不动是常态，能提前一秒知道它坏了，比恢复失败再回头强。 */
+function inspectBackupFile(filename) {
+    api(`/api/backup/inspect/${encodeURIComponent(filename)}`).then(res => {
+        if (!res || !res.success) {
+            showToast.error((res && res.message) || '校验失败');
+            return;
+        }
+        const r = res.data || {};
+        if (r.status === 'ok') {
+            showToast.success(r.message || '校验通过');
+        } else if (r.status === 'no_manifest') {
+            showToast(r.message || '旧版备份，已确认可读取');
+        } else {
+            // 坏了要明确说清是哪张表，别只丢一句「校验失败」
+            const detail = (r.mismatches || [])
+                .slice(0, 3)
+                .map(m => `${m.table}（清单 ${m.expected} / 实际 ${m.actual}）`)
+                .join('；');
+            showToast.error(`${r.message || '备份不可用'}${detail ? '：' + detail : ''}`);
+        }
+    }).catch(() => showToast.error('校验失败'));
+}
 
 // ==================== 数据存储管理：总览 / 健康 / 自动备份 / 清理 ====================
 function loadStorageOverview(showSuccess) {
@@ -17009,80 +17122,10 @@ function renderHealthAsqList(asqList) {
 }
 
 function showAsqModalFromHealth() {
-    // Reuse the existing ASQ modal from ASQ page
-    const html = document.getElementById('asqModalBody')?.innerHTML;
-    if (html) {
-        showModal('asqModal');
-    } else {
-        // First time, create the modal content
-        createAsqModalInHealth();
-    }
-}
-
-function createAsqModalInHealth() {
-    const modalHtml = `
-        <div class="modal" id="asqModal" style="display:none">
-            <div class="modal-content">
-                <div class="modal-header"><h2>ASQ发育筛查</h2><button class="modal-close" onclick="hideModal('asqModal')">&times;</button></div>
-                <div class="modal-body" id="asqModalBody">
-                    <form id="asqForm">
-                        <div class="form-row">
-                            <div class="form-group"><label>月龄 *</label><select id="asqAgeMonths"></select></div>
-                            <div class="form-group"><label>筛查日期</label><input type="date" id="asqDate"></div>
-                        </div>
-                        <div class="asq-form-scores">
-                            <div class="form-group"><label>沟通 (0-60)</label><input type="number" id="asqComm" min="0" max="60" value="50"></div>
-                            <div class="form-group"><label>大运动 (0-60)</label><input type="number" id="asqGross" min="0" max="60" value="50"></div>
-                            <div class="form-group"><label>精细运动 (0-60)</label><input type="number" id="asqFine" min="0" max="60" value="50"></div>
-                            <div class="form-group"><label>解决问题 (0-60)</label><input type="number" id="asqProblem" min="0" max="60" value="50"></div>
-                            <div class="form-group"><label>个人-社交 (0-60)</label><input type="number" id="asqPersonal" min="0" max="60" value="50"></div>
-                        </div>
-                        <div class="form-group"><label>备注</label><input type="text" id="asqNote" placeholder="可选"></div>
-                    </form>
-                </div>
-                <div class="modal-footer"><button class="btn btn-secondary" onclick="hideModal('asqModal')">取消</button><button class="btn btn-primary" id="submitAsqFromHealthBtn">保存</button></div>
-            </div>
-        </div>
-    `;
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-    // Populate age options
-    const ageSelect = document.getElementById('asqAgeMonths');
-    if (ageSelect) {
-        const ages = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 30, 33, 36];
-        ageSelect.innerHTML = ages.map(a => `<option value="${a}">${a}个月</option>`).join('');
-    }
-    // Set today's date
-    const dateInput = document.getElementById('asqDate');
-    if (dateInput) dateInput.value = getToday();
-    // Bind submit
-    document.getElementById('submitAsqFromHealthBtn')?.addEventListener('click', submitAsqFromHealth);
-    showModal('asqModal');
-}
-
-function submitAsqFromHealth() {
-    const data = {
-        age_months: parseInt(document.getElementById('asqAgeMonths')?.value),
-        screening_date: document.getElementById('asqDate')?.value || getToday(),
-        communication_score: parseInt(document.getElementById('asqComm')?.value) || 0,
-        gross_motor_score: parseInt(document.getElementById('asqGross')?.value) || 0,
-        fine_motor_score: parseInt(document.getElementById('asqFine')?.value) || 0,
-        problem_solving_score: parseInt(document.getElementById('asqProblem')?.value) || 0,
-        personal_social_score: parseInt(document.getElementById('asqPersonal')?.value) || 0,
-        note: document.getElementById('asqNote')?.value || '',
-    };
-    api(`/api/babies/${App.currentBaby}/asq`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-    }).then(res => {
-        if (res.success) {
-            hideModal('asqModal');
-            loadHealthAsq();
-            loadOverview();
-        } else {
-            alert('保存失败: ' + (res.message || '未知错误'));
-        }
-    });
+    // 统一走 showAsqModal 这一份表单。
+    // 此前健康档案另写了一份：月龄只有 17 档（漏 9/42/48/54/60）、没有免责提示、
+    // 也没有提交后的说明。两处各写一遍必然走岔——这正是「重复实现」要收掉的地方。
+    showAsqModal();
 }
 
 function renderScreeningSummary(screenings) {

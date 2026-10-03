@@ -5872,6 +5872,51 @@ body {
     margin-bottom: 12px;
 }
 
+/* ASQ 免责声明：刻意做得醒目——这是医疗相关功能，提示不能藏在角落 */
+.asq-disclaimer {
+    background: #FFF4E5;
+    border: 1px solid #FFC48A;
+    border-left: 4px solid #F2A65A;
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: #8A5A20;
+    line-height: 1.7;
+}
+
+.asq-disclaimer p {
+    margin: 4px 0;
+}
+
+.asq-disclaimer-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #B4700F;
+    margin-bottom: 2px;
+}
+
+.asq-disclaimer strong {
+    color: #7A4A0D;
+}
+
+/* 录入弹窗里的轻量提示条 */
+.asq-form-hint {
+    background: #FFF4E5;
+    border-radius: var(--radius-sm, 10px);
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: #8A5A20;
+    line-height: 1.6;
+}
+
+.asq-window-hint {
+    font-size: 12px;
+    color: #8A8A8A;
+    margin-top: 4px;
+}
+
 .asq-info-card {
     background: #E3F2FD;
     border-radius: var(--radius);
