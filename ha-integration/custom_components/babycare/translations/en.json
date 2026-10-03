@@ -29,5 +29,10 @@
       "reauth_successful": "Reauthentication succeeded.",
       "reauth_failed": "Reauthentication failed: the original config entry was not found. Remove the integration and add it again."
     }
+  },
+  "exceptions": {
+    "not_configured": {
+      "message": "The BabyCare integration is not loaded yet, so this action cannot run. Check the integration status under Settings → Devices & services and try again shortly."
+    }
   }
 }

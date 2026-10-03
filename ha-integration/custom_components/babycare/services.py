@@ -7,6 +7,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
@@ -28,10 +29,20 @@ from .const import (
 
 def async_setup_services(hass: HomeAssistant) -> None:
     async def _client_for(call: ServiceCall):
+        """取任一已加载 config entry 的 client。
+
+        服务注册在 async_setup（官方 action-setup 规则要求如此），
+        所以调用时 entry 未必已加载 —— 这时必须抛 ServiceValidationError：
+        它会以「这个动作用不了，原因是…」的形式显示给用户。
+        抛 ValueError 的话 HA 只能报一句泛化的内部错误，用户看不出到底该做什么。
+        """
         store = hass.data.get(DOMAIN) or {}
         for entry_data in store.values():
             return entry_data["client"] if isinstance(entry_data, dict) else entry_data.client
-        raise ValueError("BabyCare 集成未配置")
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="not_configured",
+        )
 
     async def add_feeding(call: ServiceCall) -> None:
         client = await _client_for(call)

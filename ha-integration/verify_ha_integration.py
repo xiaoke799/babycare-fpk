@@ -148,6 +148,73 @@ chk(declared == registered, "services.yaml 与 services.py 服务名一致",
     f"只声明未注册 {sorted(declared - registered)}；只注册未声明 {sorted(registered - declared)}"
     if declared != registered else f"{len(declared)} 个服务")
 
+# ---------------------------------------------------------------------------
+# 以下 4 条是2026-10-03 对照官方文档（本地镜像 developers.home-assistant-master）
+# 核出来的，重点是防「静默退化」：
+print("\n=== 8. 对照官方文档的规范 ===")
+sensor_text = (COMP / "sensor.py").read_text(encoding="utf-8")
+# ⚠ 判据必须先剥注释，否则会命中「我自己在注释里写的那些词」——
+# 2026-10-03 首次跑就假红了两条（注释里恰好列了被废弃的字段名做说明）。
+sensor_code = re.sub(r'"""[\s\S]*?"""', "", sensor_text)
+sensor_code = re.sub(r"#.*", "", sensor_code)
+
+# ⚠ 这条最容易悄悄退化：**字段名必须与后端真实响应一致**。
+# 2026-10-03 实测后端 /today-summary 返回 feeding_count / feeding_ml，
+# 而代码里原本猜的是 today_count / today_ml / total_ml…… 全不命中
+# ⇒「今日奶量」实体恒为 None，界面上却看不出任何异常。
+# 代价是加一条断言，换来「字段对不上会立刻红」。
+for field in ("feeding_count", "feeding_ml"):
+    chk(f'"{field}"' in sensor_code,
+        f"sensor 用后端真实字段 {field}（实测值，非猜测）")
+chk("today_ml" not in sensor_code and "total_ml" not in sensor_code,
+    "已不再使用后端不存在的猜测字段名（today_ml / total_ml）")
+
+# 数值型传感器必须给单位，否则曲线图无意义（官方 sensor 文档）。
+chk('native_unit_of_measurement = "mL"' in sensor_text,
+    "奶量传感器带 native_unit_of_measurement")
+# state_class：今日次数是每天归零的统计量，不是单调递增计数器。
+chk("SensorStateClass.MEASUREMENT" in sensor_text,
+    "今日次数用 state_class MEASUREMENT（不是 TOTAL_INCREASING）")
+# device_class: TIMESTAMP 要求带时区的 datetime，而后端给的是 naive 本地时间串
+# （实测 feeding.start_time='2026-10-03 10:00:00'，growth.record_date='2026-10-03'）。
+# 硬加会让HA 按 UTC 解释、算出错时间且界面无异常 ⇒ 明确断言「没加」。
+chk("SensorDeviceClass.TIMESTAMP" not in sensor_code,
+    "未误加 device_class TIMESTAMP（后端无时区，硬加会算错时间）")
+
+manifest = json.loads((COMP / "manifest.json").read_text(encoding="utf-8"))
+# integration_type：官方定义 hub =「provides a hub integration, with multiple
+# devices or services」，service/device 才是「单个设备或服务」。
+# 本集成一个 entry 管多个宝宝（每个宝宝一个设备）⇒ 必须是 hub。
+chk(manifest.get("integration_type") == "hub",
+    "manifest.integration_type = hub（一 entry 多设备）",
+    f"实际 {manifest.get('integration_type')}")
+
+# 服务必须注册在 async_setup（官方 action-setup 规则明文要求），
+# 否则 entry 未加载时用户的自动化无法校验。
+init_text = (COMP / "__init__.py").read_text(encoding="utf-8")
+setup_body = init_text.split("async def async_setup(", 1)[-1].split("async def async_setup_entry(", 1)[0] \
+    if "async def async_setup(" in init_text else ""
+chk("async_setup_services" in setup_body,
+    "服务注册在 async_setup（官方 action-setup 规则），不是 async_setup_entry")
+chk("async_register(" not in init_text.split("async def async_setup_entry(", 1)[-1],
+    "async_setup_entry 里没有直接注册服务")
+
+# 翻译 key 必须三份齐全，且 exceptions 段与代码里 translation_key 对得上。
+# 缺一份 ⇒ HA 界面直接显示原始 key（长得像报错，用户以为坏了）。
+import json as _json
+tr_files = {
+    "strings.json": _json.loads((COMP / "strings.json").read_text(encoding="utf-8")),
+    "translations/en.json": _json.loads(
+        (COMP / "translations" / "en.json").read_text(encoding="utf-8")),
+    "translations/zh-Hans.json": _json.loads(
+        (COMP / "translations" / "zh-Hans.json").read_text(encoding="utf-8")),
+}
+for fname, data in tr_files.items():
+    exc = (data.get("exceptions") or {})
+    chk("not_configured" in exc, f"{fname} 含 exceptions.not_configured")
+    chk("message" in (exc.get("not_configured") or {}),
+        f"{fname} 的 not_configured 有 message 文案")
+
 print()
 if fails:
     print(f"失败 {len(fails)} 项")

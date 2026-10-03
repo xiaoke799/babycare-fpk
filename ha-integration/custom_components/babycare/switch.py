@@ -18,6 +18,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
+    # 同 sensor.py：官方推荐 entry.runtime_data，此处退回 hass.data 以兼容老 HA
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator: BabyCareCoordinator = data["coordinator"]
     babies = coordinator.data.get("babies") or []

@@ -89,6 +89,39 @@ Token 仅存哈希；泄露后请在育儿宝重新生成或吊销。
 
 如果没弹窗、实体显示不可用，去「设置 → 设备与服务 → BabyCare 育儿宝」点「配置」重新填一次即可。
 
+## 按官方开发文档核对过的点
+
+本集成对照 Home Assistant 官方开发文档（`developers.home-assistant.io`
+的文档源码，见 `D:\育儿板块\developers.home-assistant-master`）核对过：
+
+| 项目 | 文档依据 | 现状 |
+|------|---------|------|
+| `integration_type: hub` | `creating_integration_manifest.md`：hub = 一个入口管**多个设备/服务** | ✅ 本集成一个 config entry 管多个宝宝（每宝宝一设备） |
+| 服务注册在 `async_setup` | `core/integration-quality-scale/rules/action-setup.md` | ✅ 不在 `async_setup_entry`，否则 entry 未加载时用户的自动化无法校验 |
+| 服务未就绪时抛 `HomeAssistantError` + `translation_key` | 同上：「raise `ServiceValidationError`」 | ✅ 用户看到「集成未加载完成」而不是泛化的内部错误 |
+| 翻译三件套齐全 | `internationalization/core.md` | ✅ `strings.json` + `translations/en.json` + `zh-Hans.json`，缺一份界面会直接显示原始 key |
+| 数值传感器带 `native_unit_of_measurement` | `core/entity/sensor.md` | ✅ 奶量用 `mL` |
+| `state_class: MEASUREMENT` | 同上：累计增量才用 `TOTAL_INCREASING` | ✅ 今日次数每天归零，是统计量不是单调计数器 |
+
+### 刻意**不**设 `device_class: timestamp` 的原因
+
+「最近喂奶 / 睡眠 / 尿布」四个实体显示的是时间，官方对 `TIMESTAMP` 的要求是
+「`native_value` 必须返回**带时区**的 `datetime`」。而后端返回的是
+**naive 本地时间字符串**（实测）：
+
+```
+feeding.start_time = '2026-10-03 10:00:00'
+diaper.change_time  = '2026-10-03 11:00:00'
+growth.record_date  = '2026-10-03'      ← 还是纯日期
+```
+
+三者都不带时区。硬加 `TIMESTAMP` 会让 HA 按 UTC 解释、算出错的时间，
+而界面上看不出任何异常 —— 反而比不加更糟。
+等后端改成带时区的 ISO8601（末尾 `+08:00`）再改，那时才是真收益。
+（另外 `TIMESTAMP` 与 `state_class` 互斥，别两个一起加。）
+
+以上几条都写进了 `verify_ha_integration.py` 的断言，改坏了会立刻红。
+
 ## 与 Baby Buddy 集成的差异
 
 - 对接自有 NAS 应用，数据留在本地
