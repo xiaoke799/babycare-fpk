@@ -21,6 +21,11 @@ BabyCare (育儿宝) is a native NAS parenting app for the fnOS platform (by fnO
 - Automatic BMI calculation, growth-velocity tracking and record-correlation analysis
 - Side-by-side photo management
 - Stage reports: sleep / feeding / diaper / growth analysis
+- **Weekly / monthly report**: key metrics for the current period plus a
+  comparison against the previous one
+- Annual growth report (with an AI-generated summary)
+- **Print / save the clinic summary as PDF** — recent temperature, medication,
+  allergies and vaccines on one sheet to hand to the doctor
 - Annual growth report (with an AI-generated summary)
 
 ### 🍼 Care Tracking
@@ -78,6 +83,11 @@ BabyCare (育儿宝) is a native NAS parenting app for the fnOS platform (by fnO
   ⚠️ "Restore" consumes backup archives produced by this app; there is **no generic import**
 - Delete safety code: required before deleting a baby or restoring a backup
 - Integration API token (used by external integrations such as Home Assistant)
+- **Inbound webhook**: a "one call, one entry" channel for bedside buttons,
+  voice assistants and automation scripts (feeding / diaper / sleep /
+  temperature). Uses its own token that can be revoked independently of the
+  integration token, with a field whitelist, numeric clamping, rate limiting
+  and a call audit log
 
 ### 🏠 Smart Home
 - Built-in Home Assistant integration (`ha-integration/`): sensors, services, timer switches
