@@ -19366,10 +19366,13 @@ function revokeWebhookToken() {
 }
 
 // ==================== Webhook 调用记录 ====================
-// 存在的原因：webhook 是对外开放的网络入口，用户接入床头按钮/语音助手之后，
-// 最高频的求助是「我按了，它没反应」。光看Token 状态是分不出原因的——
+// 仅统计 Webhook 通道（bcw_ Token）的调用，与 Home Assistant 集成无关 ——
+// HA 走的是集成 Token（bcb_），它的调用记录在 HA 那边看，不进这张表。
+// 存在的原因：这条通道是**对外开放**的网络入口，用户接入床头无线按钮之后，
+// 最高频的求助是「我按了，它没反应」。光看 Token 状态是分不出原因的——
 // 「压根没调到 NAS」和「调到了但 Token 不对/被限流/宝宝 id 不存在」，
 // 在 Token 那一行看起来一模一样。调用记录是唯一的区分依据。
+// ⚠ 仅局域网可达；音箱类云端助手（小爱同学等）访问不到局域网地址，用不了这条通道。
 
 function loadWebhookLogs() {
     const box = document.getElementById('webhookLogList');

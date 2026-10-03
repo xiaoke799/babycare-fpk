@@ -1720,18 +1720,19 @@
                 <!-- 组 3：快捷记录 Webhook -->
                 <div class="settings-group">
                     <div class="settings-group-title">快捷记录 Webhook</div>
-                    <p class="settings-group-desc">面向外网的「一句话记一笔」入口，与上面的集成 Token 相互独立，可单独吊销。</p>
+                    <p class="settings-group-desc">给床头无线按钮之类的设备用的「一句话记一笔」通道，与上面的集成 Token 相互独立，可单独吊销。不经过 Home Assistant。</p>
                     <div class="data-mgmt-actions">
                         <button class="btn btn-outline btn-sm" id="genWebhookTokenBtn">生成 Webhook Token</button>
                         <button class="btn btn-outline btn-sm" id="revokeWebhookTokenBtn">吊销 Webhook Token</button>
                         <p class="empty-tip" id="webhookTokenStatus" style="margin-top:8px">Webhook Token：未配置</p>
                     </div>
                     <div class="webhook-usage">
-                        <p class="data-mgmt-tip">给床头智能按钮、语音助手、自动化脚本用的一条「一句话记一笔」通道（POST <code>/api/webhook/log</code>，事件：feeding / diaper / sleep / temperature）。</p>
+                        <p class="data-mgmt-tip">仅局域网可用（地址形如 <code>http://192.168.x.x:8090</code>）。事件：feeding / diaper / sleep / temperature。</p>
+                        <p class="data-mgmt-tip">床头智能按钮若已接进 Home Assistant，用上面的集成 Token 即可，不必用这个。</p>
                     </div>
                     <div class="webhook-usage">
                         <div class="settings-group-title">调用记录</div>
-                        <p class="settings-group-desc">每次调用都会留审计（含被拒的）。按钮按了没反应时先看这里：能分清「压根没调到」和「调到了但被拒」。</p>
+                        <p class="settings-group-desc">仅统计 Webhook 的调用，与 Home Assistant 集成无关。按钮按了没反应时先看这里：能分清「压根没调到」和「调到了但被拒」。</p>
                         <div class="data-mgmt-actions">
                             <button class="btn btn-outline btn-sm" id="loadWebhookLogsBtn">刷新调用记录</button>
                             <button class="btn btn-outline btn-sm" id="cleanWebhookLogsBtn">清理 30 天前</button>
