@@ -36,6 +36,9 @@ CONFIG_KEYS = (
     "diaper_reminder_enabled", "diaper_reminder_interval",
     "medication_reminder_enabled", "vaccine_reminder_enabled",
     "vaccine_reminder_days", "reminder_check_interval", "notify_timeout",
+    # 体检 / 自定义健康提醒（health_reminders 表）。此前这张表有增删改查，
+    # 但调度器没有对应分支，提醒永远不会发出来。
+    "health_reminder_enabled", "health_reminder_days",
 )
 
 # 数值型配置的取值范围（写入前夹紧）：这些值直接决定调度频率，
@@ -44,6 +47,7 @@ _INT_RANGES = {
     "feeding_reminder_interval": (1, 24),
     "diaper_reminder_interval": (1, 24),
     "vaccine_reminder_days": (1, 60),
+    "health_reminder_days": (1, 60),
     "reminder_check_interval": (30, 3600),
     "notify_timeout": (1, 60),
 }
@@ -62,6 +66,9 @@ _DEFAULTS = {
     "diaper_reminder_enabled": False, "diaper_reminder_interval": 2,
     "medication_reminder_enabled": False,
     "vaccine_reminder_enabled": False, "vaccine_reminder_days": 3,
+    # 健康提醒默认开：体检提醒本来就是「到日子了该去」的事，
+    # 与喂奶/尿布那种「按小时反复催」不同，一天最多一条，不至于打扰。
+    "health_reminder_enabled": True, "health_reminder_days": 1,
     "reminder_check_interval": 60,
     "notify_timeout": 10,
 }

@@ -10,7 +10,7 @@ import datetime
 import json
 from flask import Blueprint, request, jsonify
 
-from utils import get_db, row_to_dict, rows_to_list, json_body
+from utils import get_db, row_to_dict, rows_to_list, json_body, normalize_author
 from logger import get_logger
 from validators import (validate_enum, validate_date, validate_text_length,
                         NOTE_MAX_LENGTH, NAME_MAX_LENGTH)
@@ -59,11 +59,11 @@ def add_milestone(baby_id):
 
     db = get_db()
     db.execute(
-        """INSERT INTO milestones (baby_id, title, description, achieved_date, category, is_first)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO milestones (baby_id, title, description, achieved_date, category, is_first, author)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (baby_id, data["title"], data.get("description", ""),
          data["achieved_date"], data.get("category", "other"),
-         1 if data.get("is_first") else 0)
+         1 if data.get("is_first") else 0, normalize_author(data))
     )
     db.commit()
     return jsonify({"success": True, "message": "里程碑已添加"})
@@ -295,12 +295,13 @@ def add_checkup_record(baby_id):
     # 保存体检记录
     db.execute(
         """INSERT INTO checkup_records (baby_id, checkup_date, age_months, height, weight,
-           head_circumference, doctor, hospital, result, advice, next_checkup_date, note)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           head_circumference, doctor, hospital, result, advice, next_checkup_date, note, author)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (baby_id, data["checkup_date"], data.get("age_months"),
          height, weight, head_circumference,
          data.get("doctor", ""), data.get("hospital", ""), data.get("result", "normal"),
-         data.get("advice", ""), data.get("next_checkup_date", ""), data.get("note", ""))
+         data.get("advice", ""), data.get("next_checkup_date", ""), data.get("note", ""),
+         normalize_author(data))
     )
 
     # 自动同步：如果体检包含身高/体重/头围，自动创建成长记录（避免重复）
@@ -415,11 +416,12 @@ def add_solid_food_record(baby_id):
         return err_resp
 
     db = get_db()
+    author = normalize_author(data)
     db.execute(
         """INSERT INTO solid_food_records (baby_id, food_name, food_category,
-           first_try_date, amount, reaction, reaction_detail, is_favorite, note)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (baby_id,) + tuple(values)
+           first_try_date, amount, reaction, reaction_detail, is_favorite, note, author)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (baby_id, author) + tuple(values)
     )
     db.commit()
     return jsonify({"success": True, "message": "辅食记录已添加"})

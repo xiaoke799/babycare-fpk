@@ -17,9 +17,11 @@ BabyCare (育儿宝) is a native NAS parenting app for the fnOS platform (by fnO
 ## Core Features
 
 ### 📊 Growth Records
-- Height, weight and head-circumference tracking with WHO growth curves
-- Automatic BMI calculation and growth-velocity tracking
+- Height, weight and head-circumference tracking with WHO growth curves (percentiles)
+- Automatic BMI calculation, growth-velocity tracking and record-correlation analysis
 - Side-by-side photo management
+- Stage reports: sleep / feeding / diaper / growth analysis
+- Annual growth report (with an AI-generated summary)
 
 ### 🍼 Care Tracking
 - Feeding logs (breast milk / formula / solids, with intake amount and nursing side)
@@ -29,18 +31,30 @@ BabyCare (育儿宝) is a native NAS parenting app for the fnOS platform (by fnO
 
 ### 🏥 Health Records
 - Checkup records, temperature monitoring, medication logs
-- Allergy tests, fontanelle checks, teething records
-- Vaccine management and medication reminders
+- Vaccine management: schedule, manufacturer / batch / dose, reactions, antibody results
+- Allergy tests, allergy history, fontanelle checks, teething records
+- Lab indicators (name / value / reference range / abnormal flag)
+- Vision and hearing screening results, including referral notes
+- **Reminders**: feeding / diaper / medication / vaccine / checkup and custom health reminders
+  (WeChat · DingTalk · Feishu · Bark · PushPlus, with do-not-disturb hours)
+  ⚠️ Medication and checkup reminders are driven by the reminder configuration; the
+  `next_dose_time` column on `medication_records` is a legacy field and is not scheduled
 
 ### 🎯 Development Assessment
-- Developmental milestone tracking
-- ASQ developmental screening
-- Developmental leap tracking
+- Developmental milestone tracking (with a "first time" flag)
+- Milestone details (code / expected month age / status)
+- **ASQ result entry** (five domain scores plus conclusion)
+  ⚠️ The app ships **no ASQ items and no scoring algorithm** — the ASQ questionnaire
+  must be purchased from its publisher. Record the scores and conclusion here
+  (normal / monitor / refer); no automatic scoring is performed.
+- Developmental leap tracking (1–10)
 
 ### ✍️ Parenting Diary
-- Capture your baby's growth moments
-- Upload comparison photos
-- Diary templates and AI-assisted generation
+- Capture your baby's growth moments, with simple Markdown formatting and inline photos
+- Upload comparison photos (photos can be embedded in the diary text)
+- AI-assisted diary writing
+- **On this day**: what happened on the same day in previous years
+- **Global search** across diaries, feeding logs, health records and more
 
 ### 🤖 AI-Assisted Parenting
 - Smart summaries of growth records
@@ -51,17 +65,27 @@ BabyCare (育儿宝) is a native NAS parenting app for the fnOS platform (by fnO
 
 ### 📚 Parenting Knowledge Base
 - Built-in articles on feeding, sleep, development, health and care
-- Solid-food recipe recommendations
+- Solid-food recipe recommendations (difficulty / nutrition / tips)
+- Parent-child activity library (indoor/outdoor, seasonal), with favorites and completion log
 
 ### ⏱️ Tools
 - Feeding timer, sleep timer (can auto-create records on stop)
-- Data export / import, ZIP backup including photo albums
-- Export to / restore from fnOS shared folders
+- Soothing sounds (synthesised locally, no external audio files)
+- **Family members & recorder**: tag who logged each record
+- Diaper price comparison and expense tracking
+- Data export: per-baby JSON, full JSON, vaccine CSV
+- ZIP backup / restore including photo albums, export to / restore from fnOS shared folders
+  ⚠️ "Restore" consumes backup archives produced by this app; there is **no generic import**
 - Delete safety code: required before deleting a baby or restoring a backup
-- Smart-home integration API token (Home Assistant, etc.)
+- Integration API token (used by external integrations such as Home Assistant)
 
 ### 🏠 Smart Home
 - Built-in Home Assistant integration (`ha-integration/`): sensors, services, timer switches
+- One baby = one device; entities are grouped under the matching baby device
+- When the token expires, HA re-authenticates in place — no need to remove and re-add
+  the integration (entity IDs stay stable)
+- The integration token can read data and write records only; it cannot change settings,
+  delete a baby or touch backups
 - Token auth; data still stays on your local NAS
 
 ## AI Features

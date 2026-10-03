@@ -1783,6 +1783,20 @@
             <input type="number" id="notifyVaccineDays" class="settings-input" value="3" min="1" max="60" step="1">
         </div>
 
+        <!-- 体检 / 自定义健康提醒：对应后端 health_reminders 表（健康档案 → 提醒 tab） -->
+        <div class="settings-row">
+            <label class="settings-row-label" for="notifyHealthReminderEnabled">体检提醒</label>
+            <label class="toggle-switch">
+                <input type="checkbox" id="notifyHealthReminderEnabled">
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+        <!-- 后端 health_reminder_days 支持 1-60 天，范围与 _INT_RANGES 一致 -->
+        <div class="settings-field">
+            <label class="settings-field-label" for="notifyHealthReminderDays">体检提前几天提醒</label>
+            <input type="number" id="notifyHealthReminderDays" class="settings-input" value="1" min="1" max="60" step="1">
+        </div>
+
         <div class="settings-actions">
             <button type="button" class="btn btn-primary" id="saveNotifyBtn">保存推送设置</button>
             <button type="button" class="btn btn-outline" id="testNotifyBtn">发送测试</button>
@@ -2713,6 +2727,12 @@
                         <button type="button" class="btn btn-cancel" id="cancelGrowthForm">取消</button>
                         <button type="submit" class="btn btn-primary">保存</button>
                     </div>
+                <div class="form-group" id="growthAuthorGroup" style="display:none">
+                    <label for="growthAuthor">谁记的</label>
+                    <select id="growthAuthor">
+                        <option value="">不指定</option>
+                    </select>
+                </div>
                 </form>
             </div>
         </div>
@@ -2958,6 +2978,12 @@
                         <button type="button" class="btn btn-cancel" id="cancelVaccineForm">取消</button>
                         <button type="submit" class="btn btn-primary">保存</button>
                     </div>
+                <div class="form-group" id="vaccineAuthorGroup" style="display:none">
+                    <label for="vaccineAuthor">谁记的</label>
+                    <select id="vaccineAuthor">
+                        <option value="">不指定</option>
+                    </select>
+                </div>
                 </form>
             </div>
         </div>
@@ -3174,6 +3200,12 @@
                         <button type="button" class="btn btn-cancel" id="cancelTempForm">取消</button>
                         <button type="submit" class="btn btn-primary">保存</button>
                     </div>
+                <div class="form-group" id="temperatureAuthorGroup" style="display:none">
+                    <label for="temperatureAuthor">谁记的</label>
+                    <select id="temperatureAuthor">
+                        <option value="">不指定</option>
+                    </select>
+                </div>
                 </form>
             </div>
         </div>
@@ -3267,6 +3299,12 @@
                         <button type="button" class="btn btn-cancel" id="cancelMilestoneForm">取消</button>
                         <button type="submit" class="btn btn-primary">保存</button>
                     </div>
+                <div class="form-group" id="milestoneAuthorGroup" style="display:none">
+                    <label for="milestoneAuthor">谁记的</label>
+                    <select id="milestoneAuthor">
+                        <option value="">不指定</option>
+                    </select>
+                </div>
                 </form>
             </div>
         </div>

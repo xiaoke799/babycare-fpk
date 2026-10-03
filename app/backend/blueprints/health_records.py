@@ -19,7 +19,7 @@ import json
 import math
 from flask import Blueprint, request, jsonify
 
-from utils import get_db, row_to_dict, rows_to_list
+from utils import get_db, row_to_dict, rows_to_list, normalize_author
 import growth_utils
 
 bp = Blueprint("health_records", __name__)
@@ -345,13 +345,13 @@ def health_record_create(baby_id):
             height, weight, head_circumference, bmi,
             heart_result, lung_result, abdomen_result, skin_result,
             bone_result, hearing_result, vision_result, blood_result,
-            urine_result, other_exam, diagnosis, advice, next_visit_date, note)
+            urine_result, other_exam, diagnosis, advice, next_visit_date, note, author)
            VALUES (?, ?, ?, ?, ?, ?,  -- baby_id, record_date, record_type, title, hospital, doctor
                    ?, ?, ?, ?,        -- height, weight, head_circumference, bmi
                    ?, ?, ?, ?,        -- heart_result, lung_result, abdomen_result, skin_result
                    ?, ?, ?, ?,        -- bone_result, hearing_result, vision_result, blood_result
                    ?, ?, ?, ?,        -- urine_result, other_exam, diagnosis, advice
-                   ?, ?)              -- next_visit_date, note""",
+                   ?, ?, ?)           -- next_visit_date, note, author""",
         (baby_id, data['record_date'], data.get('record_type', 'routine'),
          data['title'], data.get('hospital', ''), data.get('doctor', ''),
          data.get('height'), data.get('weight'), data.get('head_circumference'),
@@ -361,7 +361,7 @@ def health_record_create(baby_id):
          data.get('vision_result', ''), data.get('blood_result', ''),
          data.get('urine_result', ''), data.get('other_exam', ''),
          data.get('diagnosis', ''), data.get('advice', ''),
-         data.get('next_visit_date'), data.get('note', ''))
+         data.get('next_visit_date'), data.get('note', ''), normalize_author(data))
     )
     record_id = cursor.lastrowid
 

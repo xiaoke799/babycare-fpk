@@ -9,7 +9,7 @@
 import datetime
 from flask import Blueprint, request, jsonify
 
-from utils import get_db, json_body, row_to_dict
+from utils import get_db, json_body, row_to_dict, normalize_author
 from validators import validate_height, validate_weight, validate_bmi, validate_head_circumference, validate_text_length, NOTE_MAX_LENGTH
 import growth_utils
 
@@ -56,10 +56,10 @@ def add_growth_record(baby_id):
 
     db = get_db()
     db.execute(
-        """INSERT INTO growth_records (baby_id, record_date, height, weight, head_circumference, bmi, note)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO growth_records (baby_id, record_date, height, weight, head_circumference, bmi, note, author)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (baby_id, data["record_date"], height, weight,
-         head_circ, bmi, note),
+         head_circ, bmi, note, normalize_author(data)),
     )
     db.commit()
     return jsonify({"success": True, "message": "记录已添加"})

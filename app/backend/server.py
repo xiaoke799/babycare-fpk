@@ -1280,7 +1280,11 @@ def _run_migrations():
     _ensure_column('baby_activities', 'icon TEXT DEFAULT \'\'')
     # 「谁记的」：日常记录挂在一家人名下（妈妈/爸爸/奶奶），回看时才知道这条出自谁手。
     # 可选字段，老数据为 NULL（前端显示为空，不报错）。
-    for _t in ('diary_entries', 'feeding_records', 'sleep_records', 'diaper_records'):
+    # 最初只覆盖日记/喂奶/睡眠/尿布四张表，成长、体温、辅食、里程碑、疫苗、体检
+    # 这些「也要知道是谁量的/谁打的」反而没有 —— 一家人的记录会认不出人。
+    for _t in ('diary_entries', 'feeding_records', 'sleep_records', 'diaper_records',
+               'growth_records', 'temperature_records', 'solid_food_records',
+               'milestones', 'vaccine_details', 'checkup_records', 'health_records'):
         _ensure_column(_t, 'author TEXT')
     _ensure_column('baby_activities', 'summary TEXT DEFAULT \'\'')
     _ensure_column('baby_activities', 'duration TEXT DEFAULT \'\'')

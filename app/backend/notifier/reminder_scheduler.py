@@ -194,6 +194,10 @@ class ReminderScheduler:
         if self.config.get("vaccine_reminder_enabled", False):
             self._check_vaccine_reminder(now)
 
+        # 体检 / 自定义健康提醒（health_reminders 表）
+        if self.config.get("health_reminder_enabled", False):
+            self._check_health_reminder(now)
+
     def _should_remind(self, key: str, interval_minutes: int) -> bool:
         """是否到点该提醒（**只读判断，不改状态**）。
 
@@ -384,6 +388,66 @@ class ReminderScheduler:
                 )
             except Exception as e:
                 logger.error("[Scheduler] 疫苗提醒 %s 检查失败: %s", _row_get(vac, "id", "?"), e)
+
+    def _check_health_reminder(self, now: datetime):
+        """检查体检 / 自定义健康提醒（health_reminders 表）。
+
+        这张表一直有增删改查（健康档案 → 提醒 tab），但此前调度器里没有它的分支，
+        所以「三天后要去做儿保」这类提醒**永远发不出来** —— 录了跟没录一样。
+        疫苗提醒只覆盖 vaccine_details 里的待接种项，体检/看医生/自定义提醒走的是这张表。
+        """
+        days_ahead = self.config.get("health_reminder_days", 1)
+        try:
+            days_ahead = int(float(days_ahead))
+        except (TypeError, ValueError):
+            days_ahead = 1
+
+        try:
+            db = self.db_getter()
+            today = now.strftime("%Y-%m-%d")
+            horizon = (now + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+            reminders = db.execute(
+                "SELECT hr.*, b.name as baby_name FROM health_reminders hr "
+                "JOIN babies b ON hr.baby_id = b.id "
+                "WHERE hr.is_completed = 0 AND hr.due_date <= ? "
+                "ORDER BY hr.due_date",
+                (horizon,),
+            ).fetchall()
+        except Exception as e:
+            logger.error("[Scheduler] 检查健康提醒失败: %s", e)
+            return
+
+        type_labels = {
+            "checkup": "体检",
+            "vaccine": "疫苗",
+            "medication": "用药",
+            # 注意：这里不能写 "提醒" —— 下面标题是 f"{label}提醒"，
+            # 会拼出「提醒提醒」这种叠词（已被 verify_health_reminder.py 抓到）
+            "custom": "自定义",
+        }
+
+        # 逐条 try：某条提醒字段缺失/格式怪，不影响其他提醒照常发出
+        for rem in reminders:
+            try:
+                due = _row_get(rem, "due_date", "")
+                if not due:
+                    continue
+                rtype = _row_get(rem, "reminder_type", "custom")
+                label = type_labels.get(rtype, "提醒")
+                title = _row_get(rem, "title", "健康提醒")
+                desc = _row_get(rem, "description", "")
+                if desc:
+                    desc = f"\n{desc}"
+                # 已过期（due_date < 今天）措辞要跟着变，别提醒「还有 0 天」
+                day_text = f"{due}（已到期）" if due < today else due
+                self._remind(
+                    f"health_{rem['id']}", 1440,  # 每天只提醒一次
+                    f"{label}提醒",
+                    f"{rem['baby_name']} 的{label}：{title}\n时间：{day_text}{desc}",
+                )
+            except Exception as e:
+                logger.error("[Scheduler] 健康提醒 %s 检查失败: %s",
+                             _row_get(rem, "id", "?"), e)
 
     def reload_config(self, config: Dict[str, Any]):
         """热加载配置"""

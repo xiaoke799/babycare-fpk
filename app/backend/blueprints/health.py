@@ -12,7 +12,7 @@ import json
 import sqlite3
 from flask import Blueprint, request, jsonify
 
-from utils import get_db, row_to_dict, rows_to_list, json_body
+from utils import get_db, row_to_dict, rows_to_list, json_body, normalize_author
 import vaccine_utils
 
 bp = Blueprint("health", __name__)
@@ -145,10 +145,10 @@ def add_temperature(baby_id):
 
     db = get_db()
     db.execute(
-        '''INSERT INTO temperature_records (baby_id, temperature, measure_time, measure_method, is_fever, note)
-           VALUES (?, ?, ?, ?, ?, ?)''',
+        '''INSERT INTO temperature_records (baby_id, temperature, measure_time, measure_method, is_fever, note, author)
+           VALUES (?, ?, ?, ?, ?, ?, ?)''',
         (baby_id, temp, data.get('measure_time', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
-         method, is_fever, data.get('note', ''))
+         method, is_fever, data.get('note', ''), normalize_author(data))
     )
     db.commit()
 

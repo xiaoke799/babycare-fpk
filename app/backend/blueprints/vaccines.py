@@ -14,7 +14,7 @@ import csv
 import io
 from flask import Blueprint, request, jsonify, Response
 
-from utils import get_db, row_to_dict, rows_to_list
+from utils import get_db, row_to_dict, rows_to_list, normalize_author
 
 bp = Blueprint("vaccines", __name__)
 
@@ -133,8 +133,8 @@ def add_vaccine(baby_id):
            (baby_id, vaccine_name, vaccine_type, dose_number, scheduled_date, actual_date,
             status, manufacturer, batch_number, hospital, doctor, injection_site,
             has_reaction, reaction_detail, reaction_severity, next_dose_date,
-            antibody_test_date, antibody_result, note)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            antibody_test_date, antibody_result, note, author)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
         (baby_id, data['vaccine_name'], data.get('vaccine_type', 'free'),
          data.get('dose_number', 1), data.get('scheduled_date'),
          data.get('actual_date'), data.get('status', 'pending'),
@@ -143,7 +143,7 @@ def add_vaccine(baby_id):
          data.get('injection_site', ''), 1 if data.get('has_reaction') else 0,
          data.get('reaction_detail', ''), data.get('reaction_severity', 'none'),
          data.get('next_dose_date'), data.get('antibody_test_date', ''),
-         data.get('antibody_result', ''), data.get('note', ''))
+         data.get('antibody_result', ''), data.get('note', ''), normalize_author(data))
     )
     db.commit()
     return jsonify({'success': True, 'message': '疫苗记录已添加'})

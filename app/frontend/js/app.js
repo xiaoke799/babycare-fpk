@@ -1464,6 +1464,27 @@ async function renderFamilyMembers() {
         }
     }
 
+    // 成长 / 疫苗 / 里程碑 / 体温这几个表单同样是静态 HTML，
+    // 没法像喂奶那样在拼 HTML 时用 authorSelectHtml()，统一在这里填。
+    // 不配家庭成员就整块隐藏（同一套逻辑，别让用户面对一个空下拉）。
+    [['growthAuthorGroup', 'growthAuthor'],
+     ['vaccineAuthorGroup', 'vaccineAuthor'],
+     ['milestoneAuthorGroup', 'milestoneAuthor'],
+     ['temperatureAuthorGroup', 'temperatureAuthor']].forEach(([gid, sid]) => {
+        const g = document.getElementById(gid);
+        const s = document.getElementById(sid);
+        if (!g || !s) return;
+        if (!list.length) {
+            g.style.display = 'none';
+            return;
+        }
+        const last = getLastAuthor();
+        s.innerHTML = '<option value="">不指定</option>' + list.map(m =>
+            `<option value="${escapeHtml(String(m.name))}"${m.name === last ? ' selected' : ''}>${escapeHtml(String(m.name))}</option>`
+        ).join('');
+        g.style.display = '';
+    });
+
     if (!box) return;
     if (!list.length) {
         box.innerHTML = '<p class="settings-tip">还没有家庭成员</p>';
@@ -3326,6 +3347,7 @@ function initGrowthModal() {
             note: document.getElementById('growthNote').value
         };
 
+        data.author = readAuthor('growthAuthor');
         api(`/api/babies/${App.currentBaby}/growth`, {
             method: 'POST',
             body: JSON.stringify(data)
@@ -6834,6 +6856,9 @@ function loadNotificationConfig() {
         setVal('notifyPushplusTopic', cfg.pushplus_topic);
         setVal('notifyTitlePrefix', cfg.title_prefix);
         setVal('notifyVaccineDays', cfg.vaccine_reminder_days);
+        // 体检 / 自定义健康提醒（health_reminders 表）
+        setCheck('notifyHealthReminderEnabled', cfg.health_reminder_enabled);
+        setVal('notifyHealthReminderDays', cfg.health_reminder_days);
     });
 }
 
@@ -6859,6 +6884,9 @@ function saveNotificationConfig() {
         vaccine_reminder_days: parseInt(document.getElementById('notifyVaccineDays')?.value, 10) || 3,
         pushplus_topic: document.getElementById('notifyPushplusTopic')?.value || '',
         title_prefix: document.getElementById('notifyTitlePrefix')?.value || '',
+        // 体检提醒：health_reminder_days 后端 clamp 到 1-60，非法值退回默认 1
+        health_reminder_enabled: document.getElementById('notifyHealthReminderEnabled')?.checked || false,
+        health_reminder_days: parseInt(document.getElementById('notifyHealthReminderDays')?.value, 10) || 1,
     };
 
     // 喂奶页顶部的提醒条也用这个间隔，存一份到本地免得每次去服务端取
@@ -9132,6 +9160,7 @@ function initVaccineModal() {
             method = 'POST';
         }
 
+        data.author = readAuthor('vaccineAuthor');
         api(url, {
             method: method,
             body: JSON.stringify(data)
@@ -9497,6 +9526,7 @@ function initMilestoneModal() {
             method = 'POST';
         }
 
+        data.author = readAuthor('milestoneAuthor');
         api(url, { method, body: JSON.stringify(data) }).then(res => {
             if (res.success) {
                 showToast(milestoneId ? '已更新' : '添加成功');
@@ -10171,6 +10201,7 @@ function initTemperature() {
             note: document.getElementById('tempNote').value
         };
 
+        data.author = readAuthor('temperatureAuthor');
         api(`/api/babies/${App.currentBaby}/temperatures`, {
             method: 'POST',
             body: JSON.stringify(data)
@@ -11211,6 +11242,7 @@ function showCheckupModal() {
                 <label>备注</label>
                 <input type="text" id="checkupNote" placeholder="可选">
             </div>
+            ${authorSelectHtml('checkupAuthor')}
             <div class="form-actions">
                 <button type="button" class="btn btn-cancel" id="cancelCheckupForm">取消</button>
                 <button type="submit" class="btn btn-primary">保存</button>
@@ -11247,7 +11279,8 @@ function showCheckupModal() {
             diagnosis: document.getElementById('checkupDiagnosis')?.value || '',
             advice: document.getElementById('checkupAdvice')?.value || '',
             next_visit_date: document.getElementById('checkupNext')?.value || '',
-            note: document.getElementById('checkupNote')?.value || ''
+            note: document.getElementById('checkupNote')?.value || '',
+            author: readAuthor('checkupAuthor')
         };
         api(`/api/health/records/${App.currentBaby}`, {
             method: 'POST',
@@ -11477,6 +11510,7 @@ function showSolidFoodModal() {
                 <label>备注</label>
                 <input type="text" id="sfNote" placeholder="可选">
             </div>
+            ${authorSelectHtml('solidFoodAuthor')}
             <div class="form-actions">
                 <button type="button" class="btn btn-cancel" id="cancelSfForm">取消</button>
                 <button type="submit" class="btn btn-primary">保存</button>
@@ -11500,7 +11534,8 @@ function showSolidFoodModal() {
             reaction: document.getElementById('sfReaction')?.value || '',
             reaction_detail: document.getElementById('sfReactionDetail')?.value || '',
             is_favorite: document.getElementById('sfFavorite')?.checked ? 1 : 0,
-            note: document.getElementById('sfNote')?.value || ''
+            note: document.getElementById('sfNote')?.value || '',
+            author: readAuthor('solidFoodAuthor')
         };
         api(`/api/babies/${App.currentBaby}/solid-food`, {
             method: 'POST',
