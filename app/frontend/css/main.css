@@ -13962,3 +13962,87 @@ input:checked + .toggle-slider:before {
     padding: 1px 4px;
     border-radius: 4px;
 }
+
+/* ==================== 首次启动同意门禁 ====================
+   处理不满十四周岁未成年人信息，须取得监护人同意（个保法第 31 条）。
+   做成全屏遮罩而不是普通弹窗：通用 modal 能被 ESC / 点遮罩关掉，
+   那样就成了「可以绕过」的同意。 */
+.consent-gate {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(45, 52, 54, 0.55);
+    backdrop-filter: blur(2px);
+}
+.consent-gate-card {
+    width: 100%;
+    max-width: 520px;
+    max-height: 88vh;
+    overflow-y: auto;
+    background: var(--card-bg);
+    border-radius: 20px;
+    padding: 24px 22px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+.consent-gate-title {
+    margin: 0 0 12px;
+    font-size: 19px;
+    color: var(--text-primary);
+}
+.consent-gate-lead {
+    margin: 0 0 14px;
+    font-size: 14px;
+    line-height: 1.8;
+    color: var(--text-secondary);
+}
+.consent-gate-links {
+    display: flex;
+    gap: 18px;
+    margin-bottom: 8px;
+    font-size: 14px;
+}
+.consent-gate-links a {
+    color: var(--primary-color);
+    text-decoration: none;
+}
+.consent-gate-links a:hover { text-decoration: underline; }
+.consent-gate-versions {
+    margin: 0 0 16px;
+    font-size: 12px;
+    color: var(--text-light);
+}
+.consent-gate-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 13px 14px;
+    background: #FFF6F2;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    font-size: 14px;
+    line-height: 1.6;
+    cursor: pointer;
+}
+.consent-gate-check input {
+    margin-top: 3px;
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
+}
+.consent-gate-tip {
+    margin: 12px 0 0;
+    font-size: 12.5px;
+    color: var(--text-light);
+    min-height: 18px;
+}
+.consent-gate-tip.error { color: var(--danger-color); }
+.consent-gate-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 18px;
+}

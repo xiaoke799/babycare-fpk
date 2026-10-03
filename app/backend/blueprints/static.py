@@ -49,6 +49,18 @@ def js(filename):
     return send_from_directory(js_dir, filename)
 
 
+@bp.route("/legal/<path:filename>")
+def legal(filename):
+    """法律文本页面（隐私政策 / 用户协议）。
+
+    单独一个路由而不是塞进 /static/：legal/ 放的是**要在浏览器里直接打开阅读**
+    的完整 HTML 文档，与 css/js 资源不是一类东西。必须是应用自己提供的页面，
+    不能让用户跳到外网去看 —— 断网时也得能读到。
+    """
+    legal_dir = os.path.join(FRONTEND_DIR, "legal")
+    return send_from_directory(legal_dir, filename)
+
+
 # ==================== 网关前缀兼容路由 ====================
 # 绝大多数情况下 GatewayPrefixMiddleware 会先剥离前缀，上述路由即可命中。
 # 但若运行环境未启用中间件（GATEWAY_PREFIX 为空而网关仍带前缀），

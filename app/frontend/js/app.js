@@ -19361,3 +19361,134 @@ function revokeWebhookToken() {
         loadWebhookTokenStatus();
     }).catch(() => showToast.error('吊销失败'));
 }
+
+// ==================== 首次启动同意门禁 ====================
+// 处理不满十四周岁未成年人信息，须取得监护人同意（《个人信息保护法》第 31 条）。
+// 设计要点：
+//   1. 用全屏遮罩而非通用 modal —— modal 能被 ESC 关掉就成了「可绕过的同意」
+//   2. 协议链接由后端 url_for 生成（自带 fnOS 网关前缀），前端不硬编码路径
+//   3. 同意记录落库（后端 consent_records），localStorage 只作快速判断
+//   4. 协议版本更新后后端会返回 need_consent=true，自动重新征求
+let _consentInfo = null;
+
+function showConsentGate(info) {
+    const gate = document.getElementById('consentGate');
+    if (!gate) return;
+    const termsLink = document.getElementById('consentTermsLink');
+    const privacyLink = document.getElementById('consentPrivacyLink');
+    const verEl = document.getElementById('consentVersions');
+    if (termsLink) termsLink.href = info.terms_url || '#';
+    if (privacyLink) privacyLink.href = info.privacy_url || '#';
+    if (verEl) {
+        verEl.textContent = info.agreed_at
+            ? `上次同意：${info.agreed_at}（协议 ${info.terms_version} / 隐私 ${info.privacy_version}）`
+            : `协议版本 ${info.terms_version} · 隐私政策版本 ${info.privacy_version}`;
+    }
+    gate.style.display = 'flex';
+}
+
+function hideConsentGate() {
+    const gate = document.getElementById('consentGate');
+    if (gate) gate.style.display = 'none';
+}
+
+async function initConsentGate() {
+    let res;
+    try {
+        res = await api('/api/consent/required');
+    } catch (e) {
+        // 后端没起来就别拦着用户（宁可少一次告知，也不能让应用打不开）
+        return;
+    }
+    if (!res || !res.success) return;
+    _consentInfo = res.data || {};
+    if (_consentInfo.need_consent) showConsentGate(_consentInfo);
+}
+
+function bindConsentGate() {
+    if (document.getElementById('consentAgree')?.dataset.bound) return;
+    const agreeBtn = document.getElementById('consentAgree');
+    const declineBtn = document.getElementById('consentDecline');
+    const box = document.getElementById('consentGuardian');
+    const tip = document.getElementById('consentTip');
+    if (!agreeBtn || !box) return;
+    agreeBtn.dataset.bound = '1';
+
+    agreeBtn.addEventListener('click', async () => {
+        if (!box.checked) {
+            if (tip) {
+                tip.textContent = '请先勾选上方确认项（须由监护人同意）';
+                tip.classList.add('error');
+            }
+            return;
+        }
+        agreeBtn.disabled = true;
+        try {
+            const r = await api('/api/consent', {
+                method: 'POST',
+                body: JSON.stringify({
+                    is_guardian: true,
+                    app_version: (window.APP_VERSION || '')
+                })
+            });
+            if (r && r.success) {
+                hideConsentGate();
+                if (tip) { tip.textContent = ''; tip.classList.remove('error'); }
+            } else {
+                if (tip) { tip.textContent = (r && r.message) || '记录失败，请重试'; tip.classList.add('error'); }
+            }
+        } catch (e) {
+            if (tip) { tip.textContent = '网络错误，记录失败'; tip.classList.add('error'); }
+        } finally {
+            agreeBtn.disabled = false;
+        }
+    });
+
+    declineBtn?.addEventListener('click', () => {
+        if (tip) {
+            tip.textContent = '未取得监护人同意，无法继续使用。您可以先阅读上述文件。';
+            tip.classList.add('error');
+        }
+    });
+}
+
+/** 设置页：撤回同意（同时停用 AI 数据外发） */
+async function withdrawConsent() {
+    if (!confirm('撤回同意后将停用 AI 数据外发功能，下次启动需重新确认。确定撤回？')) return;
+    const r = await api('/api/consent', { method: 'DELETE' });
+    if (r && r.success) {
+        showToast('已撤回同意');
+        if (_consentInfo) _consentInfo.need_consent = true;
+    } else {
+        showToast.error('撤回失败');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    bindConsentGate();
+    initConsentGate();
+});
+
+/** 设置页「隐私与协议」卡片：链接 + 版本号 + 撤回同意 */
+function bindLegalSettings() {
+    const terms = document.getElementById('settingsLegalLink');
+    const privacy = document.getElementById('settingsPrivacyLink');
+    const termsVer = document.getElementById('settingsTermsVer');
+    const privacyVer = document.getElementById('settingsPrivacyVer');
+    const withdraw = document.getElementById('withdrawConsentBtn');
+    if (withdraw && !withdraw.dataset.bound) {
+        withdraw.dataset.bound = '1';
+        withdraw.addEventListener('click', withdrawConsent);
+    }
+    // 协议 URL 由后端生成（自带网关前缀），这里不硬编码路径
+    if (_consentInfo) {
+        if (terms) terms.href = _consentInfo.terms_url || '#';
+        if (privacy) privacy.href = _consentInfo.privacy_url || '#';
+        if (termsVer) termsVer.textContent = 'v' + (_consentInfo.terms_version || '—');
+        if (privacyVer) privacyVer.textContent = _consentInfo.privacy_version || '—';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(bindLegalSettings, 0);
+});

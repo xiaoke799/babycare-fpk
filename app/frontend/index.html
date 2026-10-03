@@ -3671,5 +3671,65 @@
 </script>
 
 <script src="/app/babycare-fpk/js/app.js"></script>
+
+<!-- 首次启动同意门禁：处理不满十四周岁未成年人信息，须取得监护人同意。
+     刻意不用通用 modal —— 那个能被 ESC / 点遮罩关掉，等于可以绕过；
+     这里用全屏遮罩（z-index 9999），未勾选不放行。 -->
+<div class="consent-gate" id="consentGate" style="display:none">
+    <div class="consent-gate-card">
+        <h2 class="consent-gate-title">开始使用前，请先确认</h2>
+        <p class="consent-gate-lead">
+            育儿宝是<strong>育儿记录工具</strong>，<strong>不是医疗器械，不提供医疗诊断</strong>。
+            由于需要记录婴幼儿的成长与健康信息，这些信息属于
+            <strong>不满十四周岁未成年人的敏感个人信息</strong>，须由监护人同意后使用。
+        </p>
+        <div class="consent-gate-links">
+            <a id="consentTermsLink" href="#" target="_blank" rel="noopener">《用户协议》</a>
+            <a id="consentPrivacyLink" href="#" target="_blank" rel="noopener">《隐私政策》</a>
+        </div>
+        <p class="consent-gate-versions" id="consentVersions"></p>
+        <label class="consent-gate-check">
+            <input type="checkbox" id="consentGuardian">
+            <span>我是上述儿童的<strong>父母或其他监护人</strong>，已阅读并同意上述两份文件</span>
+        </label>
+        <p class="consent-gate-tip" id="consentTip">数据默认只保存在您的 NAS 本地，不上传服务器。</p>
+        <div class="consent-gate-actions">
+            <button type="button" class="btn btn-cancel" id="consentDecline">暂不使用</button>
+            <button type="button" class="btn btn-primary" id="consentAgree">同意并继续</button>
+        </div>
+    </div>
+</div>
+
 </body>
-</html>
+</html>        <div class="settings-card">
+            <div class="settings-card-head">
+                <span class="settings-card-head-icon">
+                    <svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-doc"/></svg>
+                </span>
+                <div class="settings-card-head-text">
+                    <div class="settings-card-title">隐私与协议</div>
+                    <div class="settings-card-desc">本应用处理不满十四周岁未成年人的信息，须由监护人阅读并同意。</div>
+                </div>
+            </div>
+            <a class="feedback-row" id="settingsLegalLink" href="#" target="_blank" rel="noopener">
+                <span class="feedback-main">
+                    <span class="feedback-label">《用户协议》</span>
+                    <span class="feedback-value" id="settingsTermsVer">—</span>
+                </span>
+                <span class="feedback-go">›</span>
+            </a>
+            <a class="feedback-row" id="settingsPrivacyLink" href="#" target="_blank" rel="noopener">
+                <span class="feedback-main">
+                    <span class="feedback-label">《隐私政策》</span>
+                    <span class="feedback-value" id="settingsPrivacyVer">—</span>
+                </span>
+                <span class="feedback-go">›</span>
+            </a>
+            <div class="settings-row">
+                <span class="settings-row-label">撤回同意</span>
+                <button class="btn btn-outline btn-sm" id="withdrawConsentBtn">撤回</button>
+            </div>
+            <p class="settings-tip">撤回后将停用 AI 数据外发功能，下次启动需重新确认。</p>
+        </div>
+
+
