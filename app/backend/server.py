@@ -1458,6 +1458,14 @@ def _do_init() -> None:
     except Exception:
         pass
     try:
+        # 采信安装向导里勾选的监护人同意（写进 consent_records）。
+        # 必须在 init_db 之后 —— consent_records 的建表在模块导入期不做。
+        from blueprints.consent import consume_wizard_consent
+        with app.app_context():
+            consume_wizard_consent(app.config.get('DATA_DIR'))
+    except Exception as e:
+        app.logger.warning("处理安装向导同意记录失败: %s", e)
+    try:
         init_indexes()
     except Exception as e:
         app.logger.warning("索引创建失败: %s", e)

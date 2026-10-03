@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import datetime
+import os
 
 from flask import Blueprint, jsonify, request, url_for
 
@@ -123,3 +124,64 @@ def consent_withdraw():
     )
     db.commit()
     return jsonify({"success": True, "message": "已撤回同意，AI 数据外发已停用"})
+
+
+# ==================== 安装向导同意的落库 ====================
+# 向导勾选结果只在**安装阶段**以环境变量存在（cmd/main 启动后端时不继承），
+# 所以 install_callback 先把它落成数据目录下的标记文件，后端启动时再读走。
+# 为什么不直接写在脚本里插数据库：那时数据库可能还没建好/没迁移完，
+# 而且 CLI 与 Web 两个写入口容易各写各的。
+
+_MARKER_NAME = ".wizard_consent"
+
+
+def consume_wizard_consent(data_dir):
+    """读取安装向导的同意标记并写入 consent_records。返回记录 id 或 None。
+
+    带协议版本号校验：卸载重装时若协议已改版，**不认旧标记**，
+    要求用户重新同意（否则用户看到的协议和实际同意的不一致）。
+    """
+    if not data_dir:
+        return None
+    marker = os.path.join(data_dir, _MARKER_NAME)
+    if not os.path.isfile(marker):
+        return None
+    rid = None          # 版本不匹配时不会有记录 id，末尾统一 return
+    info = {}
+    try:
+        with open(marker, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    info[k.strip()] = v.strip()
+    except Exception as e:  # noqa: BLE001
+        get_logger(__name__).warning("读取向导同意标记失败：%s", e)
+
+    if info.get("agreed_at") and info.get("terms_version") == TERMS_VERSION \
+            and info.get("privacy_version") == PRIVACY_VERSION:
+        try:
+            _ensure_table()
+            db = get_db()
+            cur = db.execute(
+                "INSERT INTO consent_records"
+                " (agreed_at, terms_version, privacy_version, is_guardian, app_version)"
+                " VALUES (?,?,?,?,?)",
+                (info["agreed_at"], TERMS_VERSION, PRIVACY_VERSION, 1, "install_wizard"),
+            )
+            db.commit()
+            get_logger(__name__).info("已记录安装向导中的监护人同意")
+            rid = cur.lastrowid
+        except Exception as e:  # noqa: BLE001
+            get_logger(__name__).warning("写入向导同意记录失败：%s", e)
+            return None
+    else:
+        get_logger(__name__).info(
+            "向导同意标记缺失或版本不匹配（标记版本 %s / %s，需重新同意）",
+            info.get("terms_version"), info.get("privacy_version"))
+    # 无论是否采信都清掉标记：采信过就不再重复写；版本不匹配则要求重新征求
+    try:
+        os.remove(marker)
+    except OSError:
+        pass
+    return rid if info.get("agreed_at") else None

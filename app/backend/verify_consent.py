@@ -112,6 +112,50 @@ try:
 finally:
     consent_mod.TERMS_VERSION = old
 
+print("\n=== F. 安装向导同意的落库（安装时同意，免首次弹窗）===")
+import os as _os
+import blueprints.consent as _cm
+
+# F1 版本匹配 → 采信并落库，且标记文件被清掉（防重复写）
+d1 = _os.path.join(tmpdir, "marker_ok")
+_os.makedirs(d1, exist_ok=True)
+with open(_os.path.join(d1, ".wizard_consent"), "w", encoding="utf-8") as f:
+    f.write("agreed_at=2026-10-03 10:00:00\n"
+            f"terms_version={_cm.TERMS_VERSION}\n"
+            f"privacy_version={_cm.PRIVACY_VERSION}\n"
+            "source=install_wizard\n")
+with app.app_context():
+    rid = _cm.consume_wizard_consent(d1)
+    chk(rid is not None, "版本匹配时采信向导同意")
+    from utils import get_db as _gdb
+    row = _gdb().execute("SELECT * FROM consent_records WHERE id = ?", (rid,)).fetchone()
+chk(row is not None and row["app_version"] == "install_wizard",
+    "落库来源标记为 install_wizard")
+chk(not _os.path.exists(_os.path.join(d1, ".wizard_consent")),
+    "标记文件已清除（不会重复采信）")
+with app.app_context():
+    chk(_cm.consume_wizard_consent(d1) is None, "标记已清掉后二次调用返回 None")
+
+# F2 协议改版 → 不采信旧标记，要求重新同意（不能拿上次的同意顶账）
+d2 = _os.path.join(tmpdir, "marker_old")
+_os.makedirs(d2, exist_ok=True)
+with open(_os.path.join(d2, ".wizard_consent"), "w", encoding="utf-8") as f:
+    f.write("agreed_at=2026-01-01 10:00:00\nterms_version=0.9\n"
+            "privacy_version=2026-01-01\nsource=install_wizard\n")
+with app.app_context():
+    before = _gdb().execute("SELECT COUNT(*) c FROM consent_records").fetchone()["c"]
+    chk(_cm.consume_wizard_consent(d2) is None,
+        "协议版本不匹配时不采信旧标记")
+    after = _gdb().execute("SELECT COUNT(*) c FROM consent_records").fetchone()["c"]
+chk(before == after, "版本不匹配则不新增记录")
+with app.app_context():
+    r = c.get("/api/consent/required").get_json()
+# 注意语义：旧标记不采信 ≠ 撤销已有同意。E 组结束时用户已同意当前版本，
+# 所以这里应是「状态不变」，而不是 True —— 断言写反会掩盖真实行为。
+chk((r or {}).get("data", {}).get("need_consent") is False,
+    "旧标记不被采信，但不影响用户此前的有效同意")
+
+
 print()
 if fails:
     print("失败 %d 项" % len(fails))

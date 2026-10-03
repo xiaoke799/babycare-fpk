@@ -84,5 +84,27 @@ fi
 # 设置权限
 set_permissions
 
+# ==================== 记录安装向导中的监护人同意 ====================
+# 向导勾选结果以环境变量 wizard_agreement 传给**安装阶段**脚本，
+# 而 cmd/main 启动后端时并不继承这些变量 —— 所以这里落成一个文件，
+# 由后端启动时读取并写入 consent_records（可举证的同意记录）。
+#
+# 带协议版本号：卸载重装时若协议已改版，后端会因版本不匹配而**要求重新同意**，
+# 不会拿上一次安装的旧同意顶账。
+VAR_DIR="${TRIM_PKGVAR:-/var/apps/babycare-fpk/var}"
+if [ -n "$wizard_agreement" ] && [ "$wizard_agreement" = "agreed" ]; then
+    mkdir -p "$VAR_DIR" 2>/dev/null
+    if [ -d "$VAR_DIR" ]; then
+        printf 'agreed_at=%s\nterms_version=1.2\nprivacy_version=2026-10-03\nsource=install_wizard\n' \
+            "$(date '+%Y-%m-%d %H:%M:%S')" > "$VAR_DIR/.wizard_consent"
+        chmod 600 "$VAR_DIR/.wizard_consent" 2>/dev/null
+        echo "Guardian consent recorded from install wizard."
+    else
+        echo "Warning: cannot write consent marker (VAR_DIR missing)." > "$TRIM_TEMP_LOGFILE"
+    fi
+else
+    echo "Warning: wizard_agreement not set; app will ask for consent on first launch." > "$TRIM_TEMP_LOGFILE"
+fi
+
 echo "Installation complete."
 exit 0
