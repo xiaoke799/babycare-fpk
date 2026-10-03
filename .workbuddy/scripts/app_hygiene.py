@@ -37,17 +37,24 @@ MANIFEST = os.path.join(STASH, "manifest.json")
 
 
 def _targets():
-    """要移出的目标：[(stash 内文件名, app 内绝对路径)]。"""
+    """要移出的目标：[(stash 内扁平名, app 内绝对路径)]。
+
+    ⚠ __pycache__ 不止 backend 顶层一个：blueprints/ notifier/ seeds/ 以及
+    vendor/** 下还有 20 个（vendor 的依赖缓存最多，约占 300 个 pyc）。
+    必须递归找全，否则会漏进正式件（2026-10-03 首次清理就漏了，包内仍剩 311 个）。
+    """
     out = []
-    pyc = os.path.join(APP, "backend", "__pycache__")
-    if os.path.isdir(pyc):
-        out.append(("backend__pycache__", pyc))
+    for dirpath, dirnames, _files in os.walk(APP):
+        if os.path.basename(dirpath) == "__pycache__":
+            rel = os.path.relpath(dirpath, APP).replace(os.sep, "__")
+            out.append(("pycache__" + rel, dirpath))
+            dirnames[:] = []  # __pycache__ 内不再有嵌套
     data = os.path.join(APP, "data")
     if os.path.isdir(data):
         out.append(("app__data", data))
     for p in sorted(glob.glob(os.path.join(APP, "backend", "verify_*.py"))):
         out.append(("verify__" + os.path.basename(p), p))
-    return out
+    return sorted(out, key=lambda x: x[1])
 
 
 def check():
