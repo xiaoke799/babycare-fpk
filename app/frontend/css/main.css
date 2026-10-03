@@ -128,25 +128,55 @@ body {
     align-items: center;
     justify-content: space-between;
     height: var(--header-height);
-    padding: 0 16px;
+    padding: 0 14px;
     background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
     color: white;
     flex-shrink: 0;
+    /* 顶部一行的标题栏如果和内容区「糊」在一起，页面就没有层次。
+       用一道内高光提亮上沿，再投一层很轻的阴影把标题栏托起来。 */
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.28),
+        0 2px 10px rgba(209, 90, 122, 0.16);
+    position: relative;
+    z-index: 10;
 }
 
 .header-left {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
+    min-width: 0;
 }
 
+/* 图标原来是「裸」的一个 SVG，孤零零浮在渐变上；给它一个半透明圆形底衬，
+   视觉上就成了应用徽标，和右侧的圆形按钮也形成同一种语汇。
+   描边给到 0.38 而非 0.24：深色主题下 --primary-color 会变亮(#FF9E7A)，
+   底衬与渐变对比度随之下降，描边太淡就整个看不见了。 */
 .app-logo {
-    font-size: 28px;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.22);
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.38),
+        0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.app-logo svg {
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.15));
 }
 
 .app-title {
     font-size: 18px;
     font-weight: 600;
+    /* 字距略微放开一点，中文标题在小字号下会更透气 */
+    letter-spacing: 0.03em;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+    white-space: nowrap;
 }
 
 .back-btn {
@@ -188,21 +218,36 @@ body {
     gap: 8px;
 }
 
+/* 宝宝选择器是标题栏里最重要的信息（正在看哪个宝宝），原来只有一层淡白底，
+   在渐变偏亮的一侧几乎糊掉。补一道描边 + hover 反馈，交互感也更强。 */
 .baby-selector {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
-    background: rgba(255,255,255,0.2);
-    border-radius: 20px;
-    font-size: 13px;
+    gap: 5px;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.2);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.38);
+    border-radius: 999px;
+    font-size: 13.5px;
+    font-weight: 500;
     cursor: pointer;
     max-width: 180px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    transition: background 0.18s ease, box-shadow 0.18s ease;
 }
 
+.baby-selector:hover {
+    background: rgba(255, 255, 255, 0.3);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+.baby-selector:active {
+    background: rgba(255, 255, 255, 0.22);
+}
+
+/* 宝宝名可能很长（外祖辈起的名），必须保住省略号，否则会把胶囊撑破 */
 .baby-selector #currentBabyName {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -210,25 +255,45 @@ body {
 }
 
 .dropdown-arrow {
-    font-size: 10px;
+    font-size: 9px;
+    opacity: 0.85;
+    flex-shrink: 0;
 }
 
 .icon-btn {
-    width: 32px;
-    height: 32px;
+    width: 34px;
+    height: 34px;
     border: none;
     border-radius: 50%;
-    background: rgba(255,255,255,0.25);
+    background: rgba(255, 255, 255, 0.2);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.38);
     color: white;
-    font-size: 18px;
+    font-size: 17px;
+    line-height: 1;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
+    position: relative;   /* 供 ::after 扩展触控区用 */
+    transition: background 0.18s ease, box-shadow 0.18s ease;
+}
+
+/* 视觉直径 34px，但可点区域补到 44px —— 手指点得准，又不撑高标题栏 */
+.icon-btn::after {
+    content: '';
+    position: absolute;
+    width: 44px;
+    height: 44px;
 }
 
 .icon-btn:hover {
-    background: rgba(255,255,255,0.35);
+    background: rgba(255, 255, 255, 0.32);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+.icon-btn:active {
+    background: rgba(255, 255, 255, 0.24);
 }
 
 /* ==================== 主内容区 ==================== */
