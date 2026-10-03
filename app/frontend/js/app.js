@@ -6684,11 +6684,15 @@ function loadClinicSummary() {
                 <div class="clinic-milestone-list">${milestoneHtml}</div>
             </div>
 
-            <div class="clinic-card">
+            <div class="clinic-card no-print">
                 <div class="clinic-card-title"> 就医参考</div>
                 <div class="clinic-action">
                     <button class="btn btn-primary" onclick="window.print()"> 打印报告</button>
                 </div>
+            </div>
+
+            <div class="clinic-print-foot">
+                数据来自「育儿宝」本地记录，统计截止 ${getToday()}。本摘要仅供就诊参考，不构成医疗建议。
             </div>
         `;
     });

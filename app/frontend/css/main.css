@@ -13743,3 +13743,77 @@ input:checked + .toggle-slider:before {
     line-height: 1.6;
     color: var(--text-secondary);
 }
+
+/* ==================== 打印（给医生看的那一屏） ====================
+   家长在门诊要的是「把这一页打出来递过去」，所以打印样式不是装饰：
+   1) 强制浅色 —— 深色主题的深底在纸上既费墨又看不清；
+      页面配色统一走 CSS 变量，所以这里只需覆盖变量，不必逐个元素改。
+   2) 只打印看诊摘要这一页，导航/按钮/其它页全部隐藏。
+   3) 卡片不跨页断开，避免一张单子被切成两半。 */
+@media print {
+    :root,
+    [data-theme="dark"] {
+        --bg-color: #ffffff;
+        --card-bg: #ffffff;
+        --text-primary: #000000;
+        --text-secondary: #333333;
+        --text-light: #666666;
+        --border-color: #cccccc;
+        --shadow: none;
+        --shadow-lg: none;
+    }
+
+    body {
+        background: #fff !important;
+    }
+
+    /* 界面外壳一概不打印 */
+    .app-header,
+    .app-nav,
+    .modal,
+    .no-print,
+    .btn,
+    .toast {
+        display: none !important;
+    }
+
+    /* 只留看诊摘要这一页 */
+    .page {
+        display: none !important;
+    }
+    #page-clinic {
+        display: block !important;
+    }
+    .app-content {
+        padding: 0 !important;
+        overflow: visible !important;
+    }
+
+    .clinic-card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+        border: 1px solid #ddd !important;
+        box-shadow: none !important;
+    }
+
+    /* 打印件上加一行出处，方便医生知道数据截止到哪天 */
+    .clinic-print-foot {
+        margin-top: 14px;
+        font-size: 11px;
+        color: #666;
+        border-top: 1px dashed #ccc;
+        padding-top: 6px;
+    }
+}
+
+/* 打印页头（屏幕上显示，打印时由 .no-print 隐藏） */
+.clinic-print-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+.clinic-print-head .settings-tip {
+    margin: 4px 0 0;
+}
