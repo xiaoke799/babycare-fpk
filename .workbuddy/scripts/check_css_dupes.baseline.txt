@@ -1,0 +1,101 @@
+# check_css_dupes 已知历史重复（按「上下文|选择器」记录）
+# 只需删行即可让该条重新进入门禁；新增重复会自动报错。
+@media (min-width: 1024px)|#page-dashboard .home-recent
+@media (min-width: 1024px)|#page-dashboard .home-stats
+@media (min-width: 768px) and (max-width: 1023px)|#page-dashboard .home-quick-actions
+@media (min-width: 768px) and (max-width: 1023px)|#page-dashboard .home-stats
+@media print|.app-header
+@media print|.app-nav
+|.allergy-card
+|.allergy-header
+|.allergy-list
+|.allergy-meta
+|.app-logo
+|.article-content th
+|.btn-sm
+|.chat-msg
+|.chat-quick-btn-query
+|.chat-quick-btn-query:hover
+|.clinic-growth-table th
+|.diaper-price-item-card
+|.form-actions
+|.form-group
+|.form-group label
+|.form-group textarea
+|.growth-photo-item
+|.health-indicator-table th
+|.health-trend-table th
+|.ledger-add-btn
+|.ledger-cat-bar
+|.ledger-cat-bar-wrap
+|.ledger-cat-name
+|.ledger-cat-row
+|.ledger-cat-total
+|.ledger-item
+|.ledger-item-amount
+|.ledger-item-cat
+|.ledger-item-info
+|.ledger-item-meta
+|.ledger-item-name
+|.ledger-month-btn
+|.ledger-month-btn:hover
+|.ledger-month-label
+|.ledger-month-nav
+|.ledger-summary-card
+|.ledger-total
+|.ledger-total-label
+|.ledger-total-value
+|.ledger-trend-bars
+|.ledger-trend-card
+|.ledger-trend-title
+|.llm-test-result
+|.llm-test-result-detail
+|.llm-test-result-icon
+|.llm-test-result-text
+|.llm-test-result.error
+|.llm-test-result.success
+|.milestone-date
+|.milestone-item
+|.modal-large
+|.nav-icon
+|.nav-icon .ic-svg
+|.nav-panels
+|.pet-avatar
+|.pet-mascot.alert .pet-bubble
+|.photo-item
+|.photo-item
+|.photo-item img
+|.photos-grid
+|.quick-actions
+|.recipe-card
+|.recipe-card:hover
+|.recipe-detail-icon
+|.recipe-form textarea
+|.recipe-icon
+|.recipe-meta
+|.recipe-title
+|.reminder-info
+|.reminder-title
+|.report-content
+|.report-stat-item
+|.report-stat-label
+|.report-stat-value
+|.report-summary-card
+|.report-summary-card
+|.report-tab
+|.report-tab.active
+|.settings-card--llm
+|.settings-field-hint
+|.settings-field-hint--accent
+|.settings-input
+|.settings-input:focus
+|.sleep-prediction-card
+|.stat-label
+|.stat-value
+|.teeth-row
+|.tooth-name
+|.trend-bar
+|.trend-bar
+|.trend-col
+|.trend-month
+|.trend-value
