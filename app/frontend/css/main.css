@@ -2366,7 +2366,14 @@ body {
     border-top: 1px solid var(--border-color);
 }
 
-.settings-group-title {
+/* ⚠ 这两条必须限定在 `.settings-group` 之内。
+   推送通知卡里还有几个**裸的** `.settings-group-title`（走下面 L2669 的老规则）；
+   不限定的话：① 选择器与老规则重名（重复定义）② 老规则在后面，会把
+   font-size/color/padding 盖回去 ③ 这里的 `::before` 色条会外溢到那张卡上。
+   限定后特异性更高，且只作用于新分组；`padding:0` 是为了显式清掉老规则的
+   `padding:16px 0 2px`（特异性只在「双方都声明该属性」时才有意义，
+   不写就会被老规则的 padding 漏进来）。 */
+.settings-group > .settings-group-title {
     display: flex;
     align-items: center;
     gap: 7px;
@@ -2375,10 +2382,11 @@ body {
     color: var(--text-primary);
     letter-spacing: 0.3px;
     margin-bottom: 6px;
+    padding: 0;
 }
 
 /* 标题前的小色条，让分组一眼可辨 */
-.settings-group-title::before {
+.settings-group > .settings-group-title::before {
     content: '';
     width: 3px;
     height: 12px;
