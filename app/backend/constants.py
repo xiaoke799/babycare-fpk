@@ -128,16 +128,22 @@ EXPORT_TABLES = [
     'milestones', 'milestone_details', 'medication_reminders',
     # --- 活动/知识使用痕迹 ---
     'activity_favorites', 'activity_logs', 'baby_activities',
-    'knowledge_articles', 'baby_wiki',
     # --- 媒体 ---
     'photos', 'growth_photos',
     # --- 其他用户数据 ---
     'timers', 'diaper_prices', 'product_prices', 'expense_records',
     'baby_recipes', 'chat_history',
     # --- 知识库（全局参考表，管理员可维护）---
+    # 注：knowledge_articles / baby_wiki 原来在「活动/知识使用痕迹」和这里各写了一遍，
+    # 同一个 list 里出现两次。导出循环按 dict 赋值所以结果不错，但清单本身在骗人：
+    # 数「有几张表」时多算两张，且以后有人按位置插入会插到那份重复的上去。
     'knowledge_articles', 'baby_wiki',
     # --- 用户配置（全局，不含 babies）---
     'settings', 'app_settings',
+    # --- 对外入口审计 ---
+    # webhook 是对外开放的网络入口，用户接入床头按钮/语音助手后，
+    # 「按了没反应」只能靠这张表判断到底调到了没有、被拒在哪一步。
+    'webhook_logs',
     # --- 家庭成员：谁在记录（全局，不按宝宝分）---
     'family_members',
 ]

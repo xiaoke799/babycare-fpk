@@ -1729,6 +1729,16 @@
                     <div class="webhook-usage">
                         <p class="data-mgmt-tip">给床头智能按钮、语音助手、自动化脚本用的一条「一句话记一笔」通道（POST <code>/api/webhook/log</code>，事件：feeding / diaper / sleep / temperature）。</p>
                     </div>
+                    <div class="webhook-usage">
+                        <div class="settings-group-title">调用记录</div>
+                        <p class="settings-group-desc">每次调用都会留审计（含被拒的）。按钮按了没反应时先看这里：能分清「压根没调到」和「调到了但被拒」。</p>
+                        <div class="data-mgmt-actions">
+                            <button class="btn btn-outline btn-sm" id="loadWebhookLogsBtn">刷新调用记录</button>
+                            <button class="btn btn-outline btn-sm" id="cleanWebhookLogsBtn">清理 30 天前</button>
+                        </div>
+                        <p class="empty-tip" id="webhookLogsSummary" style="margin-top:8px">尚未加载</p>
+                        <div class="webhook-log-list" id="webhookLogList"></div>
+                    </div>
                 </div>
             </div>
         <!-- 推送通知 -->

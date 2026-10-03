@@ -14130,6 +14130,59 @@ input:checked + .toggle-slider:before {
     border-radius: 4px;
 }
 
+/* Webhook 调用记录。视觉语言与诊断页的 .diag-error-item 保持一致，
+   但作用域限定在 .webhook-log-list 内 —— 同名选择器在同一上下文里会被
+   后写的静默覆盖，而且只覆盖双方都声明过的属性。 */
+.webhook-usage > .webhook-log-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 10px;
+    max-height: 320px;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.webhook-log-item {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    background: var(--bg-color);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+}
+
+.webhook-log-flag {
+    flex: 0 0 auto;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 6px;
+    color: #fff;
+    background: var(--text-light);
+    line-height: 1.4;
+}
+
+.webhook-log-flag.ok { background: #5BA85B; }
+.webhook-log-flag.fail { background: #E4573D; }
+
+.webhook-log-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.webhook-log-main {
+    font-size: 12px;
+    color: var(--text-color);
+}
+
+.webhook-log-sub {
+    font-size: 11px;
+    color: var(--text-light);
+    margin-top: 2px;
+    word-break: break-all;
+}
+
 /* ==================== 首次启动同意门禁 ====================
    处理不满十四周岁未成年人信息，须取得监护人同意（个保法第 31 条）。
    做成全屏遮罩而不是普通弹窗：通用 modal 能被 ESC / 点遮罩关掉，

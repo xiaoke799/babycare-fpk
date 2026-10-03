@@ -12779,6 +12779,9 @@ function initDataManagement() {
     document.getElementById('genWebhookTokenBtn')?.addEventListener('click', generateWebhookToken);
     document.getElementById('revokeWebhookTokenBtn')?.addEventListener('click', revokeWebhookToken);
     loadWebhookTokenStatus();
+    // 调用记录跟诊断板块一个待遇：不随启动预拉，进了设置页再点「刷新」。
+    document.getElementById('loadWebhookLogsBtn')?.addEventListener('click', loadWebhookLogs);
+    document.getElementById('cleanWebhookLogsBtn')?.addEventListener('click', cleanWebhookLogs);
     document.getElementById('importBackupInput')?.addEventListener('change', handleBackupUpload);
     document.getElementById('triggerAutoBackupBtn')?.addEventListener('click', triggerAutoBackup);
     document.getElementById('saveAutoBackupBtn')?.addEventListener('click', saveAutoBackupConfig);
@@ -19360,6 +19363,67 @@ function revokeWebhookToken() {
         showToast(res && res.success ? (res.message || '已吊销') : '吊销失败');
         loadWebhookTokenStatus();
     }).catch(() => showToast.error('吊销失败'));
+}
+
+// ==================== Webhook 调用记录 ====================
+// 存在的原因：webhook 是对外开放的网络入口，用户接入床头按钮/语音助手之后，
+// 最高频的求助是「我按了，它没反应」。光看Token 状态是分不出原因的——
+// 「压根没调到 NAS」和「调到了但 Token 不对/被限流/宝宝 id 不存在」，
+// 在 Token 那一行看起来一模一样。调用记录是唯一的区分依据。
+
+function loadWebhookLogs() {
+    const box = document.getElementById('webhookLogList');
+    const summary = document.getElementById('webhookLogsSummary');
+    if (!box || !summary) return;
+    summary.textContent = '正在读取…';
+    api('/api/admin/logs/webhooks?limit=50&days=7').then(res => {
+        if (!res || !res.success) {
+            summary.textContent = '调用记录读取失败';
+            box.innerHTML = '';
+            return;
+        }
+        const list = Array.isArray(res.data) ? res.data : [];
+        const total = res.total || 0;
+        const failed = res.failed || 0;
+        summary.textContent = list.length
+            ? `近 7 天共 ${total} 次调用，其中 ${failed} 次失败`
+            : '近 7 天没有任何调用记录';
+        if (!list.length) {
+            box.innerHTML = '<p class="empty-tip">没有记录。若设备发出过请求却这里空着，'
+                + '先确认请求打到了这台 NAS 的这个端口。</p>';
+            return;
+        }
+        box.innerHTML = list.map(w => {
+            const ok = Number(w.ok) === 1;
+            const when = (w.created_at || '').replace('T', ' ');
+            const reason = escapeHtml(w.reason || '');
+            const ip = escapeHtml(w.remote_addr || '');
+            // 主行优先放「最想知道的那个」：有事件名看事件名；没有（比如 Token 就被拒了，
+            // 请求根本没进业务逻辑）就直接显示失败原因 —— 排查时先看原因，不是先看事件名。
+            const main = w.event ? escapeHtml(w.event) : (reason || '（无原因）');
+            const sub = w.event && reason ? reason : '';
+            return `<div class="webhook-log-item">
+                <span class="webhook-log-flag ${ok ? 'ok' : 'fail'}">${ok ? '成功' : '失败'}</span>
+                <div class="webhook-log-body">
+                    <div class="webhook-log-main">${main}</div>
+                    <div class="webhook-log-sub">${escapeHtml(when)}${sub ? ' · ' + sub : ''}${ip ? ' · ' + ip : ''}</div>
+                </div>
+            </div>`;
+        }).join('');
+    }).catch(() => {
+        summary.textContent = '调用记录读取失败';
+    });
+}
+
+function cleanWebhookLogs() {
+    if (!confirm('清理 30 天前的 Webhook 调用记录？')) return;
+    api('/api/admin/logs/webhooks/clear', {
+        method: 'POST',
+        body: JSON.stringify({ days: 30 })
+    }).then(res => {
+        showToast(res && res.success ? `已清理 ${res.deleted} 条` : '清理失败');
+        loadWebhookLogs();
+    }).catch(() => showToast.error('清理失败'));
 }
 
 // ==================== 首次启动同意门禁 ====================

@@ -11,6 +11,7 @@
 - /api/admin/logs/detail/<id> - 单条错误详情
 - /api/admin/logs/clear    - 清理过期错误记录
 - /api/admin/logs/files    - 文件日志内容
+- /api/admin/logs/webhooks - Webhook 调用审计（对外入口的排查依据）
 """
 
 from flask import Blueprint, request, jsonify
@@ -165,4 +166,76 @@ def admin_log_files_clear():
         return jsonify({"success": True, "results": results})
     except Exception as e:
         logger.error("清空日志失败: %s", e, exc_info=True)
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+# ==================== Webhook 调用审计 ====================
+#
+# 为什么要查它：webhook 是**对外开放**的网络入口，用户把床头按钮/语音助手接进来之后，
+# 「按了没反应」是最高频的问题。以前 webhook_logs 只写不读 —— 既没有查询接口，
+# 也不进备份，于是用户只能去翻日志文件（而它根本不写那儿）。
+# 换句话说：出问题时，唯一能证明「到底有没有调到、有没有被拒」的证据被关在库里。
+
+@bp.route("/api/admin/logs/webhooks", methods=["GET"])
+def admin_log_webhooks():
+    """分页查询 webhook 调用审计（成功/失败都记）"""
+    try:
+        from utils import get_db, row_to_dict, rows_to_list
+
+        limit = min(max(request.args.get("limit", 50, type=int), 1), 200)
+        offset = max(request.args.get("offset", 0, type=int), 0)
+        days = min(max(request.args.get("days", 7, type=int), 1), 90)
+        only_failed = request.args.get("failed") == "1"
+
+        db = get_db()
+        where = "WHERE created_at >= datetime('now', 'localtime', ?)"
+        params: list = [f"-{days} days"]
+        if only_failed:
+            where += " AND ok = 0"
+
+        total = db.execute(
+            f"SELECT COUNT(*) AS c FROM webhook_logs {where}", tuple(params)
+        ).fetchone()["c"]
+        rows = db.execute(
+            f"SELECT id, created_at, event, baby_id, ok, reason, remote_addr "
+            f"FROM webhook_logs {where} "
+            f"ORDER BY replace(created_at,'T',' ') DESC, id DESC "
+            f"LIMIT ? OFFSET ?",
+            tuple(params) + (limit, offset),
+        ).fetchall()
+        failed_total = db.execute(
+            "SELECT COUNT(*) AS c FROM webhook_logs WHERE ok = 0"
+            " AND created_at >= datetime('now', 'localtime', ?)", (f"-{days} days",)
+        ).fetchone()["c"]
+
+        return jsonify({
+            "success": True,
+            "data": rows_to_list(rows),
+            "total": total,
+            "failed": failed_total,
+            "limit": limit,
+            "offset": offset,
+        })
+    except Exception as e:
+        logger.error("查询 webhook 审计失败: %s", e, exc_info=True)
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@bp.route("/api/admin/logs/webhooks/clear", methods=["POST"])
+@require_admin
+def admin_log_webhooks_clear():
+    """清理过期 webhook 审计（保留最近 N 天）"""
+    try:
+        from utils import get_db
+
+        days = min(max((request.get_json(silent=True) or {}).get("days", 30) or 30, 1), 365)
+        db = get_db()
+        cur = db.execute(
+            "DELETE FROM webhook_logs WHERE created_at < datetime('now','localtime',?)",
+            (f"-{days} days",),
+        )
+        db.commit()
+        return jsonify({"success": True, "deleted": cur.rowcount, "keep_days": days})
+    except Exception as e:
+        logger.error("清理 webhook 审计失败: %s", e, exc_info=True)
         return jsonify({"success": False, "message": str(e)}), 500
