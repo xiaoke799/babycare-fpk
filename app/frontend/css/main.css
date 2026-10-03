@@ -13817,3 +13817,75 @@ input:checked + .toggle-slider:before {
 .clinic-print-head .settings-tip {
     margin: 4px 0 0;
 }
+
+/* ==================== 周报 / 月报 ==================== */
+.periodic-report {
+    margin-bottom: 18px;
+}
+.periodic-report-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.periodic-tabs {
+    display: flex;
+    gap: 8px;
+}
+.periodic-tab {
+    padding: 6px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+}
+.periodic-tab.active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: #fff;
+}
+.periodic-range {
+    font-size: 12px;
+    color: var(--text-light);
+}
+.periodic-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+}
+.periodic-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+}
+.periodic-card-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+.periodic-card-value {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.2;
+}
+.periodic-card-value small {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--text-light);
+    margin-left: 2px;
+}
+/* 环比：涨用红、跌用绿（跟 A 股习惯一致：涨红跌绿），
+   但「发热次数增加」是坏事，所以额外给一个警示色。 */
+.periodic-delta {
+    font-size: 12px;
+    margin-top: 3px;
+    color: var(--text-light);
+}
+.periodic-delta.up { color: var(--danger-color); }
+.periodic-delta.down { color: var(--success-color); }
+.periodic-delta.bad { color: var(--danger-color); font-weight: 600; }

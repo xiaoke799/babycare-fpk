@@ -2118,6 +2118,9 @@ function loadPageData(page) {
             // 每次切页都会重复绑定点击事件。这里改为直接按当前 tab 刷新数据。
             const reportTab = document.querySelector('.report-tab.active')?.dataset.tab || 'sleep';
             loadReportData(reportTab);
+            // 周报 / 月报卡片（周期概览 + 环比），与下面的分项趋势是两回事
+            initPeriodicReport();
+            loadPeriodicReport();
             break;
         }
         case 'clinic':
@@ -19180,5 +19183,84 @@ function deleteMedReminder(id) {
     if (!confirm('确定要删除这条用药提醒吗？')) return;
     api(`/api/babies/${App.currentBaby}/medication-reminders/${id}`, { method: 'DELETE' }).then(res => {
         if (res.success) loadMedReminders();
+    });
+}
+
+// ==================== 周报 / 月报 ====================
+// 「这一周/这个月怎么样」是家长最常问的问题，而年度报告太长、翻记录太慢。
+// 数字全部来自后端按周期统计 + 与上一周期环比，这里只负责排版。
+let _periodicPeriod = 'week';
+let _periodicBound = false;
+
+/** 一张卡的 HTML。higherIsWorse 用于「涨了不是好事」的场景（发热次数）。 */
+function periodicCardHtml(label, value, unit, delta, higherIsWorse) {
+    let deltaHtml = '<div class="periodic-delta">—</div>';
+    if (delta === 0) {
+        deltaHtml = '<div class="periodic-delta">与上期持平</div>';
+    } else if (delta === null || delta === undefined) {
+        deltaHtml = '<div class="periodic-delta">上期无数据</div>';
+    } else {
+        const up = delta > 0;
+        const sign = up ? '+' : '';
+        // 发热次数涨了要标红提醒，不能和其它指标一样当成中性变化
+        const cls = higherIsWorse ? 'bad' : (up ? 'up' : 'down');
+        deltaHtml = `<div class="periodic-delta ${cls}">较上期 ${sign}${delta}</div>`;
+    }
+    return `<div class="periodic-card">
+        <div class="periodic-card-label">${escapeHtml(label)}</div>
+        <div class="periodic-card-value">${escapeHtml(String(value))}<small>${escapeHtml(unit || '')}</small></div>
+        ${deltaHtml}
+    </div>`;
+}
+
+async function loadPeriodicReport(period) {
+    if (!App.currentBaby) return;
+    if (period) _periodicPeriod = period;
+    const box = document.getElementById('periodicCards');
+    const rangeEl = document.getElementById('periodicRange');
+    if (!box) return;
+
+    const res = await api(`/api/babies/${App.currentBaby}/periodic-report?period=${encodeURIComponent(_periodicPeriod)}`);
+    if (!res || !res.success) {
+        box.innerHTML = '<p class="empty-tip">周期报告加载失败</p>';
+        return;
+    }
+    const d = res.data;
+    const cur = d.current || {};
+    const delta = d.delta || {};
+    if (rangeEl) {
+        const label = _periodicPeriod === 'week' ? '本周' : '本月';
+        rangeEl.textContent = `${label} ${d.start_date} ~ ${d.end_date}（共 ${d.days} 天）`;
+    }
+
+    const sleepHours = Math.round((cur.sleep_minutes || 0) / 6) / 10;   // 保留一位小数
+    const g = d.growth || {};
+    const cards = [
+        periodicCardHtml('喂奶', cur.feeding_count || 0, '次', delta.feeding_count, false),
+        periodicCardHtml('奶量', cur.feeding_ml || 0, 'ml', delta.feeding_ml, false),
+        periodicCardHtml('睡眠', sleepHours, '小时', delta.sleep_minutes === null || delta.sleep_minutes === undefined
+            ? null : Math.round(delta.sleep_minutes / 6) / 10, false),
+        periodicCardHtml('换尿布', cur.diaper_count || 0, '次', delta.diaper_count, false),
+        periodicCardHtml('发热', cur.fever_count || 0, '次', delta.fever_count, true),
+        periodicCardHtml('里程碑', d.milestone_count || 0, '个', null, false),
+    ];
+    if (g.weight) {
+        cards.push(periodicCardHtml('最近体重', g.weight, 'kg', null, false));
+    }
+    box.innerHTML = cards.join('');
+}
+
+function initPeriodicReport() {
+    if (_periodicBound) return;
+    _periodicBound = true;
+    document.getElementById('periodicWeekBtn')?.addEventListener('click', () => {
+        document.querySelectorAll('.periodic-tab').forEach(b => b.classList.remove('active'));
+        document.getElementById('periodicWeekBtn')?.classList.add('active');
+        loadPeriodicReport('week');
+    });
+    document.getElementById('periodicMonthBtn')?.addEventListener('click', () => {
+        document.querySelectorAll('.periodic-tab').forEach(b => b.classList.remove('active'));
+        document.getElementById('periodicMonthBtn')?.classList.add('active');
+        loadPeriodicReport('month');
     });
 }

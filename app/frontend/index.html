@@ -1195,6 +1195,23 @@
     <div class="reports-header">
         <h3 class="section-title">数据分析报告</h3>
     </div>
+    <!-- 周报 / 月报：先给一个「这一周/这个月怎么样」的总数与环比，
+         再往下才是分项趋势。放在最上面是因为家长最常问的就是这句。 -->
+    <div class="periodic-report">
+        <div class="periodic-report-head">
+            <div class="periodic-tabs">
+                <!-- 注意用 periodic-tab 而不是 report-tab：页面里已有逻辑会遍历
+                     所有 .report-tab 绑定分项切换（读 dataset.tab），复用那个 class
+                     会让点「本周」触发一次无关的分项切换。 -->
+                <button class="periodic-tab active" id="periodicWeekBtn" data-period="week">本周</button>
+                <button class="periodic-tab" id="periodicMonthBtn" data-period="month">本月</button>
+            </div>
+            <span class="periodic-range" id="periodicRange"></span>
+        </div>
+        <div class="periodic-cards" id="periodicCards">
+            <p class="empty-tip">加载中...</p>
+        </div>
+    </div>
     <div class="reports-tabs">
         <button class="report-tab active" data-tab="sleep">睡眠</button>
         <button class="report-tab" data-tab="feeding">喂养</button>

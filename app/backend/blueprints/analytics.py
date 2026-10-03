@@ -1254,3 +1254,127 @@ def get_sleep_prediction(baby_id):
         }
 
     return jsonify({"success": True, "data": prediction})
+
+
+# ==================== 周报 / 月报 ====================
+# 年度报告太长，日常其实想看的是「这一周/这个月怎么样，比上一周期怎么样」。
+# 之前只有 yearly-report，feeding_summary 表里又只有月度汇总没有月报接口，
+# 于是「最近一周」这个问题只能自己翻记录。
+
+@bp.route("/api/babies/<int:baby_id>/periodic-report", methods=["GET"])
+def get_periodic_report(baby_id):
+    """周报 / 月报：本周期关键指标 + 与上一周期的环比。
+
+    参数：
+      period —— week（默认，周一到周日）或 month（自然月）
+      date   —— 可选，周期内的任意一天，默认今天
+    """
+    logger = get_logger(__name__)
+    db = get_db()
+    baby = db.execute("SELECT * FROM babies WHERE id = ?", (baby_id,)).fetchone()
+    if not baby:
+        return jsonify({"success": False, "message": "宝宝不存在"}), 404
+
+    period = (request.args.get("period") or "week").strip().lower()
+    if period not in ("week", "month"):
+        return jsonify({"success": False, "message": "period 只能是 week 或 month"}), 400
+
+    raw_date = (request.args.get("date") or "").strip()
+    try:
+        ref = datetime.date.fromisoformat(raw_date) if raw_date else datetime.date.today()
+    except ValueError:
+        return jsonify({"success": False, "message": "date 格式应为 YYYY-MM-DD"}), 400
+
+    if period == "week":
+        start = ref - datetime.timedelta(days=ref.weekday())   # 周一为一周之始
+        end = start + datetime.timedelta(days=7)
+        prev_start = start - datetime.timedelta(days=7)
+    else:
+        start = ref.replace(day=1)
+        end = (start + datetime.timedelta(days=32)).replace(day=1)
+        prev_start = (start - datetime.timedelta(days=1)).replace(day=1)
+    prev_end = start
+
+    s_cur, e_cur = start.isoformat(), end.isoformat()
+    s_prev, e_prev = prev_start.isoformat(), prev_end.isoformat()
+
+    def _scalar(sql, params):
+        """单值查询；单表出问题只影响这一项，不拖垮整份报告。"""
+        try:
+            row = db.execute(sql, params).fetchone()
+            return row[0] if row else 0
+        except Exception as e:  # noqa: BLE001
+            logger.warning("周期报告查询失败 %s：%s", sql[:60], e)
+            return 0
+
+    def _bucket(s, e):
+        """一个周期内的五项计数。"""
+        return {
+            "feeding_count": int(_scalar(
+                "SELECT COUNT(*) FROM feeding_records WHERE baby_id = ?"
+                " AND date(start_time) >= ? AND date(start_time) < ?",
+                (baby_id, s, e)) or 0),
+            "feeding_ml": round(float(_scalar(
+                "SELECT SUM(amount) FROM feeding_records WHERE baby_id = ?"
+                " AND date(start_time) >= ? AND date(start_time) < ?",
+                (baby_id, s, e)) or 0)),
+            "sleep_minutes": int(float(_scalar(
+                "SELECT SUM(duration_minutes) FROM sleep_records WHERE baby_id = ?"
+                " AND date(start_time) >= ? AND date(start_time) < ?",
+                (baby_id, s, e)) or 0)),
+            "diaper_count": int(_scalar(
+                "SELECT COUNT(*) FROM diaper_records WHERE baby_id = ?"
+                " AND date(change_time) >= ? AND date(change_time) < ?",
+                (baby_id, s, e)) or 0),
+            "fever_count": int(_scalar(
+                "SELECT COUNT(*) FROM temperature_records WHERE baby_id = ?"
+                " AND is_fever = 1 AND date(measure_time) >= ? AND date(measure_time) < ?",
+                (baby_id, s, e)) or 0),
+        }
+
+    cur, prev = _bucket(s_cur, e_cur), _bucket(s_prev, e_prev)
+
+    def _growth_at(s, e):
+        """周期内最后一次量到的身高体重（没有就返回 None，别拿 0 冒充）。"""
+        try:
+            row = db.execute(
+                "SELECT record_date, height, weight, head_circumference FROM growth_records"
+                " WHERE baby_id = ? AND date(record_date) >= ? AND date(record_date) < ?"
+                " AND (height IS NOT NULL OR weight IS NOT NULL)"
+                " ORDER BY record_date DESC LIMIT 1",
+                (baby_id, s, e)).fetchone()
+            return row_to_dict(row) if row else None
+        except Exception as e:  # noqa: BLE001
+            logger.warning("周期报告成长记录查询失败：%s", e)
+            return None
+
+    growth_cur = _growth_at(s_cur, e_cur)
+
+    def _delta(key):
+        """环比差值：上一周期为 0 时不给出（避免出现 +999 这种假增长）。"""
+        a, b = cur.get(key, 0), prev.get(key, 0)
+        return None if not b else a - b
+
+    days = (end - start).days
+    return jsonify({
+        "success": True,
+        "data": {
+            "period": period,
+            "start_date": s_cur,
+            "end_date": e_cur,
+            "prev_start_date": s_prev,
+            "prev_end_date": e_prev,
+            "days": days,
+            "baby": {"name": baby["name"], "birthday": baby["birthday"]},
+            "current": cur,
+            "previous": prev,
+            "delta": {k: _delta(k) for k in
+                      ("feeding_count", "feeding_ml", "sleep_minutes",
+                       "diaper_count", "fever_count")},
+            "growth": growth_cur,
+            "milestone_count": int(_scalar(
+                "SELECT COUNT(*) FROM milestones WHERE baby_id = ?"
+                " AND date(achieved_date) >= ? AND date(achieved_date) < ?",
+                (baby_id, s_cur, e_cur)) or 0),
+        },
+    })
