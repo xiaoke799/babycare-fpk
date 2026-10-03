@@ -57,14 +57,20 @@ def _targets():
     return sorted(out, key=lambda x: x[1])
 
 
-def check():
+def check(informational=False):
     t = _targets()
     if not t:
         print("[OK] app/ 干净：无 __pycache__ / data / verify_*.py")
         return 0
-    print("[FAIL] app/ 下有 %d 项会被 fnpack 打进正式件：" % len(t))
+    tag = "[INFO]" if informational else "[FAIL]"
+    print("%s app/ 下有 %d 项会被 fnpack 打进正式件：" % (tag, len(t)))
     for _name, p in t:
         print("   - " + os.path.relpath(p, ROOT))
+    if informational:
+        # 无参数调用（如被 _run_gates.py 扫到）只提示、不判失败：
+        # 开发状态下 app/ 本就有 __pycache__，若这里返回非零会让回归门禁长期误红。
+        print("（硬守卫请用 --check；清理用 --stage-out）")
+        return 0
     print("打包前请先跑：python .workbuddy/scripts/app_hygiene.py --stage-out")
     return 1
 
@@ -124,15 +130,18 @@ def stage_in():
 def main():
     ap = argparse.ArgumentParser(description="打包卫生：移出/恢复 app/ 下不该进包的文件")
     g = ap.add_mutually_exclusive_group()
-    g.add_argument("--check", action="store_true", help="检查 app/ 是否干净（打包前守卫）")
-    g.add_argument("--stage-out", action="store_true", help="把三类移出到 .workbuddy/pack_stash/")
+    g.add_argument("--check", action="store_true", help="硬守卫：app/ 不干净则 exit 1（打包前用）")
+    g.add_argument("--stage-out", action="store_true", help="把不该进包的移出到 .workbuddy/pack_stash/")
     g.add_argument("--stage-in", action="store_true", help="从暂存恢复回 app/")
     a = ap.parse_args()
     if a.stage_out:
         return stage_out()
     if a.stage_in:
         return stage_in()
-    return check()
+    if a.check:
+        return check()
+    # 无参数 = 信息模式（只提示、恒 exit 0）
+    return check(informational=True)
 
 
 if __name__ == "__main__":
