@@ -51,5 +51,9 @@ secret_key
 # 会话临时产物：离线预览服务、DOM 探针、截图输出（用完即弃，不进仓库）
 .workbuddy/tmp/
 
+# 打包卫生暂存：app_hygiene.py --stage-out 移出的 __pycache__/data/verify 脚本
+# （含真实数据库与密钥，绝不入库）
+.workbuddy/pack_stash/
+
 # 浏览器自动化 CLI 的运行时缓存（每次跑都会重建，不进仓库）
 .playwright-cli/

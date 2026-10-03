@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""开包验货：核对 fpk 清单、执行位、以及新前端改动是否进包。"""
+"""开包验货：核对 fpk 清单、打包卫生、以及新前端改动是否进包。
+
+退出码：有失败项时返回 1（门禁 _run_gates.py 按 returncode 判红绿）。
+"""
 import hashlib
 import io
+import sys
 import tarfile
 
 FPK = 'babycare-fpk.fpk'
@@ -66,7 +70,6 @@ inn = outer.extractfile('app.tgz').read()
 it = tarfile.open(fileobj=io.BytesIO(inn), mode='r:*')
 print('内层条目:', len(it.getnames()))
 
-noexec = []
 html = None
 js = None
 storage_py = None
@@ -74,13 +77,22 @@ constants_py = None
 health_py = None
 development_py = None
 vaccines_py = None
+pycache_files = []
+data_files = []
+verify_files = []
 for m in it.getmembers():
     if not m.isfile():
         continue
     f = it.extractfile(m)
     data = f.read()
-    if data[:2] == b'#!' and (m.mode & 0o111) == 0:
-        noexec.append(m.name)
+    # 打包卫生：下面三类不该进包（fnpack 直接打 app/ 全量、不读 .gitignore）
+    if '__pycache__' in m.name or m.name.endswith('.pyc'):
+        pycache_files.append(m.name)
+    if m.name.lstrip('./').startswith('data/'):
+        data_files.append(m.name)
+    _base = m.name.rsplit('/', 1)[-1]
+    if _base.startswith('verify_') and _base.endswith('.py'):
+        verify_files.append(m.name)
     if m.name.endswith('frontend/index.html'):
         html = data.decode('utf-8')
     if m.name.endswith('frontend/js/app.js'):
@@ -96,8 +108,18 @@ for m in it.getmembers():
     if m.name.endswith('backend/blueprints/vaccines.py'):
         vaccines_py = data.decode('utf-8')
 
-print('带 shebang 但缺执行位:', noexec if noexec else '无')
-chk('内层带 shebang 脚本都有执行位', not noexec)
+print()
+print('=== 打包卫生（这些不该进包）===')
+# 背景：fnpack 直接打 app/ 全量、不读 .gitignore，__pycache__ / 开发数据 / 测试脚本
+# 会被一起打进正式件（曾达 55% 是垃圾，还夹带真实 db 与 secret_key）。
+# 内层脚本一律由 python 解释器调用（cmd/main 用 $PYTHON_CMD start_server.py），
+# 故不再要求内层 shebang 脚本带执行位（旧断言是过时误判，2026-10-03 移除）。
+chk('包内无 __pycache__ / *.pyc 编译缓存（发现 %d 个）' % len(pycache_files),
+    not pycache_files)
+chk('包内无 data/ 开发数据与密钥（发现 %d 个）' % len(data_files),
+    not data_files)
+chk('包内无 verify_*.py 测试脚本（发现 %d 个）' % len(verify_files),
+    not verify_files)
 
 print()
 print('=== 包内前端内容核对 ===')
@@ -196,3 +218,4 @@ chk('app.js 删除失败会透出后端 message',
 
 print()
 print('验货通过' if ok else '验货存在失败项')
+sys.exit(0 if ok else 1)
