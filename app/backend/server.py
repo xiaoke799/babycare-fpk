@@ -814,6 +814,19 @@ def init_db():
             FOREIGN KEY (baby_id) REFERENCES babies(id) ON DELETE CASCADE
         );
 
+        -- 入站 Webhook 审计：成功失败都记，出问题能查是谁在调
+        CREATE TABLE IF NOT EXISTS webhook_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            event TEXT DEFAULT '',
+            baby_id INTEGER,
+            ok INTEGER DEFAULT 0,
+            reason TEXT DEFAULT '',
+            remote_addr TEXT DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_webhook_logs_created
+            ON webhook_logs(created_at);
+
         -- AI 聊天记录表（如果还没有）
         CREATE TABLE IF NOT EXISTS chat_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1564,7 +1577,11 @@ def _json_int(data, key, default=None, minimum=None, maximum=None):
 # 全局登录校验白名单（其余路由均需登录）
 _AUTH_WHITELIST_EXACT = {'/', '/index.html'}
 _AUTH_WHITELIST_PREFIXES = ('/css/', '/js/', '/images/')
-_AUTH_WHITELIST_API = {'/api/auth/status', '/api/auth/login', '/api/auth/logout', '/api/health'}
+# webhook 是对外开放入口，靠自己的 bcw_ token 鉴权（见 blueprints/webhook.py），
+# 所以要放行全局登录校验；但该路由内部第一件事就是 verify_webhook_token，
+# 校验不过直接 401，不存在「绕过鉴权」的可能。
+_AUTH_WHITELIST_API = {'/api/auth/status', '/api/auth/login', '/api/auth/logout',
+                      '/api/health', '/api/webhook/log'}
 
 
 @app.before_request

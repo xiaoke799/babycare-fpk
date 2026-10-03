@@ -28,6 +28,7 @@ from blueprints.health import bp as health_bp
 from blueprints.storage import bp as storage_bp
 from blueprints.ai import bp as ai_bp
 from blueprints.knowledge import bp as knowledge_bp
+from blueprints.webhook import bp as webhook_bp
 from blueprints.settings import bp as settings_bp
 from blueprints.analytics import bp as analytics_bp
 from blueprints.health_records import bp as health_records_bp
@@ -60,6 +61,7 @@ ALL_BLUEPRINTS = [
     admin_logs_bp,
     backup_bp,
     search_bp,
+    webhook_bp,
 ]
 
 

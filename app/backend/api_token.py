@@ -90,3 +90,61 @@ def extract_bearer_token() -> str | None:
     if scheme in ("bearer", "token"):
         return value
     return None
+
+
+# ==================== Webhook Token（入站） ====================
+# 与集成 Token 分开存（不同 app_settings 键）：吊销 webhook 不该连带影响
+# Home Assistant 集成，反之亦然。两者的威胁模型也不同 ——
+# 集成 Token 面向可信客户端，webhook 是对外开放的网络入口。
+
+_WEBHOOK_PREFIX = "bcw_"
+
+
+def generate_webhook_token() -> str:
+    """生成 webhook Token（明文仅此一次返回）。"""
+    token = _WEBHOOK_PREFIX + secrets.token_urlsafe(32)
+    salt = os.urandom(16)
+    digest = _hash_token(token, salt)
+    db = get_db()
+    db.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
+        ("webhook_token", salt.hex() + ":" + digest.hex()),
+    )
+    db.commit()
+    return token
+
+
+def revoke_webhook_token() -> None:
+    db = get_db()
+    db.execute("DELETE FROM app_settings WHERE key = ?", ("webhook_token",))
+    db.commit()
+
+
+def has_webhook_token() -> bool:
+    try:
+        row = get_db().execute(
+            "SELECT value FROM app_settings WHERE key = ?", ("webhook_token",)
+        ).fetchone()
+        return bool(row and row[0])
+    except Exception:
+        return False
+
+
+def verify_webhook_token(token: str | None) -> bool:
+    """校验 webhook Token。签名与长度比对都用常量时间，防时序侧信道。"""
+    if not token or not isinstance(token, str):
+        return False
+    token = token.strip()
+    if not token.startswith(_WEBHOOK_PREFIX):
+        return False
+    try:
+        row = get_db().execute(
+            "SELECT value FROM app_settings WHERE key = ?", ("webhook_token",)
+        ).fetchone()
+        if not row or not row[0]:
+            return False
+        salt_hex, digest_hex = row[0].split(":", 1)
+        actual = _hash_token(token, bytes.fromhex(salt_hex))
+        return hmac.compare_digest(actual, bytes.fromhex(digest_hex))
+    except Exception:
+        return False

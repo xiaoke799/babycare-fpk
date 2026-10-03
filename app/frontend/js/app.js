@@ -12689,6 +12689,9 @@ function initDataManagement() {
     document.getElementById('genIntegrationTokenBtn')?.addEventListener('click', generateIntegrationToken);
     document.getElementById('revokeIntegrationTokenBtn')?.addEventListener('click', revokeIntegrationToken);
     loadIntegrationTokenStatus();
+    document.getElementById('genWebhookTokenBtn')?.addEventListener('click', generateWebhookToken);
+    document.getElementById('revokeWebhookTokenBtn')?.addEventListener('click', revokeWebhookToken);
+    loadWebhookTokenStatus();
     document.getElementById('importBackupInput')?.addEventListener('change', handleBackupUpload);
     document.getElementById('triggerAutoBackupBtn')?.addEventListener('click', triggerAutoBackup);
     document.getElementById('saveAutoBackupBtn')?.addEventListener('click', saveAutoBackupConfig);
@@ -19263,4 +19266,49 @@ function initPeriodicReport() {
         document.getElementById('periodicMonthBtn')?.classList.add('active');
         loadPeriodicReport('month');
     });
+}
+
+// ==================== 入站 Webhook Token ====================
+// 与集成 Token 分开管理：webhook 是对外开放的网络入口，泄露面更大，
+// 必须能单独吊销而不影响 Home Assistant 集成。
+
+function loadWebhookTokenStatus() {
+    const el = document.getElementById('webhookTokenStatus');
+    if (!el) return;
+    api('/api/settings/webhook-token').then(res => {
+        const on = res && res.success && res.data && res.data.configured;
+        el.textContent = on ? 'Webhook Token：已配置' : 'Webhook Token：未配置';
+    }).catch(() => {});
+}
+
+function generateWebhookToken() {
+    if (!confirm('生成新的 Webhook Token？旧 Token 将立即失效。')) return;
+    api('/api/settings/webhook-token', { method: 'POST' }).then(res => {
+        if (res && res.token) {
+            showModal(`
+                <div class="modal-header"><h3>Webhook Token</h3></div>
+                <div class="modal-body">
+                    <p>请立即复制保存，关闭后无法再次查看。</p>
+                    <p class="settings-tip">用法示例（记得换成你的宝宝 id）：</p>
+                    <input type="text" readonly style="width:100%;font-size:11px"
+                           value="curl -X POST http://&lt;NAS地址&gt;:8090/api/webhook/log -H 'Authorization: Bearer &lt;token&gt;' -H 'Content-Type: application/json' -d '{\"event\":\"feeding\",\"baby_id\":1,\"feeding_type\":\"bottle\",\"amount\":120}'">
+                    <input type="text" readonly value="${escapeHtml(res.token)}" style="width:100%" onclick="this.select()">
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" onclick="closeModal()">我已保存</button>
+                </div>
+            `);
+            loadWebhookTokenStatus();
+        } else {
+            showToast.error(res && res.message || '生成失败');
+        }
+    }).catch(() => showToast.error('生成失败'));
+}
+
+function revokeWebhookToken() {
+    if (!confirm('吊销 Webhook Token？使用该 Token 的智能按钮会立刻失效。')) return;
+    api('/api/settings/webhook-token', { method: 'DELETE' }).then(res => {
+        showToast(res && res.success ? (res.message || '已吊销') : '吊销失败');
+        loadWebhookTokenStatus();
+    }).catch(() => showToast.error('吊销失败'));
 }

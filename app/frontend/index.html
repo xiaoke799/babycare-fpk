@@ -1560,6 +1560,12 @@
             <button class="btn btn-outline btn-sm" id="genIntegrationTokenBtn">生成集成 Token</button>
             <button class="btn btn-outline btn-sm" id="revokeIntegrationTokenBtn">吊销 Token</button>
             <p class="empty-tip" id="integrationTokenStatus" style="margin-top:8px">智能家居 Token：未配置</p>
+            <button class="btn btn-outline btn-sm" id="genWebhookTokenBtn">生成 Webhook Token</button>
+            <button class="btn btn-outline btn-sm" id="revokeWebhookTokenBtn">吊销 Webhook Token</button>
+            <p class="empty-tip" id="webhookTokenStatus" style="margin-top:8px">Webhook Token：未配置</p>
+            <div class="webhook-usage">
+                <p class="data-mgmt-tip">给床头智能按钮、语音助手、自动化脚本用的一条「一句话记一笔」通道（POST <code>/api/webhook/log</code>，事件：feeding / diaper / sleep / temperature）。它与上面的集成 Token 相互独立，可单独吊销。</p>
+            </div>
             <button class="btn btn-outline" id="restoreFromShareBtn">从共享目录恢复</button>
             <button class="btn btn-outline" id="importDataBtn">导入数据</button>
             <button class="btn btn-outline" id="triggerAutoBackupBtn">立即自动备份</button>

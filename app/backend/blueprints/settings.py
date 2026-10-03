@@ -600,3 +600,27 @@ def run_migrations_api():
 # （/api/backup/create|list|download|delete|restore|upload-restore）。
 # 此处旧的 /api/backup、/api/backup/list、/api/backup/restore、/api/backup/delete
 # 已移除——它们与 backup.py 存在路由冲突，且先注册会遮蔽新接口（P0 修复）。
+
+
+@bp.route('/api/settings/webhook-token', methods=['GET', 'POST', 'DELETE'])
+@require_admin
+def webhook_token():
+    """入站 Webhook Token：状态查询 / 重新生成 / 吊销。
+
+    与集成 Token 分开：webhook 是对外开放的网络入口，泄露面更大，
+    必须能单独吊销而不影响 Home Assistant 集成。
+    """
+    from api_token import (generate_webhook_token, has_webhook_token,
+                           revoke_webhook_token)
+
+    if request.method == 'GET':
+        return jsonify({'success': True, 'data': {'configured': has_webhook_token()}})
+    if request.method == 'DELETE':
+        revoke_webhook_token()
+        return jsonify({'success': True, 'message': 'Webhook Token 已吊销'})
+    token = generate_webhook_token()
+    return jsonify({
+        'success': True,
+        'message': 'Token 已生成，请立即保存，不会再次显示',
+        'token': token,
+    })

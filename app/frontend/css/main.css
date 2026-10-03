@@ -13889,3 +13889,15 @@ input:checked + .toggle-slider:before {
 .periodic-delta.up { color: var(--danger-color); }
 .periodic-delta.down { color: var(--success-color); }
 .periodic-delta.bad { color: var(--danger-color); font-weight: 600; }
+
+/* Webhook 用法说明块：长文本 + 代码，别让它把按钮行撑乱 */
+.webhook-usage {
+    flex-basis: 100%;
+    margin-top: 6px;
+}
+.webhook-usage code {
+    font-size: 11px;
+    background: var(--bg-color);
+    padding: 1px 4px;
+    border-radius: 4px;
+}
