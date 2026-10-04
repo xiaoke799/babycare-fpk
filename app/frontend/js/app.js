@@ -5277,7 +5277,16 @@ function initKnowledgeSearch() {
 
 function loadKnowledgeList(searchKeyword) {
     const category = App.currentKnowledgeCategory;
-    let url = category === 'all' ? '/api/knowledge' : `/api/knowledge?category=${category}`;
+    // 库里存的分类是中文（种子文件 knowledge_articles.json），而按钮过去用英文 key
+    // （feeding/sleep/…），英文直接发给后端就永远匹配不上 —— 点前 5 个分类恒为 0 条。
+    // 按钮已改成中文 key，这里再做一层英文容错：老缓存/别处若仍传英文也能工作。
+    const CATEGORY_ALIAS = {
+        feeding: '喂养', sleep: '睡眠', development: '发育',
+        health: '健康', care: '护理', vaccine: '疫苗', safety: '安全',
+        psychology: '心理', education: '早教', nutrition: '营养', season: '季节'
+    };
+    const cat = CATEGORY_ALIAS[category] || category;
+    let url = cat === 'all' ? '/api/knowledge' : `/api/knowledge?category=${encodeURIComponent(cat)}`;
 
     if (searchKeyword) {
         url += (url.includes('?') ? '&' : '?') + `q=${encodeURIComponent(searchKeyword)}`;

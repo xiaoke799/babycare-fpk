@@ -710,16 +710,22 @@
                 <h3 class="section-title">育儿知识库</h3>
                 <button class="btn btn-primary btn-sm" id="addArticleBtn">＋ 新增文章</button>
             </div>
+                <!-- 免责原来只有「健康百科」页有，知识库页（60 条）却光秃秃 ——
+                     两个页面同属知识模块、性质相同，一个有一份就等于给了用户错误暗示。
+                     而且《用户协议》里明确写了「应用不判断用药剂量」，页面得口径一致。 -->
+                <p style="font-size: 12px; color: var(--text-secondary); background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; padding: 10px 14px; margin: 0 0 12px;">
+                    以下内容仅供学习参考，不构成医疗建议；宝宝出现不适请及时就医，用药请遵医嘱。
+                </p>
                 <div class="knowledge-search">
                     <input type="text" id="knowledgeSearchInput" placeholder=" 搜索文章标题...">
                 </div>
                 <div class="knowledge-categories">
                     <button class="category-btn active" data-category="all">全部</button>
-                    <button class="category-btn" data-category="feeding">喂养</button>
-                    <button class="category-btn" data-category="sleep">睡眠</button>
-                    <button class="category-btn" data-category="development">发育</button>
-                    <button class="category-btn" data-category="health">健康</button>
-                    <button class="category-btn" data-category="care">护理</button>
+                    <button class="category-btn" data-category="喂养">喂养</button>
+                    <button class="category-btn" data-category="睡眠">睡眠</button>
+                    <button class="category-btn" data-category="发育">发育</button>
+                    <button class="category-btn" data-category="健康">健康</button>
+                    <button class="category-btn" data-category="护理">护理</button>
                     <button class="category-btn" data-category="疫苗">疫苗</button>
                     <button class="category-btn" data-category="安全">安全</button>
                     <button class="category-btn" data-category="心理">心理</button>
