@@ -1753,6 +1753,8 @@ const NAV_HUBS = [
     {
         hub: 'knowledge', label: '知识', icon: 'icon-book-open', page: 'knowledge-hub',
         items: [
+            // 按月龄把四份内容串起来的一页，放第一个：家长最常问的其实是「这个月该干嘛」
+            { page: 'month-guide', label: '本月要点', icon: 'icon-star' },
             { page: 'knowledge', label: '知识库', icon: 'icon-book-open' },
             { page: 'wiki', label: '健康百科', icon: 'icon-heart2' },
             { page: 'recipes', label: '食谱', icon: 'icon-chef' },
@@ -2137,6 +2139,9 @@ function loadPageData(page) {
         case 'recipes':
             loadRecipes();
             break;
+        case 'month-guide':
+            loadMonthGuide();
+            break;
         case 'activities':
             loadActivities();
             break;
@@ -2193,6 +2198,9 @@ const PAGE_LINKS = {
     teeth:          ['fontanelle', 'milestones', 'health'],
     health:         ['temperature', 'med-reminder', 'vaccines', 'teeth', 'growth'],
     sounds:         ['sleep-record'],
+
+    // 本月要点是聚合页：看完想深入，直接去对应的内容页
+    'month-guide':  ['activities', 'recipes', 'wiki', 'knowledge'],
 
     bmi:            ['growth-chart', 'growth'],
     // 本页在成长栏，跳「成长成就」也走成长栏那个只读形态，别把人带回记录栏
@@ -5454,6 +5462,186 @@ function loadWikiList(searchKeyword) {
             </div>
         `).join('');
     }).catch(err => console.error('加载健康百科失败:', err));
+}
+
+// ==================== 本月育儿要点（按月龄聚合，只读） ====================
+// 这一页不存任何数据，只是把「这个月发育特点 + 能玩 + 能吃 + 疫苗 + 常见疑问
+// + 安全排查 + 预警信号 + 急救」按宝宝月龄摆到一起。
+// 所有文案都来自服务端（含免责声明），前端不写死医学内容，改内容不用改代码。
+
+function loadMonthGuide() {
+    const box = document.getElementById('monthGuideContent');
+    if (!box) return;
+    const badge = document.getElementById('monthGuideAgeBadge');
+    const disc = document.getElementById('monthGuideDisclaimer');
+    if (!App.currentBaby) {
+        box.innerHTML = '<p class="empty-tip">请先选择一个宝宝</p>';
+        if (badge) badge.textContent = '—';
+        return;
+    }
+    box.innerHTML = '<p class="empty-tip">加载中...</p>';
+    api(`/api/babies/${App.currentBaby}/month-guide`).then(res => {
+        if (!res.success) {
+            box.innerHTML = `<p class="empty-tip">${escapeHtml(res.message || '加载失败')}</p>`;
+            if (badge) badge.textContent = '—';
+            return;
+        }
+        const d = res.data || {};
+        if (badge) badge.textContent = `${d.age_label || ''} · ${d.stage_label || ''}`;
+        if (disc) disc.textContent = d.disclaimer || '';
+        box.innerHTML = renderMonthGuide(d);
+    }).catch(err => {
+        box.innerHTML = '<p class="empty-tip">加载失败，请稍后重试</p>';
+        console.error('加载本月要点失败:', err);
+    });
+}
+
+function renderMonthGuide(d) {
+    const dev = d.development || {};
+    const sched = dev.daily_schedule || {};
+    const parts = [];
+
+    // 1. 本月发育特点
+    parts.push(`
+        <div class="mg-card">
+            <div class="mg-card-head">
+                <h4>这个月的发育特点</h4>
+                <span class="mg-tag">${escapeHtml(d.stage_label || '')}</span>
+            </div>
+            <p class="mg-desc">${escapeHtml(dev.description || '')}</p>
+            ${(dev.tips || []).length ? `
+            <div class="mg-subtitle">可以这样陪他</div>
+            <ul class="mg-list">${(dev.tips || []).map(t => `<li>${escapeHtml(t)}</li>`).join('')}</ul>` : ''}
+            ${(dev.warnings || []).length ? `
+            <div class="mg-subtitle mg-subtitle-warn">注意</div>
+            <ul class="mg-list mg-list-warn">${(dev.warnings || []).map(t => `<li>${escapeHtml(t)}</li>`).join('')}</ul>` : ''}
+            ${sched.morning ? `
+            <div class="mg-schedule">
+                <div><span>上午</span>${escapeHtml(sched.morning)}</div>
+                <div><span>下午</span>${escapeHtml(sched.afternoon || '')}</div>
+                <div><span>晚上</span>${escapeHtml(sched.evening || '')}</div>
+            </div>` : ''}
+        </div>`);
+
+    // 2. 疫苗提醒（有到期/逾期才显眼，没有就一行状态）
+    const v = d.vaccines || {};
+    const overdue = v.overdue || [];
+    const soon = v.due_soon || [];
+    if (!v.initialized) {
+        parts.push(`
+        <div class="mg-card">
+            <div class="mg-card-head"><h4>疫苗</h4></div>
+            <p class="mg-desc">还没有生成接种计划。生成后这里会提示到期和逾期的疫苗。</p>
+            <button class="btn btn-sm btn-secondary" onclick="switchPage('health')">去健康档案</button>
+        </div>`);
+    } else {
+        parts.push(`
+        <div class="mg-card">
+            <div class="mg-card-head">
+                <h4>疫苗</h4>
+                <span class="mg-tag">已完成 ${v.completed_count || 0}/${v.total || 0}</span>
+            </div>
+            ${overdue.length ? `<div class="mg-subtitle mg-subtitle-warn">已逾期</div>
+                <ul class="mg-list mg-list-warn">${overdue.map(x =>
+                    `<li>${escapeHtml(x.vaccine_name || '')}（计划 ${escapeHtml(x.scheduled_date || '')}）</li>`).join('')}</ul>` : ''}
+            ${soon.length ? `<div class="mg-subtitle">30 天内到期</div>
+                <ul class="mg-list">${soon.map(x =>
+                    `<li>${escapeHtml(x.vaccine_name || '')}（计划 ${escapeHtml(x.scheduled_date || '')}）</li>`).join('')}</ul>` : ''}
+            ${!overdue.length && !soon.length ? '<p class="mg-desc">近期没有到期或逾期的疫苗。</p>' : ''}
+        </div>`);
+    }
+
+    // 3. 能玩的活动
+    const acts = d.activities || [];
+    parts.push(`
+        <div class="mg-card">
+            <div class="mg-card-head">
+                <h4>这个月能玩</h4>
+                <button class="mg-more" onclick="switchPage('activities')">全部 ▸</button>
+            </div>
+            ${acts.length ? `<div class="mg-tile-list">${acts.map(a => `
+                <div class="mg-tile" onclick="showActivityDetail(${a.id})">
+                    <div class="mg-tile-title">${escapeHtml(a.title || '')}</div>
+                    <div class="mg-tile-meta">${escapeHtml(a.duration || '')} · ${escapeHtml(a.benefits || '')}</div>
+                </div>`).join('')}</div>`
+            : '<p class="mg-desc">这个月龄暂时没有匹配的活动，可以去活动页按分类看看。</p>'}
+        </div>`);
+
+    // 4. 能吃的辅食（6 个月前没有是正常的，文案要解释清楚而不是显示空白）
+    const recs = d.recipes || [];
+    parts.push(`
+        <div class="mg-card">
+            <div class="mg-card-head">
+                <h4>这个月能吃</h4>
+                <button class="mg-more" onclick="switchPage('recipes')">全部 ▸</button>
+            </div>
+            ${recs.length ? `<div class="mg-tile-list">${recs.map(r => `
+                <div class="mg-tile" onclick="showRecipeDetail(${r.id})">
+                    <div class="mg-tile-title">${escapeHtml(r.title || '')}</div>
+                    <div class="mg-tile-meta">${escapeHtml(r.age_group || '')} · ${escapeHtml(r.category || '')}</div>
+                </div>`).join('')}</div>`
+            : '<p class="mg-desc">6 个月以前以母乳或配方奶为主，还不急着加辅食；到月龄后这里会自动出现适合的第一口辅食。</p>'}
+        </div>`);
+
+    // 5. 常见疑问（跳百科详情）
+    const qs = d.common_questions || [];
+    if (qs.length) {
+        parts.push(`
+        <div class="mg-card">
+            <div class="mg-card-head">
+                <h4>这个月家长最常问</h4>
+                <button class="mg-more" onclick="switchPage('wiki')">全部 ▸</button>
+            </div>
+            <div class="mg-tile-list">${qs.map(q => `
+                <div class="mg-tile" onclick="viewWiki(${q.id})">
+                    <div class="mg-tile-title">${escapeHtml(q.title || '')}</div>
+                    <div class="mg-tile-meta">${escapeHtml(q.category || '')}</div>
+                </div>`).join('')}</div>
+        </div>`);
+    }
+
+    // 6. 家庭安全排查
+    const safe = d.safety_checklist || [];
+    if (safe.length) {
+        parts.push(`
+        <div class="mg-card">
+            <div class="mg-card-head"><h4>家里要排查的安全点</h4></div>
+            <ul class="mg-list">${safe.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul>
+        </div>`);
+    }
+
+    // 7. 发育预警信号（只提示不判读）
+    const flags = d.red_flags || [];
+    if (flags.length) {
+        parts.push(`
+        <div class="mg-card mg-card-alert">
+            <div class="mg-card-head"><h4>哪些信号值得提防</h4></div>
+            <p class="mg-desc">出现下面任何一条都不等于有问题，但值得记下来。</p>
+            ${flags.map(f => `
+                <div class="mg-flag">
+                    <span class="mg-flag-sign">${escapeHtml(f.sign || '')}</span>
+                    <span class="mg-flag-action ${f.action === '尽快就医' ? 'is-urgent' : ''}">${escapeHtml(f.action || '')}</span>
+                </div>`).join('')}
+        </div>`);
+    }
+
+    // 8. 急救要点
+    const aids = d.first_aid || [];
+    if (aids.length) {
+        parts.push(`
+        <div class="mg-card">
+            <div class="mg-card-head"><h4>意外发生时的头几分钟</h4></div>
+            ${aids.map(a => `
+                <div class="mg-aid">
+                    <div class="mg-aid-title">${escapeHtml(a.title || '')}${a.call_120 ? '<span class="mg-aid-120">需拨 120</span>' : ''}</div>
+                    <div class="mg-aid-scene">${escapeHtml(a.scene || '')}</div>
+                    <ul class="mg-list">${(a.do || []).map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>
+                    ${a.avoid ? `<div class="mg-aid-avoid">不要：${escapeHtml(a.avoid)}</div>` : ''}
+                </div>`).join('')}
+        </div>`);
+    }
+
+    return parts.join('');
 }
 
 function viewWiki(id) {
