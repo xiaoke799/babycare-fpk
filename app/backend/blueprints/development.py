@@ -57,12 +57,16 @@ def add_milestone(baby_id):
     if not data or not data.get("title") or not data.get("achieved_date"):
         return jsonify({"success": False, "message": "请填写标题和达成日期"}), 400
 
+    ok, achieved_date, derr = validate_date(data.get("achieved_date"), "达成日期")
+    if not ok:
+        return jsonify({"success": False, "message": derr}), 400
+
     db = get_db()
     db.execute(
         """INSERT INTO milestones (baby_id, title, description, achieved_date, category, is_first, author)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (baby_id, data["title"], data.get("description", ""),
-         data["achieved_date"], data.get("category", "other"),
+         achieved_date, data.get("category", "other"),
          1 if data.get("is_first") else 0, normalize_author(data))
     )
     db.commit()
@@ -79,9 +83,15 @@ def update_milestone(baby_id, record_id):
     fields = []
     values = []
     for key in ("title", "description", "achieved_date", "category"):
-        if key in data:
-            fields.append(f"{key} = ?")
-            values.append(data[key])
+        if key not in data:
+            continue
+        value = data[key]
+        if key == "achieved_date" and value not in (None, ""):
+            ok, value, derr = validate_date(value, "达成日期")
+            if not ok:
+                return jsonify({"success": False, "message": derr}), 400
+        fields.append(f"{key} = ?")
+        values.append(value)
     if "is_first" in data:
         fields.append("is_first = ?")
         values.append(1 if data["is_first"] else 0)
@@ -449,6 +459,13 @@ def add_checkup_record(baby_id):
     if not data or not data.get("checkup_date"):
         return jsonify({"success": False, "message": "请填写体检日期"}), 400
 
+    ok, checkup_date, derr = validate_date(data.get("checkup_date"), "体检日期")
+    if not ok:
+        return jsonify({"success": False, "message": derr}), 400
+    ok, next_checkup_date, nerr = validate_date(data.get("next_checkup_date"), "下次体检日期")
+    if not ok:
+        return jsonify({"success": False, "message": nerr}), 400
+
     db = get_db()
     height = data.get("height")
     weight = data.get("weight")
@@ -459,10 +476,10 @@ def add_checkup_record(baby_id):
         """INSERT INTO checkup_records (baby_id, checkup_date, age_months, height, weight,
            head_circumference, doctor, hospital, result, advice, next_checkup_date, note, author)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (baby_id, data["checkup_date"], data.get("age_months"),
+        (baby_id, checkup_date, data.get("age_months"),
          height, weight, head_circumference,
          data.get("doctor", ""), data.get("hospital", ""), data.get("result", "normal"),
-         data.get("advice", ""), data.get("next_checkup_date", ""), data.get("note", ""),
+         data.get("advice", ""), next_checkup_date, data.get("note", ""),
          normalize_author(data))
     )
 
@@ -471,7 +488,7 @@ def add_checkup_record(baby_id):
         # 检查同一天是否已有成长记录
         existing = db.execute(
             "SELECT id FROM growth_records WHERE baby_id = ? AND record_date = ?",
-            (baby_id, data["checkup_date"])
+            (baby_id, checkup_date)
         ).fetchone()
 
         if not existing:
@@ -487,7 +504,7 @@ def add_checkup_record(baby_id):
             db.execute(
                 """INSERT INTO growth_records (baby_id, record_date, height, weight, head_circumference, bmi, note)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (baby_id, data["checkup_date"], height, weight, head_circumference, bmi,
+                (baby_id, checkup_date, height, weight, head_circumference, bmi,
                  f"体检自动同步: {data.get('hospital', '')}")
             )
 
@@ -583,6 +600,10 @@ def add_solid_food_record(baby_id):
         """INSERT INTO solid_food_records (baby_id, food_name, food_category,
            first_try_date, amount, reaction, reaction_detail, is_favorite, note, author)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        # ⚠ author 必须排在最后：values 的顺序就是上面列清单去掉 baby_id/author 之后
+        # 的顺序。曾经写成 (baby_id, author) + tuple(values)，于是 author(None) 落进了
+        # NOT NULL 的 food_name 列 ⇒ 每条新增都被数据库拒掉（回 400「数据冲突」），
+        # 而前端只提示「添加失败」，看不出是这里的问题。
         (baby_id,) + tuple(values) + (author,)
     )
     db.commit()

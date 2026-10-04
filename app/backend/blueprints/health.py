@@ -13,6 +13,7 @@ import sqlite3
 from flask import Blueprint, request, jsonify
 
 from utils import get_db, row_to_dict, rows_to_list, json_body, normalize_author
+from validators import validate_datetime, validate_date
 import vaccine_utils
 
 bp = Blueprint("health", __name__)
@@ -143,12 +144,19 @@ def add_temperature(baby_id):
     threshold = fever_thresholds.get(method, 37.5)
     is_fever = 1 if temp >= threshold else 0
 
+    # measure_time 以前是原样入库：前端 datetime-local 给的 '2026-09-16T14:30' 会带着 T 写进去，
+    # 于是 ORDER BY measure_time 时同一天记录被排到半天之后（'T'(0x54) > ' '(0x20)），
+    # 按日期区间查也会漏掉整行 —— 上面给 AI 的摘要里不得不用 replace(...,'T',' ') 绕开。
+    # 这里从写入端收口，以后不必再绕。
+    ok, measure_time, terr = validate_datetime(data.get('measure_time'), '测量时间', default_now=True)
+    if not ok:
+        return jsonify({'success': False, 'message': terr}), 400
+
     db = get_db()
     db.execute(
         '''INSERT INTO temperature_records (baby_id, temperature, measure_time, measure_method, is_fever, note, author)
            VALUES (?, ?, ?, ?, ?, ?, ?)''',
-        (baby_id, temp, data.get('measure_time', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
-         method, is_fever, data.get('note', ''), normalize_author(data))
+        (baby_id, temp, measure_time, method, is_fever, data.get('note', ''), normalize_author(data))
     )
     db.commit()
 
@@ -202,14 +210,16 @@ def update_temperature(baby_id, temp_id):
     threshold = fever_thresholds.get(method, 37.5)
     is_fever = 1 if temp >= threshold else 0
 
+    ok, measure_time, terr = validate_datetime(data.get('measure_time'), '测量时间', default_now=True)
+    if not ok:
+        return jsonify({'success': False, 'message': terr}), 400
+
     db = get_db()
     cur = db.execute(
         '''UPDATE temperature_records
            SET temperature = ?, measure_time = ?, measure_method = ?, is_fever = ?, note = ?
            WHERE id = ? AND baby_id = ?''',
-        (temp,
-         data.get('measure_time', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
-         method, is_fever, data.get('note', ''),
+        (temp, measure_time, method, is_fever, data.get('note', ''),
          temp_id, baby_id)
     )
     if cur.rowcount == 0:
@@ -248,13 +258,13 @@ def add_medication(baby_id):
     if interval < 0:
         return jsonify({'success': False, 'message': '间隔时间不能为负数'}), 400
 
-    measure_time = data.get('measure_time', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+    ok, measure_time, terr = validate_datetime(data.get('measure_time'), '用药时间', default_now=True)
+    if not ok:
+        return jsonify({'success': False, 'message': terr}), 400
+
     next_dose_time = ''
     if interval > 0:
-        try:
-            t = datetime.datetime.strptime(measure_time, '%Y-%m-%d %H:%M:%S')
-        except ValueError:
-            return jsonify({'success': False, 'message': '日期格式错误'}), 400
+        t = datetime.datetime.strptime(measure_time, '%Y-%m-%d %H:%M:%S')
         next_dose_time = (t + datetime.timedelta(hours=interval)).strftime('%Y-%m-%d %H:%M:%S')
 
     db = get_db()
@@ -299,6 +309,15 @@ def _parse_tummytime_payload(data):
     if not start:
         return None, '请填写开始时间'
     end = (data.get('end_time') or '').strip()
+    # 以前 start/end 是先把原值存下来、算时长时才 strptime('%Y-%m-%d %H:%M:%S') 解析：
+    # 前端给 '2026-09-16T14:30' 时解析失败 ⇒ 整条记不了（报「日期格式错误」）；
+    # 而用户不填时长就会走到这条分支，等于「填了开始和结束时间反而保存不了」。
+    ok, start, serr = validate_datetime(start, '开始时间')
+    if not ok:
+        return None, serr
+    ok, end, eerr = validate_datetime(end, '结束时间')
+    if not ok:
+        return None, eerr
 
     raw = data.get('duration_minutes', data.get('duration', 0))
     try:
@@ -307,11 +326,8 @@ def _parse_tummytime_payload(data):
         duration = 0
 
     if not duration and end:
-        try:
-            t1 = datetime.datetime.strptime(start, '%Y-%m-%d %H:%M:%S')
-            t2 = datetime.datetime.strptime(end, '%Y-%m-%d %H:%M:%S')
-        except ValueError:
-            return None, '日期格式错误'
+        t1 = datetime.datetime.strptime(start, '%Y-%m-%d %H:%M:%S')
+        t2 = datetime.datetime.strptime(end, '%Y-%m-%d %H:%M:%S')
         duration = max(0, int((t2 - t1).total_seconds() / 60))
 
     return {
@@ -525,11 +541,15 @@ def add_allergy_test(baby_id):
     # 必填校验
     if not data.get('food_name'):
         return jsonify({'success': False, 'message': '食物名称不能为空'}), 400
+    ok, test_date, terr = validate_date(data.get('test_date'), '测试日期', default_today=True)
+    if not ok:
+        return jsonify({'success': False, 'message': terr}), 400
+
     db = get_db()
     db.execute(
         '''INSERT INTO allergy_tests (baby_id, food_name, test_date, day_number, has_reaction, reaction_detail, status, note)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-        (baby_id, data['food_name'], data.get('test_date', ''),
+        (baby_id, data['food_name'], test_date,
          data.get('day_number', 1), data.get('has_reaction', 0),
          data.get('reaction_detail', ''), data.get('status', 'testing'), data.get('note', ''))
     )
@@ -565,10 +585,17 @@ def update_allergy_test(test_id):
         return jsonify({'success': False, 'message': '无效数据'}), 400
     fields = []
     values = []
+    DATE_FIELDS = ('test_date',)
     for key in ('food_name', 'test_date', 'day_number', 'has_reaction', 'reaction_detail', 'status', 'note'):
-        if key in data:
-            fields.append(f'{key} = ?')
-            values.append(data[key])
+        if key not in data:
+            continue
+        value = data[key]
+        if key in DATE_FIELDS and value not in (None, ''):
+            ok, value, derr = validate_date(value, '测试日期')
+            if not ok:
+                return jsonify({'success': False, 'message': derr}), 400
+        fields.append(f'{key} = ?')
+        values.append(value)
     if not fields:
         return jsonify({'success': False, 'message': '无更新字段'}), 400
     values.append(test_id)
@@ -593,14 +620,20 @@ def add_medication_reminder(baby_id):
     # 必填校验
     if not data.get('medication_name'):
         return jsonify({'success': False, 'message': '药品名称不能为空'}), 400
+    ok, reminder_time, terr = validate_datetime(data.get('reminder_time') or data.get('next_dose_time'),
+                                                '提醒时间')
+    if not ok:
+        return jsonify({'success': False, 'message': terr}), 400
+    ok, next_dose_time, terr2 = validate_datetime(data.get('next_dose_time'), '下次用药时间')
+    if not ok:
+        return jsonify({'success': False, 'message': terr2}), 400
+
     db = get_db()
     db.execute(
         '''INSERT INTO medication_reminders (baby_id, medication_name, dosage, reminder_time, next_dose_time, frequency, note)
            VALUES (?, ?, ?, ?, ?, ?, ?)''',
         (baby_id, data['medication_name'], data.get('dosage', ''),
-         data.get('reminder_time', data.get('next_dose_time', '')),
-         data.get('next_dose_time', ''),
-         data.get('frequency', ''), data.get('note', ''))
+         reminder_time, next_dose_time, data.get('frequency', ''), data.get('note', ''))
     )
     db.commit()
     return jsonify({'success': True})
@@ -616,6 +649,10 @@ def update_medication_reminder(baby_id, record_id):
     dosage = data.get('dosage', '')
     frequency = data.get('frequency', '')
     next_dose_time = data.get('next_dose_time')
+    if next_dose_time not in (None, ''):
+        ok, next_dose_time, terr = validate_datetime(next_dose_time, '下次用药时间')
+        if not ok:
+            return jsonify({'success': False, 'message': terr}), 400
     note = data.get('note', '')
     is_active = data.get('is_active')
 

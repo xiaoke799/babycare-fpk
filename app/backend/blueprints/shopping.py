@@ -13,6 +13,7 @@ import datetime
 from flask import Blueprint, request, jsonify
 
 from utils import get_db, json_body
+from validators import validate_date
 
 bp = Blueprint("shopping", __name__)
 
@@ -282,11 +283,11 @@ def add_expense():
     if amount <= 0:
         return jsonify({"success": False, "message": "请填写正确的金额"}), 400
 
-    expense_date = str(data.get("expense_date") or "").strip()[:10]
-    try:
-        datetime.datetime.strptime(expense_date, "%Y-%m-%d")
-    except ValueError:
-        return jsonify({"success": False, "message": "日期格式应为 YYYY-MM-DD"}), 400
+    # 以前是靠 [:10] 截断 + strptime 严格判 '%Y-%m-%d'：写成 '2026/09/16' 就被拒。
+    # 改成归一化——同样是收口到一个数得出来的日期，没必要让用户重填一遍。
+    ok, expense_date, derr = validate_date(data.get("expense_date"), "支出日期", default_today=True)
+    if not ok:
+        return jsonify({"success": False, "message": derr}), 400
 
     db = get_db()
     db.execute(
@@ -318,11 +319,9 @@ def update_expense(record_id):
     if amount <= 0:
         return jsonify({"success": False, "message": "请填写正确的金额"}), 400
 
-    expense_date = str(data.get("expense_date") or "").strip()[:10]
-    try:
-        datetime.datetime.strptime(expense_date, "%Y-%m-%d")
-    except ValueError:
-        return jsonify({"success": False, "message": "日期格式应为 YYYY-MM-DD"}), 400
+    ok, expense_date, derr = validate_date(data.get("expense_date"), "支出日期", default_today=True)
+    if not ok:
+        return jsonify({"success": False, "message": derr}), 400
 
     db = get_db()
     cur = db.execute(

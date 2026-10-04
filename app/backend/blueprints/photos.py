@@ -15,6 +15,7 @@ import datetime
 from flask import Blueprint, request, jsonify, send_file
 
 from utils import get_db, row_to_dict, rows_to_list, json_body, normalize_author
+from validators import validate_date
 from user_context import require_admin
 from constants import DATA_DIR
 from logger import get_logger
@@ -164,6 +165,12 @@ def add_diary_entry(baby_id):
 
     import json as _json
 
+    # entry_date 以前原样入库：'2026/09/16' 这种写法会和 '2026-09-16' 混在同一列，
+    # 列表按日期倒序时两种写法排不到一起，日记时间线出现「昨天的排在明天的后面」。
+    ok, entry_date, derr = validate_date(data.get("entry_date"), "日记日期", default_today=True)
+    if not ok:
+        return jsonify({"success": False, "message": derr}), 400
+
     photos = _json.dumps(data.get("photos", []), ensure_ascii=False)
 
     db = get_db()
@@ -171,7 +178,7 @@ def add_diary_entry(baby_id):
         """INSERT INTO diary_entries (baby_id, title, content, entry_date, mood, photos, author)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (baby_id, data["title"], data.get("content", ""),
-         data["entry_date"], data.get("mood"), photos, normalize_author(data)),
+         entry_date, data.get("mood"), photos, normalize_author(data)),
     )
     db.commit()
     return jsonify({"success": True, "message": "日记已添加"})
@@ -220,19 +227,26 @@ def update_diary_entry(baby_id, entry_id):
         return jsonify({"success": False, "message": "无效数据"}), 400
 
     db = get_db()
+    # entry_date 是可选项：只有传了才改。传了就按统一格式收口，
+    # 免得列表里同一天两种写法排不到一起。
+    entry_date = data.get("entry_date")
+    if entry_date not in (None, ""):
+        ok, entry_date, derr = validate_date(entry_date, "日记日期")
+        if not ok:
+            return jsonify({"success": False, "message": derr}), 400
     # author 是可选的：只有传了才改（不传就保持原值，别把它抹成空）
     if "author" in data:
         cur = db.execute(
             """UPDATE diary_entries SET title=?, content=?, entry_date=?, mood=?, author=?
                WHERE id=? AND baby_id=?""",
-            (data.get("title"), data.get("content", ""), data.get("entry_date"),
+            (data.get("title"), data.get("content", ""), entry_date,
              data.get("mood"), normalize_author(data), entry_id, baby_id)
         )
     else:
         cur = db.execute(
             """UPDATE diary_entries SET title=?, content=?, entry_date=?, mood=?
                WHERE id=? AND baby_id=?""",
-            (data.get("title"), data.get("content", ""), data.get("entry_date"),
+            (data.get("title"), data.get("content", ""), entry_date,
              data.get("mood"), entry_id, baby_id)
         )
     db.commit()

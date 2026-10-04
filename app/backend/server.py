@@ -1201,6 +1201,42 @@ SLEEP_CLEANUP_SQL = (
 )
 
 
+
+
+def _time_columns(conn):
+    """按真实表结构找出所有「日期/时间」列，自动生成清洗语句。
+
+    手写清单的教训：按「这次改了哪几个蓝图」来列清洗语句，必然漏表 ——
+    出牙 / 辅食 / 囟门 / 飞跃期 这几张表的日期列从来没被清过，老数据里
+    '2026/09/16' 和 '2026-09-16' 混着排，「最近一次」是错的也没人发现。
+    所以改成读 sqlite_master：凡是名字以 _date / _time 结尾（或就叫 date/time）
+    的列都收进来，新增记录表时不必记得回填这里。
+    审计列（created_at / updated_at）由 SQLite 自己生成，格式本来就是规范的，跳过。
+    """
+    stmts = []
+    tables = [r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+    for t in tables:
+        try:
+            cols = [r[1] for r in conn.execute(f"PRAGMA table_info('{t}')")]
+        except sqlite3.Error:
+            continue
+        for c in cols:
+            if c in ("created_at", "updated_at"):
+                continue
+            if not (c.endswith("_date") or c.endswith("_time") or c in ("date", "time")):
+                continue
+            # 斜杠 → 短横线，datetime-local 的 T → 空格
+            stmts.append(
+                f"UPDATE '{t}' SET {c} = replace(replace({c}, '/', '-'), 'T', ' ')"
+                f"  WHERE {c} LIKE '%/%' OR {c} LIKE '%T%'")
+            # 只到分钟的时间补秒(旧版本前端 datetime-local 原样落库的形态)
+            stmts.append(
+                f"UPDATE '{t}' SET {c} = {c} || ':00'"
+                f"  WHERE length({c}) = 16 AND {c} LIKE '____-__-__ __:__'")
+    return stmts
+
+
 def _normalize_record_timestamps():
     """幂等数据清洗：历史记录里带 'T' 的时间统一成空格分隔，顺带清掉脏值。
 
@@ -1212,7 +1248,7 @@ def _normalize_record_timestamps():
     conn = sqlite3.connect(DB_PATH)
     try:
         changed = 0
-        for sql in FEEDING_CLEANUP_SQL + SLEEP_CLEANUP_SQL:
+        for sql in FEEDING_CLEANUP_SQL + SLEEP_CLEANUP_SQL + tuple(_time_columns(conn)):
             try:
                 changed += conn.execute(sql).rowcount or 0
             except sqlite3.Error:
