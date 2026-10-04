@@ -214,6 +214,46 @@ def row_hits_mark(row):
     return any(isinstance(v, str) and MARK in v for v in row.values())
 
 
+# 「前端真实提交形状」：完全复刻 submitXxx() 里那份 body，包括用户把可选字段留空的情形。
+# 只断言 2xx —— 加校验/加归一化最容易顺手把「合法但字段留空」的请求打成 400：
+# 用药提醒的 reminder_time 列是 NOT NULL，而前端只提交 next_dose_time，
+# 归一化时把空值变成 None 写进去 ⇒ 用户「不填时间反而保存不了」（2026-10-04 真踩过）。
+FRONTEND_SHAPES = [
+    ("用药提醒·前端形状（时间留空）", "/api/babies/{bid}/medication-reminders",
+     {"medication_name": MARK + "维D", "dosage": "1粒", "frequency": "每日一次",
+      "next_dose_time": "", "note": ""}),
+    ("用药提醒·前端形状（填了时间）", "/api/babies/{bid}/medication-reminders",
+     {"medication_name": MARK + "维D", "dosage": "1粒", "frequency": "每日一次",
+      "next_dose_time": "2026-09-16T09:00", "note": ""}),
+    ("过敏测试·前端形状（不带日期）", "/api/babies/{bid}/allergy-tests",
+     {"food_name": MARK + "牛奶", "day_number": 1, "status": "testing", "note": ""}),
+    ("体温·前端形状（不带测量时间）", "/api/babies/{bid}/temperatures",
+     {"temperature": 36.8, "measure_method": "ear", "note": ""}),
+    ("辅食·前端形状（只填必填）", "/api/babies/{bid}/solid-food",
+     {"food_name": MARK + "苹果泥", "first_try_date": TODAY}),
+    ("日记·前端形状（不带作者）", "/api/babies/{bid}/diary",
+     {"title": MARK + "随手", "content": "", "entry_date": TODAY}),
+    ("支出·前端形状（不带日期）", "/api/expenses",
+     {"category": "toy", "amount": 39, "item_name": MARK + "摇铃"}),
+]
+
+
+def check_frontend_shapes():
+    """按前端真实提交形状逐个打一遍，只要求不报错。"""
+    problems = []
+    for label, url_tpl, body in FRONTEND_SHAPES:
+        baby_id = new_baby(f"{MARK}-形状")
+        auth()
+        r = client.post(url_tpl.format(bid=baby_id), json=body)
+        if r.status_code >= 400:
+            snippet = (r.get_data(as_text=True) or "")[:90].replace("\n", " ")
+            problems.append((label, f"{r.status_code} {snippet}"))
+            print(f"  [FAIL] {label:28s} {r.status_code} {snippet[:60]}")
+        else:
+            print(f"  [OK]   {label:28s} {r.status_code}")
+    return problems
+
+
 def main():
     failures = []
     print("=" * 78)
@@ -280,13 +320,19 @@ def main():
             checked = len(expect_map) + len(time_fields)
             print(f"  [OK]   {name:10s} {checked} 个字段全部对得上")
 
+    print("-" * 78)
+    print("前端真实提交形状检查（可选字段留空也必须能存）")
+    shape_fail = check_frontend_shapes()
+
     print("=" * 78)
-    if failures:
-        print(f"共失败 {len(failures)} / {len(CASES)} 个模块：")
-        for name, msg in failures:
+    bad = failures + shape_fail
+    if bad:
+        print(f"共失败 {len(bad)} 项：")
+        for name, msg in bad:
             print(f"  - {name}: {msg}")
         return 1
-    print(f"全部通过：{len(CASES)} 个记录模块建进去的值都原样读得回来")
+    print(f"全部通过：{len(CASES)} 个模块字段对得上，"
+          f"{len(FRONTEND_SHAPES)} 种前端提交形状都能存")
     return 0
 
 

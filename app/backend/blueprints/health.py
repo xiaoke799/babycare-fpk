@@ -620,13 +620,23 @@ def add_medication_reminder(baby_id):
     # 必填校验
     if not data.get('medication_name'):
         return jsonify({'success': False, 'message': '药品名称不能为空'}), 400
-    ok, reminder_time, terr = validate_datetime(data.get('reminder_time') or data.get('next_dose_time'),
-                                                '提醒时间')
-    if not ok:
-        return jsonify({'success': False, 'message': terr}), 400
-    ok, next_dose_time, terr2 = validate_datetime(data.get('next_dose_time'), '下次用药时间')
-    if not ok:
-        return jsonify({'success': False, 'message': terr2}), 400
+    # ⚠ 前端只提交 next_dose_time（submitMedReminder），reminder_time 是我们自己补的。
+    # 两个都没填要保留原来的空串默认：validate_datetime 对空值返回的是 None，
+    # 而 reminder_time 列是 NOT NULL，写 None 会被数据库拒掉
+    # ⇒ 用户「不填时间反而保存不了」（2026-10-04 加归一化时踩过一次）。
+    raw_reminder = data.get('reminder_time') or data.get('next_dose_time') or ''
+    reminder_time = ''
+    if raw_reminder:
+        ok, reminder_time, terr = validate_datetime(raw_reminder, '提醒时间')
+        if not ok:
+            return jsonify({'success': False, 'message': terr}), 400
+
+    raw_next = data.get('next_dose_time') or ''
+    next_dose_time = ''
+    if raw_next:
+        ok, next_dose_time, terr2 = validate_datetime(raw_next, '下次用药时间')
+        if not ok:
+            return jsonify({'success': False, 'message': terr2}), 400
 
     db = get_db()
     db.execute(
