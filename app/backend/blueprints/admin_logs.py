@@ -35,6 +35,7 @@ logger = get_logger("admin.logs")
 
 
 @bp.route("/api/admin/logs/stats", methods=["GET"])
+@require_admin
 def admin_log_stats():
     """获取错误日志统计"""
     try:
@@ -48,6 +49,7 @@ def admin_log_stats():
 
 
 @bp.route("/api/admin/logs/errors", methods=["GET"])
+@require_admin
 def admin_log_errors():
     """分页查询错误记录"""
     try:
@@ -70,6 +72,7 @@ def admin_log_errors():
 
 
 @bp.route("/api/admin/logs/trend", methods=["GET"])
+@require_admin
 def admin_log_trend():
     """获取错误趋势"""
     try:
@@ -85,6 +88,7 @@ def admin_log_trend():
 
 
 @bp.route("/api/admin/logs/detail/<int:error_id>", methods=["GET"])
+@require_admin
 def admin_log_detail(error_id):
     """获取单条错误详情"""
     try:
@@ -117,6 +121,7 @@ def admin_log_clear():
 
 
 @bp.route("/api/admin/logs/files", methods=["GET"])
+@require_admin
 def admin_log_files():
     """获取文件日志统计"""
     try:
@@ -140,6 +145,7 @@ def admin_log_files():
 
 
 @bp.route("/api/admin/logs/files/content", methods=["GET"])
+@require_admin
 def admin_log_files_content():
     """读取文件日志内容"""
     try:
@@ -179,6 +185,7 @@ def admin_log_files_clear():
 # 换句话说：出问题时，唯一能证明「到底有没有调到、有没有被拒」的证据被关在库里。
 
 @bp.route("/api/admin/logs/webhooks", methods=["GET"])
+@require_admin
 def admin_log_webhooks():
     """分页查询 webhook 调用审计（成功/失败都记）"""
     try:

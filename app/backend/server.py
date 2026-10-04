@@ -1156,7 +1156,13 @@ def init_db():
 # 项目暂无版本化迁移框架；新增列统一通过此入口，保证老库升级不缺列。
 
 def _ensure_column(table: str, column_ddl: str):
-    """幂等加列：列已存在则跳过。column_ddl 形如 'due_date TEXT'"""
+    """幂等加列：列已存在则跳过。column_ddl 形如 'due_date TEXT'
+
+    容错：表不存在时（历史库缺表）**只告警不抛**，让迁移链继续往下跑。
+    之前这里一抛，外层 `except: pass` 就把整条链掐断 —— 后面几十条迁移
+    全部不执行，而日志一个字都没有。改成单条失败不阻断整链后，
+    真正该报的问题（比如 ALTER 语法错）仍会冒到外层去报错。
+    """
     conn = sqlite3.connect(DB_PATH)
     try:
         cols = [r[1] for r in conn.execute(f'PRAGMA table_info({table})').fetchall()]
@@ -1164,6 +1170,13 @@ def _ensure_column(table: str, column_ddl: str):
         if col_name not in cols:
             conn.execute(f'ALTER TABLE {table} ADD COLUMN {column_ddl}')
             conn.commit()
+    except sqlite3.OperationalError as e:
+        # 「no such table」= 这张表本身没建出来（init_db 阶段的问题，
+        # 那里会另行报错）；其余（如列名非法）仍应抛出。
+        if 'no such table' in str(e).lower():
+            app.logger.warning("迁移跳过：表 %s 不存在，无法加列 %s", table, col_name)
+        else:
+            raise
     finally:
         conn.close()
 
@@ -1499,7 +1512,12 @@ def _do_init() -> None:
     try:
         _run_migrations()
     except Exception:
-        pass
+        # ⚠ 这里原来是 `except Exception: pass` —— 整个迁移链（60 多条加列/建表）
+        # 被一个裸 pass 包住，任何一步出错都**后续全部不执行、且不留任何痕迹**：
+        # 表现为「author 列没有」「某个接口 500 no such column」，
+        # 而日志一个字都没有，只能靠猜。迁移失败必须吵。
+        app.logger.exception("数据库迁移失败：部分增量迁移可能未执行，"
+                             "已安装列可能不完整，请检查下方异常并查看诊断页")
     try:
         # 采信安装向导里勾选的监护人同意（写进 consent_records）。
         # 必须在 init_db 之后 —— consent_records 的建表在模块导入期不做。

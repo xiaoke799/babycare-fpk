@@ -18,6 +18,7 @@ import os
 from flask import Blueprint, jsonify, request, url_for
 
 from logger import get_logger
+from user_context import require_admin
 from utils import get_db
 
 bp = Blueprint("consent", __name__, url_prefix="/api/consent")
@@ -111,6 +112,7 @@ def consent_grant():
 
 
 @bp.route("", methods=["DELETE"])
+@require_admin
 def consent_withdraw():
     """撤回同意：标记撤回（不物理删除留痕，撤回本身也是事实）。
 
