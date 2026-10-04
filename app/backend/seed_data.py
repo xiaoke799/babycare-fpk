@@ -50,26 +50,65 @@ def _table_is_empty(table_name: str) -> bool:
         conn.close()
 
 
+# ---- 增量装载 ----
+# 以前是「表空才灌一次」：老用户库里已经有 53 篇文章，之后每次新增内容都灌不进去
+# —— 新写的疫苗、急救条目只有重装应用的人看得到，等于白写。
+# 改成按 title 增量补齐，并用 seed_applied 记一笔「已经灌过」，于是：
+#   · 新增内容 → 老用户也收得到；
+#   · 用户自己删掉的条目 → 不会被重新塞回来（已记录过 + 内容表里也没有也不再灌）。
+# 判据取「seed_applied 没记过」**且**「内容表里现在没有」两个条件同时成立，
+# 这样即使 seed_applied 没进备份清单、恢复后丢了，也不会灌出重复条目。
+def _ensure_seed_table(conn):
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS seed_applied ("
+        "  source TEXT NOT NULL,"
+        "  title TEXT NOT NULL,"
+        "  applied_at TEXT,"
+        "  PRIMARY KEY (source, title))")
+
+
+def _pending_titles(conn, source, table, titles):
+    """返回「需要补灌」的标题集合（已灌过或库里已存在的都跳过）。"""
+    _ensure_seed_table(conn)
+    applied = {r[0] for r in conn.execute(
+        "SELECT title FROM seed_applied WHERE source = ?", (source,))}
+    existing = {r[0] for r in conn.execute(f"SELECT title FROM {table}")}
+    return {t for t in titles if t not in applied and t not in existing}
+
+
+def _mark_applied(conn, source, titles):
+    now = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn.executemany(
+        "INSERT OR IGNORE INTO seed_applied (source, title, applied_at) VALUES (?, ?, ?)",
+        [(source, t, now) for t in titles])
+
+
 def seed_knowledge_articles(conn) -> int:
-    """填充育儿知识文章"""
-    if not _table_is_empty("knowledge_articles"):
-        return 0
+    """填充育儿知识文章（按 title 增量补齐）"""
     articles = _load_json("knowledge_articles.json")
+    if not articles:
+        return 0
+    pending = _pending_titles(conn, "knowledge_articles", "knowledge_articles",
+                              [a["title"] for a in articles])
+    articles = [a for a in articles if a["title"] in pending]
     if not articles:
         return 0
     conn.executemany(
         "INSERT INTO knowledge_articles (category, title, age_range, content) VALUES (?, ?, ?, ?)",
         [(a["category"], a["title"], a.get("age_range", ""), a["content"]) for a in articles],
     )
+    _mark_applied(conn, "knowledge_articles", [a["title"] for a in articles])
     logger.info("已加载 %d 篇育儿知识文章", len(articles))
     return len(articles)
 
 
 def seed_baby_wiki(conn) -> int:
-    """填充健康百科"""
-    if not _table_is_empty("baby_wiki"):
-        return 0
+    """填充健康百科（按 title 增量补齐）"""
     items = _load_json("baby_wiki.json")
+    if not items:
+        return 0
+    pending = _pending_titles(conn, "baby_wiki", "baby_wiki", [w["title"] for w in items])
+    items = [w for w in items if w["title"] in pending]
     if not items:
         return 0
     # 将扩展字段合并到 content 字段（兼容旧表结构）
@@ -92,15 +131,18 @@ def seed_baby_wiki(conn) -> int:
         "INSERT INTO baby_wiki (category, title, content, symptoms) VALUES (?, ?, ?, ?)",
         rows,
     )
+    _mark_applied(conn, "baby_wiki", [w["title"] for w in items])
     logger.info("已加载 %d 条健康百科", len(items))
     return len(items)
 
 
 def seed_baby_recipes(conn) -> int:
-    """填充辅食食谱"""
-    if not _table_is_empty("baby_recipes"):
-        return 0
+    """填充辅食食谱（按 title 增量补齐）"""
     recipes = _load_json("baby_recipes.json")
+    if not recipes:
+        return 0
+    pending = _pending_titles(conn, "baby_recipes", "baby_recipes", [r["title"] for r in recipes])
+    recipes = [r for r in recipes if r["title"] in pending]
     if not recipes:
         return 0
     conn.executemany(
@@ -118,15 +160,19 @@ def seed_baby_recipes(conn) -> int:
             for r in recipes
         ],
     )
+    _mark_applied(conn, "baby_recipes", [r["title"] for r in recipes])
     logger.info("已加载 %d 个辅食食谱", len(recipes))
     return len(recipes)
 
 
 def seed_baby_activities(conn) -> int:
-    """填充活动游戏推荐"""
-    if not _table_is_empty("baby_activities"):
-        return 0
+    """填充活动游戏推荐（按 title 增量补齐）"""
     activities = _load_json("baby_activities.json")
+    if not activities:
+        return 0
+    pending = _pending_titles(conn, "baby_activities", "baby_activities",
+                              [a.get("title", "") for a in activities])
+    activities = [a for a in activities if a.get("title", "") in pending]
     if not activities:
         return 0
     conn.executemany(
@@ -152,6 +198,7 @@ def seed_baby_activities(conn) -> int:
             for a in activities
         ],
     )
+    _mark_applied(conn, "baby_activities", [a.get("title", "") for a in activities])
     logger.info("已加载 %d 个活动推荐", len(activities))
     return len(activities)
 
