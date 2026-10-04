@@ -82,9 +82,15 @@ with app.app_context():
             (bid, t, f"{day.isoformat()} 08:00:00", "armpit", 1 if fever else 0))
 
     # 本周：3 次喂奶（120+150+100=370ml）、1 段睡眠 180 分钟、2 次换尿布、1 次发烧
-    feed(monday, 120)
-    feed(monday + datetime.timedelta(days=1), 150)
-    feed(monday + datetime.timedelta(days=2), 100)
+    # ⚠ 必须把"未来的日子"夹到今天：monday+1/+2 可能晚于今天（今天 10/05 是周一，
+    #   monday == today，+1/+2 直接是明天/后天）。这种未来行的喂奶数月报"本月至今"
+    #   数不到，跟按整月取证时对不上（E 段假红就是这么来的）。夹到今天后条数和奶量都不变。
+    def clamp(day):
+        return min(day, today)
+
+    feed(clamp(monday), 120)
+    feed(clamp(monday + datetime.timedelta(days=1)), 150)
+    feed(clamp(monday + datetime.timedelta(days=2)), 100)
     sleep(monday + datetime.timedelta(days=1), 180)
     for _ in range(2):
         db.execute("INSERT INTO diaper_records (baby_id, change_time, diaper_type)"
@@ -138,20 +144,62 @@ chk(r2.status_code == 400, "period=year 被拒 400", f"实际 {r2.status_code}")
 r3 = c.get(f"{URL}?period=week&date=不是日期")
 chk(r3.status_code == 400, "date 格式非法被拒 400", f"实际 {r3.status_code}")
 
-print("\n=== E. 月报口径 ===")
+print("\n=== E. 月报口径（不依赖今天是周几、几号）===")
+# ⚠ 旧版写死了「本月 0 条 / 上月 4 条」——那只在"本周一落进上个月"的那几天成立。
+#   10-05 是周一 ⇒ monday == today，本周一到周三那 3 次喂奶整个落进 10 月，断言当场翻面。
+#   月报要验的是**自然月分桶**，正确姿势：按库里真实行的月份取证，跟报告对账，
+#   再钉两条月边界记录（上月最后一天 / 今天）保证两个桶都不空。
 rm = c.get(f"{URL}?period=month&date={today.isoformat()}").get_json()
 dm = (rm or {}).get("data") or {}
 chk(dm.get("start_date") == today.replace(day=1).isoformat(), "月报从 1 号开始",
     f"实际 {dm.get('start_date')}")
-# 上面喂奶数据插在本周一到周三；月初那天之前算上个月，本月至今（10/3）可能还没有记录。
-# 这里要验的正是**月份之间不串**：上个月有多少条都不该出现在本月里。
-cur_m = (dm.get("current") or {})
-prev_m = (dm.get("previous") or {})
-chk(cur_m.get("feeding_count", 0) == 0,
-    "本月至今无记录就是 0（不拿上月的凑数）", f"实际 {cur_m.get('feeding_count')}")
-chk(prev_m.get("feeding_count") == 4,
-    "上月共 4 次喂奶都归到上月（9/21 + 9/28~9/30 全在 9 月）",
-    f"实际 {prev_m.get('feeding_count')}")
+
+first_of_this = today.replace(day=1)                                   # 本月 1 号
+last_of_prev = first_of_this - datetime.timedelta(days=1)              # 上月最后一天
+
+
+def seed_feed(day):
+    with app.app_context():
+        conn = get_db()
+        conn.execute("INSERT INTO feeding_records (baby_id, start_time, feeding_type, amount)"
+                     " VALUES (?,?,?,?)", (bid, f"{day.isoformat()} 10:00:00", "bottle", 50))
+        conn.commit()
+
+
+def count_month(year_month):
+    """喂奶行按 start_time 前 7 位归月（'YYYY-MM-DD HH:MM:SS' ⇒ substr(1,7)='YYYY-MM'）。"""
+    with app.app_context():
+        conn = get_db()
+        return conn.execute("SELECT COUNT(*) AS n FROM feeding_records"
+                            " WHERE baby_id=? AND substr(start_time,1,7)=?",
+                            (bid, year_month)).fetchone()["n"]
+
+
+# 月边界各补一条：这两条落在哪个月是确定的，不随"今天周几"变
+seed_feed(last_of_prev)
+seed_feed(today)
+
+rm2 = c.get(f"{URL}?period=month&date={today.isoformat()}").get_json()
+dm2 = (rm2 or {}).get("data") or {}
+cur_m2 = (dm2.get("current") or {})
+prev_m2 = (dm2.get("previous") or {})
+
+cur_key = today.strftime("%Y-%m")
+prev_key = last_of_prev.strftime("%Y-%m")
+n_cur = count_month(cur_key)
+n_prev = count_month(prev_key)
+
+chk(n_cur > 0 and n_prev > 0,
+    "本月和上月都确实有喂奶行（否则下面对账没意义）",
+    f"{cur_key}={n_cur} {prev_key}={n_prev}")
+chk(cur_m2.get("feeding_count") == n_cur,
+    f"本月 {cur_key} 条数对得上（没串上月、没漏）",
+    f"报告 {cur_m2.get('feeding_count')} vs 库 {n_cur}")
+chk(prev_m2.get("feeding_count") == n_prev,
+    f"上月 {prev_key} 条数对得上",
+    f"报告 {prev_m2.get('feeding_count')} vs 库 {n_prev}")
+chk(cur_m2.get("feeding_count", 0) + prev_m2.get("feeding_count", 0) == n_cur + n_prev,
+    "两段相加 == 两个月总行数（不漏桶、不重复计）")
 
 print()
 if fails:
