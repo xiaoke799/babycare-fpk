@@ -93,13 +93,96 @@ def seed_knowledge_articles(conn) -> int:
     articles = [a for a in articles if a["title"] in pending]
     if not articles:
         return 0
+    _ensure_hash_column(conn, "knowledge_articles")
     conn.executemany(
-        "INSERT INTO knowledge_articles (category, title, age_range, content) VALUES (?, ?, ?, ?)",
-        [(a["category"], a["title"], a.get("age_range", ""), a["content"]) for a in articles],
+        "INSERT INTO knowledge_articles (category, title, age_range, content, content_hash)"
+        " VALUES (?, ?, ?, ?, ?)",
+        [(a["category"], a["title"], a.get("age_range", ""), a["content"],
+          _content_hash(a["content"])) for a in articles],
     )
     _mark_applied(conn, "knowledge_articles", [a["title"] for a in articles])
     logger.info("已加载 %d 篇育儿知识文章", len(articles))
     return len(articles)
+
+
+def wiki_full_content(w: dict) -> str:
+    """百科条目入库正文 = 正文 + 【病因】【处理】【预防】【就医信号】。
+
+    播种与内容同步共用这一个函数 —— 两处各写一份的话，改了同步那处忘了改播种，
+    hash 就会对不上，导致「明明没改过」也被当成「用户改过」而跳过同步。
+    """
+    parts = [w.get("content", "")]
+    for key, label in (("cause", "病因"), ("treatment", "处理"),
+                       ("prevention", "预防"), ("when_to_see_doctor", "就医信号")):
+        if w.get(key):
+            parts.append(f"\n\n【{label}】\n{w[key]}")
+    return "".join(parts)
+
+
+def _content_hash(text: str) -> str:
+    import hashlib
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:16]
+
+
+def _ensure_hash_column(conn, table):
+    cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if "content_hash" not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN content_hash TEXT")
+
+
+def sync_seed_content(conn) -> int:
+    """把「标题已存在、但内容与种子不一致」的条目更新为种子内容。
+
+    为什么需要：种子按 title **增量**装载（只新增、不更新），所以改了
+    seeds/*.json 之后，**已安装用户库里还是旧内容** —— 2026-10-04 清理百科里
+    「每日 400IU 维生素D」这类具体剂量，如果只改 JSON，老用户拿不到修正，
+    整改等于没做。
+
+    怎么避免覆盖用户的编辑：比较时用内容哈希 ——
+      · 库里 content_hash 为空 → 旧库，内容就是当年种子原文，可安全更新
+      · content_hash == 当前库内容的 hash → 用户没改过，可更新
+      · 不一致 → 用户改过，跳过并记日志
+    """
+    total = 0
+    for source, table, filename, builder in (
+        ("knowledge_articles", "knowledge_articles", "knowledge_articles.json",
+         lambda a: a.get("content", "")),
+        ("baby_wiki", "baby_wiki", "baby_wiki.json", wiki_full_content),
+    ):
+        try:
+            _ensure_hash_column(conn, table)
+            items = _load_json(filename)
+            if not items:
+                continue
+            for it in items:
+                title = it.get("title")
+                if not title:
+                    continue
+                want = builder(it)
+                row = conn.execute(
+                    f"SELECT content, content_hash FROM {table} WHERE title = ?",
+                    (title,)).fetchone()
+                if not row:
+                    continue
+                cur_content, cur_hash = (row[0] or ""), (row[1] or "")
+                if cur_content == want:
+                    # 已一致，只把哈希补上（旧库第一次跑就是这种情况）
+                    if cur_hash != _content_hash(want):
+                        conn.execute(
+                            f"UPDATE {table} SET content_hash = ? WHERE title = ?",
+                            (_content_hash(want), title))
+                    continue
+                if cur_hash and cur_hash != _content_hash(cur_content):
+                    logger.info("跳过用户已改动的条目: %s / %s", source, title)
+                    continue
+                conn.execute(
+                    f"UPDATE {table} SET content = ?, content_hash = ? WHERE title = ?",
+                    (want, _content_hash(want), title))
+                total += 1
+                logger.info("同步内置内容: %s / %s", source, title)
+        except Exception as e:
+            logger.error("同步 %s 失败: %s", source, e)
+    return total
 
 
 def seed_baby_wiki(conn) -> int:
@@ -114,22 +197,13 @@ def seed_baby_wiki(conn) -> int:
     # 将扩展字段合并到 content 字段（兼容旧表结构）
     rows = []
     for w in items:
-        content = w.get("content", "")
-        # 如果有扩展字段，追加到 content 下面
-        extra_parts = []
-        if w.get("cause"):
-            extra_parts.append(f"\n\n【病因】\n{w['cause']}")
-        if w.get("treatment"):
-            extra_parts.append(f"\n\n【处理】\n{w['treatment']}")
-        if w.get("prevention"):
-            extra_parts.append(f"\n\n【预防】\n{w['prevention']}")
-        if w.get("when_to_see_doctor"):
-            extra_parts.append(f"\n\n【就医信号】\n{w['when_to_see_doctor']}")
-        full_content = content + "".join(extra_parts)
+        full_content = wiki_full_content(w)
         rows.append((w["category"], w["title"], full_content, w.get("symptoms", "")))
+    _ensure_hash_column(conn, "baby_wiki")
     conn.executemany(
-        "INSERT INTO baby_wiki (category, title, content, symptoms) VALUES (?, ?, ?, ?)",
-        rows,
+        "INSERT INTO baby_wiki (category, title, content, symptoms, content_hash)"
+        " VALUES (?, ?, ?, ?, ?)",
+        [r + (_content_hash(r[2]),) for r in rows],
     )
     _mark_applied(conn, "baby_wiki", [w["title"] for w in items])
     logger.info("已加载 %d 条健康百科", len(items))
@@ -228,6 +302,13 @@ def load_all_seeds() -> dict:
             except Exception as e:
                 logger.error("加载种子数据失败 (%s): %s", func.__name__, e)
                 results[func.__name__] = f"error: {e}"
+        # 播种完成后再同步内容：新装条目哈希一致不会重复更新，
+        # 老装条目才会在这里被修正（只改用户没动过的那部分）
+        try:
+            results["sync_seed_content"] = sync_seed_content(conn)
+        except Exception as e:
+            logger.error("同步内置内容失败: %s", e)
+            results["sync_seed_content"] = f"error: {e}"
         conn.commit()
 
     total = sum(v for v in results.values() if isinstance(v, int))
