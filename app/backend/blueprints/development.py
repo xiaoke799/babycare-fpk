@@ -583,7 +583,7 @@ def add_solid_food_record(baby_id):
         """INSERT INTO solid_food_records (baby_id, food_name, food_category,
            first_try_date, amount, reaction, reaction_detail, is_favorite, note, author)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (baby_id, author) + tuple(values)
+        (baby_id,) + tuple(values) + (author,)
     )
     db.commit()
     return jsonify({"success": True, "message": "辅食记录已添加"})
