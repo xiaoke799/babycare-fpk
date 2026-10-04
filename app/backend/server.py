@@ -185,16 +185,23 @@ def _init_notifier():
 
         _notifier = UnifiedNotifier(config, history_db)
 
-        # 初始化调度器
-        def get_db():
-            from database import get_db as _get_db
-            return _get_db()
-
         # 初始化调度器。
+        #
+        # ⚠ 这里原来是个陷阱：曾写 `def get_db(): from database import get_db`，
+        # 而 database 模块**从来没有 get_db**，于是每次检查提醒都 ImportError，
+        # 被 reminder_scheduler 的 `except Exception: return` 静默吞掉 ——
+        # 结果是喂奶/睡眠/尿布/疫苗/用药/体检提醒一条都不会发，
+        # 而启动日志照旧打印「已初始化」，看起来一切正常。
+        #
+        # 也不能直接用 utils.get_db：提醒跑在后台线程里，Flask 的 g 不存在，
+        # 依赖 app_context 的写法在那个线程里会 RuntimeError。
+        # 所以用 database.get_scheduler_db()：独立连接，线程本地，不碰 Flask 上下文。
+        #
         # lock_dir 传数据目录：生产是 gunicorn --workers 2，两个 worker 都会初始化，
         # 调度器靠该目录下的文件锁保证同一时刻只有一个进程真正发提醒
         # （没有它，用户每条提醒会收到两遍）。
-        _scheduler = ReminderScheduler(_notifier, get_db, config, lock_dir=data_dir)
+        from database import get_scheduler_db as _get_scheduler_db
+        _scheduler = ReminderScheduler(_notifier, _get_scheduler_db, config, lock_dir=data_dir)
         _scheduler.start()
 
         # 注入到 notifications blueprint

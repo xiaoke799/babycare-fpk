@@ -47,6 +47,8 @@ bp = Blueprint("webhook", __name__, url_prefix="/api/webhook")
 # ---- 限流：每 IP 每分钟最多 30 次 ----
 _RATE_LIMIT = 30
 _RATE_WINDOW = 60
+# 字典里 key 超过这个数就做一次过期清扫（防内存单调增长）
+_RATE_SWEEP_THRESHOLD = 2000
 _hits: dict[str, list[float]] = {}
 
 # ---- 事件白名单：key -> (表名, {外部字段: 内部列}, 必填字段) ----
@@ -110,15 +112,33 @@ _NUMERIC_LIMITS = {
 
 
 def _client_ip() -> str:
-    # 走网关时 X-Forwarded-For 由网关注入；直连时退回 remote_addr
-    fwd = request.headers.get("X-Forwarded-For", "")
-    if fwd:
-        return fwd.split(",")[0].strip()
+    """取调用方 IP。
+
+    ⚠ 原实现无条件信任 `X-Forwarded-For`。这个头是**任何调用方都能自己填**的，
+    于是攻击者每次换一个伪造的 XFF 就能绕过按 IP 限流，还能让审计表记下
+    完全虚假的来源。X-Trim-* 系列头之所以能信，是因为网关鉴权时校验过
+    gateway_trusted；这里同样：只有在受信任网关后面才读 XFF，否则用
+    直连地址。宁可把同一网关后的多个客户端算成一个 IP（限流偏严，
+    那是安全侧的偏差），也不能让人靠一个头就随便换身份。
+    """
+    if getattr(g, "gateway_trusted", False):
+        fwd = request.headers.get("X-Forwarded-For", "")
+        if fwd:
+            return fwd.split(",")[0].strip()
     return request.remote_addr or "unknown"
 
 
 def _rate_limited(ip: str) -> bool:
+    """按 IP 限流。返回 True 表示已超限。
+
+    同时顺手清掉过期的 IP 记录：字典只增不减的话，配合伪造 XFF 每个新 IP
+    都会留下一个常驻 key（key 本身 + list 对象），长期运行必然吃掉内存。
+    """
     now = time.time()
+    # 定期淘汰：超过窗口的 key 直接删，别只清它自己的时间戳
+    if len(_hits) > _RATE_SWEEP_THRESHOLD:
+        for k in [k for k, v in _hits.items() if not v or now - v[-1] > _RATE_WINDOW]:
+            _hits.pop(k, None)
     hits = [t for t in _hits.get(ip, []) if now - t < _RATE_WINDOW]
     if len(hits) >= _RATE_LIMIT:
         _hits[ip] = hits
@@ -158,6 +178,14 @@ def webhook_log():
     logger = get_logger(__name__)
     ip = _client_ip()
 
+    # ⚠ 限流必须在 token 校验**之前**。
+    # 原顺序是「先记审计再校验 token，校验过了才限流」—— 那样未授权流量
+    # 根本不经过限流，每个请求都能往 webhook_logs 插一行；而该表不在
+    # EXPORT_TABLES / 清理范围内，攻击者可以把它撑到磁盘爆。
+    # 现在超限直接 429 且**不写审计**，否则限流等于白设。
+    if _rate_limited(ip):
+        return jsonify({"success": False, "message": "请求过于频繁"}), 429
+
     if not verify_webhook_token(_extract_token()):
         _log_attempt("", None, False, "token 无效", ip)
         # 不区分「token 不存在」和「token 不对」，不给探测者反馈
@@ -170,10 +198,6 @@ def webhook_log():
         _log_attempt(event[:30], None, False, "未知事件类型", ip)
         return jsonify({"success": False,
                         "message": "event 只能是 " + " / ".join(_EVENTS)}), 400
-
-    if _rate_limited(ip):
-        _log_attempt(event, None, False, "超过限流", ip)
-        return jsonify({"success": False, "message": "请求过于频繁"}), 429
 
     try:
         baby_id = int(data.get("baby_id"))

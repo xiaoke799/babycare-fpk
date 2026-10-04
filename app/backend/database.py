@@ -231,3 +231,52 @@ def close_all_connections() -> None:
     """清理所有数据库连接（用于应用关闭时）."""
     # SQLite 连接由上下文管理器自动关闭，此处预留扩展点
     pass
+
+
+# ==================== 调度器专用连接 ====================
+# 起因（2026-10-05 审查发现，严重）：
+# server.py 曾定义一个同名闭包 `def get_db(): from database import get_db`，
+# 而**本模块从来没有 get_db**（只有 with_db_connection / db_retry / …），
+# 于是调度器每次检查都 ImportError，被 reminder_scheduler 里的
+# `except Exception: return` 吞掉 —— 结果是
+#   喂奶/睡眠/尿布/疫苗/用药/体检提醒**一条都不会发**，
+#   而启动日志照旧打印「已初始化」，极具欺骗性。
+#
+# 另一层：提醒跑在后台线程里，Flask 的 `g` 不存在，utils.get_db()
+# 同样用不了（它依赖 app_context）。所以必须给调度器一条独立连接。
+#
+# 语义：每次返回一条**干净的新连接**，并把上一次那条关掉。
+# 于是最多只有一条连接存活 —— 既不泄漏，也不用改动调度器里 5 处调用点。
+# 连接存 thread-local：多线程各自持有，不会互相把对方的连接关掉。
+
+import threading as _threading
+
+_sched_local = _threading.local()
+
+
+def get_scheduler_db() -> sqlite3.Connection:
+    """后台线程（提醒调度器）专用：返回独立连接，不依赖 Flask app_context。"""
+    prev = getattr(_sched_local, "conn", None)
+    if prev is not None:
+        try:
+            prev.close()
+        except Exception:  # noqa: BLE001 — 关不掉也要继续给新连接
+            pass
+    mgr = db_manager
+    conn = sqlite3.connect(mgr._db_path, timeout=mgr._busy_timeout / 1000)
+    conn.row_factory = sqlite3.Row
+    conn.execute(f"PRAGMA busy_timeout = {mgr._busy_timeout};")
+    conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA foreign_keys = ON;")
+    _sched_local.conn = conn
+    return conn
+
+
+def close_scheduler_db() -> None:
+    """线程退出前显式关掉自己的连接（可选，但更干净）。"""
+    conn = getattr(_sched_local, "conn", None)
+    if conn is not None:
+        try:
+            conn.close()
+        finally:
+            _sched_local.conn = None

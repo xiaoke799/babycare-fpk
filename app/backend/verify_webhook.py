@@ -207,6 +207,37 @@ chk(isinstance((r.get_json() or {}).get("deleted"), int),
 r = c.post("/api/admin/logs/webhooks/clear", json={})
 chk(r.status_code == 200, "不传 days 也不报错（有默认值）", f"实际 {r.status_code}")
 
+print("\n=== 7. 未授权流量也必须受限流（2026-10-05 新增）===")
+import blueprints.webhook as _wh
+# 7.1 连续**不带 token** 的请求：应被限流挡住，而不是每次都往审计表插一行
+_codes = [post({"event": "feeding", "baby_id": BID}, headers={}).status_code
+          for _ in range(40)]
+chk(429 in _codes, "未授权请求连发也会触发限流 429",
+    f"状态码集合 {sorted(set(_codes))}")
+with app.app_context():
+    from utils import get_db as _g
+    _bad = _g().execute(
+        "SELECT COUNT(*) c FROM webhook_logs WHERE ok = 0").fetchone()["c"]
+chk(_bad <= 35, "审计表未被未授权流量撑大（限流前会一行一个）", f"失败记录 {_bad} 条")
+
+# 7.2 伪造 X-Forwarded-For 不该再能绕开限流（XFF 只在受信任网关后采信）
+_wh._hits.clear()
+_fake = [{"X-Forwarded-For": f"10.0.0.{i}"} for i in range(1, 40)]
+_c2 = [post({"event": "feeding", "baby_id": BID}, headers=h).status_code
+       for h in _fake]
+chk(429 in _c2, "伪造 X-Forwarded-For 无法绕过限流",
+    f"状态码集合 {sorted(set(_c2))}")
+chk(len(_wh._hits) <= 1,
+    f"伪造不同 XFF 不会在限流字典里堆出大量 key（当前 {len(_wh._hits)} 个）")
+
+# 7.3 限流字典会淘汰过期 key（防内存单调增长）
+_wh._hits.clear()
+_wh._hits.update({f"1.2.3.{i}": [0.0] for i in range(_wh._RATE_SWEEP_THRESHOLD + 50)})
+_r = _wh._rate_limited("9.9.9.9")
+chk(len(_wh._hits) < _wh._RATE_SWEEP_THRESHOLD + 50,
+    "过期 key 会被清扫（否则长期运行必然 OOM）", f"清扫后剩 {len(_wh._hits)} 个")
+
+
 print()
 if fails:
     print("失败 %d 项" % len(fails))
