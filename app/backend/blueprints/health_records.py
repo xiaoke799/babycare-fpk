@@ -17,9 +17,11 @@
 import datetime
 import json
 import math
+import re
 from flask import Blueprint, request, jsonify
 
 from utils import get_db, row_to_dict, rows_to_list, normalize_author
+from validators import validate_enum as _validate_enum
 import growth_utils
 
 bp = Blueprint("health_records", __name__)
@@ -60,6 +62,136 @@ def _safe_execute(db, query, params=()):
         return True, result
     except Exception as e:
         return False, str(e)
+
+
+# ==================== 写入端校验（模块内唯一收口）====================
+# 体检 / 指标 / 提醒 / 里程碑 / 筛查 / 过敏 / 喂养摘要 七类写入此前各写各的，
+# 结果是这些脏数据能直接落库：体温填 999、筛查日期写成 2026-13-40、
+# 结果判定存成前端 statusMap 认不出的野串、baby_id 瞎填也照样 201。
+# 现在统一走下面这几个函数，每条写入路由都过一遍。
+
+# 医学数值的合理区间：防手误，也防 WHO 百分位换算在极端值上算出无意义的曲线。
+_HEALTH_RANGES = {
+    "temperature": (25.0, 45.0),           # 摄氏度
+    "height": (30.0, 130.0),               # cm
+    "weight": (0.5, 45.0),                 # kg
+    "head_circumference": (28.0, 60.0),    # cm
+    "bmi": (2.0, 40.0),
+    "heart_rate": (20.0, 250.0),           # 次/分
+    "respiratory_rate": (5.0, 90.0),       # 次/分
+    "oxygen_saturation": (40.0, 100.0),    # %
+    "age_months": (0, 240),                # 月龄（0-20 岁）
+    "actual_age_months": (0, 240),
+    "expected_age_months": (0, 240),
+    "avg_daily_ml": (0, 5000),             # 日均奶量
+    "feeding_frequency": (0, 60),          # 日均次数
+    "solid_food_count": (0, 100),          # 辅食种类数
+    "weight_gain_month": (-2000, 5000),    # 月增重 g
+    "height_gain_month": (-30, 30),        # 月增高 cm
+    "summary_value": (0, 10000),
+}
+
+_E_RECORD_TYPES = ("routine", "vaccine", "dental", "eye", "blood", "other")
+_E_REMINDER_TYPES = ("checkup", "vaccine", "medication", "custom")
+_E_MILESTONE_STATUS = ("pending", "achieved", "delayed", "concerned")
+_E_MILESTONE_CATEGORIES = ("motor", "fine_motor", "language", "cognitive", "social", "self_care")
+_E_SCREENING_TYPES = ("vision_筛查", "hearing_筛查", "vision_诊断", "hearing_诊断")
+_E_SCREENING_STATUS = ("normal", "abnormal", "borderline", "pending")
+_E_ALLERGY_TYPES = ("food", "drug", "environmental", "other")
+_E_ALLERGY_SEVERITY = ("mild", "moderate", "severe", "anaphylaxis")
+_E_ALLERGY_STATUS = ("active", "resolved", "monitoring")
+_E_FEEDING_TYPES = ("breastmilk", "formula", "mixed", "solid", "")
+_E_INDICATOR_STATUS = ("normal", "high", "low", "abnormal")
+
+
+def _check_baby_exists(db, baby_id):
+    """宝宝不存在直接 404。
+
+    少了这一步，任何人拿一个不存在的 baby_id 都能往库里塞记录：
+    Overview 统计、导出备份、恢复导入全都按 baby_id 走，孤儿数据会一路污染到换机恢复。
+    """
+    row = db.execute('SELECT id FROM babies WHERE id = ?', (baby_id,)).fetchone()
+    if not row:
+        return False, f"宝宝不存在（id={baby_id}）"
+    return True, None
+
+
+def _validate_month(month_str, field_name="月份"):
+    """喂养摘要按月记。格式必须是 YYYY-MM，否则 UNIQUE(baby_id, record_month) 拦不住「2026/10」这种写法。"""
+    if not month_str:
+        return None, None
+    text = str(month_str).strip()
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", text):
+        return None, f"{field_name}格式无效，应为 YYYY-MM"
+    return text, None
+
+
+def _check_field(data, key, errs, label=None, kind="date", enum_values=None):
+    """体检一个写入字段：通过就把归一化值写回 data，失败记一条错误并把该字段摘掉（不再写库）。
+
+    kind: date（YYYY-MM-DD）/ month（YYYY-MM）/ number（按 _HEALTH_RANGES 区间）
+    空值一律放过——可空列跟 validate_* 的既有口径一致，NOT NULL 的列由调用方单独判。
+    """
+    if key not in data:
+        return
+    label = label or key
+    raw = data.get(key)
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return
+    if kind == "month":
+        val, err = _validate_month(raw, label)
+    elif kind == "number":
+        lo, hi = _HEALTH_RANGES.get(key, (None, None))
+        val, err = _validate_number(raw, lo, hi, label)
+    elif enum_values is not None:
+        ok_enum, val, err = _validate_enum(raw, set(enum_values), label)
+        if not ok_enum:
+            errs.append(err)
+            data.pop(key, None)
+    else:
+        val, err = _validate_date(raw, label)
+    if err:
+        errs.append(err)
+        data.pop(key, None)
+    else:
+        data[key] = val
+
+
+def _check_dates(data, keys, errs):
+    """批量日期校验"""
+    for k in keys:
+        _check_field(data, k, errs, kind="date")
+
+
+def _check_numbers(data, keys, errs):
+    """批量数值校验"""
+    for k in keys:
+        _check_field(data, k, errs, kind="number")
+
+
+def _check_enum(data, key, errs, enum_values, label=None):
+    """批量枚举校验"""
+    _check_field(data, key, errs, label=label, kind="enum", enum_values=enum_values)
+
+
+def _errs_to_response(errs):
+    return jsonify({'success': False, 'message': '；'.join(errs)}), 400
+
+
+# 健康档案的医疗免责提示。前端不写死医学文案（跟 guidance_data.py / ASQ 一个规矩），
+# 由这里出、由 /api/health/notice 发，前端只负责渲染。
+HEALTH_NOTICE = {
+    "title": "健康档案只作家庭记录，不能代替医生诊断",
+    "body": (
+        "这里保存的是你在医院和家里的观察记录（体检、筛查、过敏、用药、发育里程碑），"
+        "仅供日常回顾和跟医生沟通时参考，不能代替医生的专业判断。"
+    ),
+    "advice": (
+        "看到异常指标、发育落后或孩子有明显不适，请尽快到正规医院儿科或儿童保健科就诊；"
+        "呼吸困难、抽搐、意识不清、全身皮疹伴腹痛等紧急情况请立即拨打 120。"
+    ),
+    "scopes": ("体检", "筛查", "过敏", "用药", "里程碑", "ASQ"),
+}
 
 
 # ==================== WHO 生长标准 ====================
@@ -332,13 +464,27 @@ def health_records_list(baby_id):
 @bp.route('/api/health/records/<int:baby_id>', methods=['POST'])
 def health_record_create(baby_id):
     """创建体检记录"""
-    data = request.get_json()
-    if not data:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
         return jsonify({'success': False, 'message': '无效数据'}), 400
     if not data.get('record_date') or not data.get('title'):
         return jsonify({'success': False, 'message': '请填写日期和标题'}), 400
 
     db = get_db()
+    # 体检日期是 NOT NULL 列：缺失会让 sqlite 抛 IntegrityError（前端拿到的是 500 而不是人话）。
+    # 顺带给 baby_id 和全部数值/枚举字段过一遍校验，脏数据不落库。
+    ok, msg = _check_baby_exists(db, baby_id)
+    if not ok:
+        return jsonify({'success': False, 'message': msg}), 404
+    errs = []
+    _check_field(data, 'record_date', errs, '体检日期')
+    _check_dates(data, ('next_visit_date',), errs)
+    _check_numbers(data, ('temperature', 'height', 'weight',
+                          'head_circumference', 'bmi', 'age_months'), errs)
+    _check_enum(data, 'record_type', errs, _E_RECORD_TYPES, '记录类型')
+    if errs:
+        return _errs_to_response(errs)
+
     cursor = db.execute(
         """INSERT INTO health_records
            (baby_id, record_date, record_type, title, hospital, doctor,
@@ -365,20 +511,31 @@ def health_record_create(baby_id):
     )
     record_id = cursor.lastrowid
 
-    # 处理关联指标
-    indicators = data.get('indicators', [])
-    for ind in indicators:
-        if ind.get('indicator_name'):
-            db.execute(
-                """INSERT INTO health_indicators
-                   (record_id, baby_id, indicator_name, indicator_code, value, unit,
-                    reference_low, reference_high, reference_text, result_status, record_date, note)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (record_id, baby_id, ind['indicator_name'], ind.get('indicator_code', ''),
-                 ind.get('value', ''), ind.get('unit', ''), ind.get('reference_low'),
-                 ind.get('reference_high'), ind.get('reference_text', ''),
-                 ind.get('result_status', 'normal'), data['record_date'], ind.get('note', ''))
-            )
+    # 处理关联指标：指标值必须是数字、判定必须在白名单里（否则整条体检存进去也是脏数据）
+    indicators = []
+    for ind in data.get('indicators', []) or []:
+        if not isinstance(ind, dict) or not ind.get('indicator_name'):
+            continue
+        ind_val, ind_err = _validate_number(ind.get('value'), None, None, '指标值')
+        if ind_err:
+            return jsonify({'success': False, 'message': f"{ind['indicator_name']}：{ind_err}"}), 400
+        ok_enum, _, ind_status_err = _validate_enum(
+            ind.get('result_status') or 'normal', _E_INDICATOR_STATUS, '结果判定')
+        if not ok_enum:
+            return jsonify({'success': False, 'message':
+                            f"{ind['indicator_name']}：{ind_status_err}"}), 400
+        indicators.append((ind, ind_val))
+    for ind, ind_val in indicators:
+        db.execute(
+            """INSERT INTO health_indicators
+               (record_id, baby_id, indicator_name, indicator_code, value, unit,
+                reference_low, reference_high, reference_text, result_status, record_date, note)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (record_id, baby_id, ind['indicator_name'], ind.get('indicator_code', ''),
+             ind_val, ind.get('unit', ''), ind.get('reference_low'),
+             ind.get('reference_high'), ind.get('reference_text', ''),
+             ind.get('result_status') or 'normal', data['record_date'], ind.get('note', ''))
+        )
 
     db.commit()
     return jsonify({'success': True, 'message': '记录已保存', 'id': record_id})
@@ -405,9 +562,21 @@ def health_record_detail(record_id):
 def health_record_update(record_id):
     """更新体检记录"""
     db = get_db()
-    data = request.get_json()
-    if not data:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
         return jsonify({'success': False, 'message': '无效数据'}), 400
+
+    # 改体检同样要过闸：此前 PUT 分支完全裸奔，把「2026-13-40」也能原样 UPDATE 进去，
+    # 而且 record_date 改成空串会直接踩 NOT NULL 报 500。
+    errs = []
+    if data.get('record_date') is not None:
+        _check_field(data, 'record_date', errs, '体检日期')
+    _check_dates(data, ('next_visit_date',), errs)
+    _check_numbers(data, ('temperature', 'height', 'weight',
+                          'head_circumference', 'bmi', 'age_months'), errs)
+    _check_enum(data, 'record_type', errs, _E_RECORD_TYPES, '记录类型')
+    if errs:
+        return _errs_to_response(errs)
 
     fields = []
     values = []
@@ -431,22 +600,35 @@ def health_record_update(record_id):
 
     # 如果提供了 indicators，先删除旧的再插入新的
     if 'indicators' in data:
+        # 改指标同样校验，否则「指标值填abc」会在这里被 float() 顶出一个 500
+        ind_records = []
+        for ind in data['indicators'] or []:
+            if not isinstance(ind, dict) or not ind.get('indicator_name'):
+                continue
+            ind_val, ind_err = _validate_number(ind.get('value'), None, None, '指标值')
+            if ind_err:
+                return jsonify({'success': False, 'message': f"{ind['indicator_name']}：{ind_err}"}), 400
+            ok_enum, _, ind_status_err = _validate_enum(
+                ind.get('result_status') or 'normal', _E_INDICATOR_STATUS, '结果判定')
+            if not ok_enum:
+                return jsonify({'success': False, 'message':
+                                f"{ind['indicator_name']}：{ind_status_err}"}), 400
+            ind_records.append(ind)
         db.execute('DELETE FROM health_indicators WHERE record_id = ?', (record_id,))
-        for ind in data['indicators']:
-            if ind.get('indicator_name'):
-                db.execute(
-                    """INSERT INTO health_indicators
-                       (record_id, baby_id, indicator_name, indicator_code, value, unit,
-                        reference_low, reference_high, reference_text, result_status, record_date, note)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (record_id, data.get('baby_id'), ind['indicator_name'],
-                     ind.get('indicator_code', ''), ind.get('value', ''),
-                     ind.get('unit', ''), ind.get('reference_low'),
-                     ind.get('reference_high'), ind.get('reference_text', ''),
-                     ind.get('result_status', 'normal'),
-                     data.get('record_date', datetime.date.today().strftime('%Y-%m-%d')),
-                     ind.get('note', ''))
-                )
+        for ind in ind_records:
+            db.execute(
+                """INSERT INTO health_indicators
+                   (record_id, baby_id, indicator_name, indicator_code, value, unit,
+                    reference_low, reference_high, reference_text, result_status, record_date, note)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (record_id, data.get('baby_id'), ind['indicator_name'],
+                 ind.get('indicator_code', ''), _validate_number(ind.get('value'))[0],
+                 ind.get('unit', ''), ind.get('reference_low'),
+                 ind.get('reference_high'), ind.get('reference_text', ''),
+                 ind.get('result_status') or 'normal',
+                 data.get('record_date', datetime.date.today().strftime('%Y-%m-%d')),
+                 ind.get('note', ''))
+            )
 
     db.commit()
     return jsonify({'success': True, 'message': '记录已更新'})
@@ -531,18 +713,27 @@ def health_reminders_list(baby_id):
 @bp.route('/api/health/reminders/<int:baby_id>', methods=['POST'])
 def health_reminder_create(baby_id):
     """创建健康提醒"""
-    data = request.get_json()
-    if not data or not data.get('title'):
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not data.get('title'):
         return jsonify({'success': False, 'message': '请填写标题'}), 400
 
     db = get_db()
+    # due_date 是 NOT NULL 列：不校验的话，前端空着提交就是 IntegrityError（500）
+    ok, msg = _check_baby_exists(db, baby_id)
+    if not ok:
+        return jsonify({'success': False, 'message': msg}), 404
+    errs = []
+    _check_field(data, 'due_date', errs, '到期日期')
+    _check_enum(data, 'reminder_type', errs, _E_REMINDER_TYPES, '提醒类型')
+    if errs:
+        return _errs_to_response(errs)
+
     db.execute(
         """INSERT INTO health_reminders
            (baby_id, reminder_type, title, description, due_date, note)
            VALUES (?, ?, ?, ?, ?, ?)""",
         (baby_id, data.get('reminder_type', 'custom'), data['title'],
-         data.get('description', ''), data.get('due_date',
-         datetime.date.today().strftime('%Y-%m-%d')), data.get('note', ''))
+         data.get('description', ''), data.get('due_date'), data.get('note', ''))
     )
     db.commit()
     return jsonify({'success': True, 'message': '提醒已添加'})
@@ -552,9 +743,15 @@ def health_reminder_create(baby_id):
 def health_reminder_update(reminder_id):
     """更新健康提醒（含标记完成）"""
     db = get_db()
-    data = request.get_json()
-    if not data:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
         return jsonify({'success': False, 'message': '无效数据'}), 400
+
+    errs = []
+    _check_field(data, 'due_date', errs, '到期日期')
+    _check_enum(data, 'reminder_type', errs, _E_REMINDER_TYPES, '提醒类型')
+    if errs:
+        return _errs_to_response(errs)
 
     fields = []
     values = []
@@ -620,6 +817,16 @@ def milestone_create(baby_id):
         return jsonify({'success': False, 'message': '请填写里程碑名称'}), 400
 
     db = get_db()
+    ok, msg = _check_baby_exists(db, baby_id)
+    if not ok:
+        return jsonify({'success': False, 'message': msg}), 404
+    errs = []
+    _check_dates(data, ('achieved_date', 'expected_date'), errs)
+    _check_numbers(data, ('expected_age_months', 'actual_age_months'), errs)
+    _check_enum(data, 'category', errs, _E_MILESTONE_CATEGORIES, '里程碑分类')
+    _check_enum(data, 'status', errs, _E_MILESTONE_STATUS, '里程碑状态')
+    if errs:
+        return _errs_to_response(errs)
     db.execute(
         """INSERT INTO milestone_details
            (baby_id, milestone_code, milestone_name, category, expected_age_months,
@@ -638,9 +845,17 @@ def milestone_create(baby_id):
 def milestone_update(milestone_id):
     """更新发育里程碑"""
     db = get_db()
-    data = request.get_json()
-    if not data:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
         return jsonify({'success': False, 'message': '无效数据'}), 400
+
+    errs = []
+    _check_dates(data, ('achieved_date', 'expected_date'), errs)
+    _check_numbers(data, ('expected_age_months', 'actual_age_months'), errs)
+    _check_enum(data, 'category', errs, _E_MILESTONE_CATEGORIES, '里程碑分类')
+    _check_enum(data, 'status', errs, _E_MILESTONE_STATUS, '里程碑状态')
+    if errs:
+        return _errs_to_response(errs)
 
     fields = []
     values = []
@@ -775,6 +990,19 @@ def screening_create(baby_id):
         return jsonify({'success': False, 'message': '请选择筛查类型'}), 400
 
     db = get_db()
+    ok, msg = _check_baby_exists(db, baby_id)
+    if not ok:
+        return jsonify({'success': False, 'message': msg}), 404
+    # screening_date 是 NOT NULL 列：不校验就是 IntegrityError（500），
+    # 而且「2026/10/01」这种写法能原样落进库，列表按日期排序时全部沉底。
+    errs = []
+    _check_field(data, 'screening_date', errs, '筛查日期')
+    _check_dates(data, ('next_screening_date',), errs)
+    _check_numbers(data, ('age_months',), errs)
+    _check_enum(data, 'screening_type', errs, _E_SCREENING_TYPES, '筛查类型')
+    _check_enum(data, 'result_status', errs, _E_SCREENING_STATUS, '结果判定')
+    if errs:
+        return _errs_to_response(errs)
     db.execute(
         """INSERT INTO screenings
            (baby_id, screening_type, screening_date, age_months, screening_method,
@@ -782,7 +1010,7 @@ def screening_create(baby_id):
             referral_needed, referral_done, next_screening_date, note)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (baby_id, data['screening_type'],
-         data.get('screening_date', datetime.date.today().strftime('%Y-%m-%d')),
+         data.get('screening_date'),
          data.get('age_months'), data.get('screening_method', ''),
          data.get('hospital', ''), data.get('doctor', ''),
          data.get('result_summary', ''), data.get('result_status', 'normal'),
@@ -798,9 +1026,18 @@ def screening_create(baby_id):
 def screening_update(screening_id):
     """更新筛查记录"""
     db = get_db()
-    data = request.get_json()
-    if not data:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
         return jsonify({'success': False, 'message': '无效数据'}), 400
+
+    errs = []
+    _check_field(data, 'screening_date', errs, '筛查日期')
+    _check_dates(data, ('next_screening_date',), errs)
+    _check_numbers(data, ('age_months',), errs)
+    _check_enum(data, 'screening_type', errs, _E_SCREENING_TYPES, '筛查类型')
+    _check_enum(data, 'result_status', errs, _E_SCREENING_STATUS, '结果判定')
+    if errs:
+        return _errs_to_response(errs)
 
     fields = []
     values = []
@@ -862,6 +1099,16 @@ def allergy_create(baby_id):
         return jsonify({'success': False, 'message': '请填写过敏原名称'}), 400
 
     db = get_db()
+    ok, msg = _check_baby_exists(db, baby_id)
+    if not ok:
+        return jsonify({'success': False, 'message': msg}), 404
+    errs = []
+    _check_dates(data, ('first_occurrence_date', 'last_occurrence_date'), errs)
+    _check_enum(data, 'allergen_type', errs, _E_ALLERGY_TYPES, '过敏原类型')
+    _check_enum(data, 'severity_level', errs, _E_ALLERGY_SEVERITY, '严重程度')
+    _check_enum(data, 'status', errs, _E_ALLERGY_STATUS, '过敏状态')
+    if errs:
+        return _errs_to_response(errs)
     db.execute(
         """INSERT INTO allergy_history
            (baby_id, allergen_type, allergen_name, reaction_detail, severity_level,
@@ -882,9 +1129,17 @@ def allergy_create(baby_id):
 def allergy_update(allergy_id):
     """更新过敏记录"""
     db = get_db()
-    data = request.get_json()
-    if not data:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
         return jsonify({'success': False, 'message': '无效数据'}), 400
+
+    errs = []
+    _check_dates(data, ('first_occurrence_date', 'last_occurrence_date'), errs)
+    _check_enum(data, 'allergen_type', errs, _E_ALLERGY_TYPES, '过敏原类型')
+    _check_enum(data, 'severity_level', errs, _E_ALLERGY_SEVERITY, '严重程度')
+    _check_enum(data, 'status', errs, _E_ALLERGY_STATUS, '过敏状态')
+    if errs:
+        return _errs_to_response(errs)
 
     fields = []
     values = []
@@ -937,6 +1192,18 @@ def feeding_summary_create(baby_id):
         return jsonify({'success': False, 'message': '请选择月份'}), 400
 
     db = get_db()
+    ok, msg = _check_baby_exists(db, baby_id)
+    if not ok:
+        return jsonify({'success': False, 'message': msg}), 404
+    # record_month 是 NOT NULL 且参与 UNIQUE(baby_id, record_month)：
+    # 「2026/10」这种写法会当成另一个月份插进去，同一个月变两条，列表和统计全对不上。
+    errs = []
+    _check_field(data, 'record_month', errs, '月份', kind='month')
+    _check_numbers(data, ('avg_daily_ml', 'feeding_frequency', 'solid_food_count',
+                          'weight_gain_month', 'height_gain_month'), errs)
+    _check_enum(data, 'feeding_type', errs, _E_FEEDING_TYPES, '喂养方式')
+    if errs:
+        return _errs_to_response(errs)
     db.execute(
         """INSERT INTO feeding_summary
            (baby_id, record_month, feeding_type, avg_daily_ml, feeding_frequency,
@@ -955,9 +1222,17 @@ def feeding_summary_create(baby_id):
 def feeding_summary_update(summary_id):
     """更新喂养摘要"""
     db = get_db()
-    data = request.get_json()
-    if not data:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
         return jsonify({'success': False, 'message': '无效数据'}), 400
+
+    errs = []
+    _check_field(data, 'record_month', errs, '月份', kind='month')
+    _check_numbers(data, ('avg_daily_ml', 'feeding_frequency', 'solid_food_count',
+                          'weight_gain_month', 'height_gain_month'), errs)
+    _check_enum(data, 'feeding_type', errs, _E_FEEDING_TYPES, '喂养方式')
+    if errs:
+        return _errs_to_response(errs)
 
     fields = []
     values = []
@@ -1452,6 +1727,19 @@ def health_timeline(baby_id):
         import logging
         logging.getLogger(__name__).error("health_timeline error: %s", e, exc_info=True)
         return jsonify({'success': False, 'message': '加载健康时间线失败'}), 500
+
+
+# ==================== 医疗免责提示 ====================
+
+@bp.route('/api/health/notice')
+def health_notice():
+    """健康档案的统一免责提示。
+
+    体检、筛查、过敏、用药这几类进来的是医院真实结果，APP 只做记录不做判读。
+    界面上必须常驻一句「不能代替医生诊断 / 异常请就医」，否则家长会把自己记的数字
+    当成结论。文案由后端出（跟 guidance_data.py 一个规矩），前端只负责渲染。
+    """
+    return jsonify({'success': True, 'notice': HEALTH_NOTICE})
 
 
 # 注意：曾有一个重复注册的 POST /api/health/records/<baby_id>「增强版」实现，
