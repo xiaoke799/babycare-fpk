@@ -891,3 +891,101 @@ def _get_parent_guide_by_age(age_months):
                 'evening': '亲子共读 + 睡前聊天'
             }
         }
+
+
+# ==================== API: 本月育儿要点（按月龄聚合） ====================
+# 这些内容原本散在知识库 / 百科 / 食谱 / 活动四个页面，家长得自己按月龄去翻。
+# 这里按宝宝**当前月龄**一次性给出：这个月发育特点、能玩什么、能吃什么、
+# 疫苗有没有到期、常见疑问、家里要排查哪些安全点、哪些信号值得提防。
+# 只读聚合，不写入任何数据；发育部分只提示不判读（见 guidance_data.DISCLAIMER）。
+
+@bp.route('/api/babies/<int:baby_id>/month-guide', methods=['GET'])
+def get_month_guide(baby_id):
+    """按宝宝月龄聚合「本月育儿要点」"""
+    import guidance_data
+
+    db = get_db()
+    baby_row = db.execute('SELECT * FROM babies WHERE id = ?', (baby_id,)).fetchone()
+    if not baby_row:
+        return jsonify({'success': False, 'message': '宝宝不存在'}), 404
+    baby = dict(baby_row)
+
+    birthday = baby.get('birthday')
+    if not birthday:
+        return jsonify({'success': False, 'message': '请先设置宝宝出生日期'}), 400
+
+    age_months = get_baby_age_months(birthday, baby.get('due_date'))
+    stage_key = guidance_data.stage_of(age_months)
+
+    # 1) 发育特点与日常安排（复用家长指导那套分档，两处口径必须一致）
+    guide = _get_parent_guide_by_age(age_months)
+
+    # 2) 本月能玩的活动：落在月龄区间内的优先，按起始月龄从高到低（更贴当前月龄）
+    activities = rows_to_list(db.execute(
+        'SELECT * FROM baby_activities WHERE min_age_months <= ? AND max_age_months >= ? '
+        'ORDER BY min_age_months DESC, id LIMIT 5', (age_months, age_months)).fetchall())
+    for a in activities:
+        a['steps_list'] = [s.strip() for s in (a.get('steps') or '').split('\n') if s.strip()]
+
+    # 3) 本月能吃的辅食：只取月龄已够的，越接近当前月龄越靠前
+    recipes = []
+    for row in db.execute('SELECT * FROM baby_recipes ORDER BY id').fetchall():
+        r = row_to_dict(row)
+        recipe_age = _age_group_to_months(r.get('age_group', ''))
+        if recipe_age <= age_months:
+            r['_match'] = recipe_age
+            recipes.append(r)
+    recipes.sort(key=lambda x: abs(x['_match'] - age_months))
+    recipes = recipes[:5]
+    for r in recipes:
+        r.pop('_match', None)
+
+    # 4) 疫苗：到期未种 / 30 天内到期 / 已完成
+    today_str = datetime.date.today().strftime('%Y-%m-%d')
+    soon = (datetime.date.today() + datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+    vacc_rows = rows_to_list(db.execute(
+        'SELECT * FROM vaccine_details WHERE baby_id = ? ORDER BY scheduled_date',
+        (baby_id,)).fetchall())
+    vaccines = {
+        'overdue': [v for v in vacc_rows
+                    if v.get('status') in ('pending', 'delayed') and (v.get('scheduled_date') or '') < today_str],
+        'due_soon': [v for v in vacc_rows
+                     if v.get('status') in ('pending', 'delayed')
+                     and today_str <= (v.get('scheduled_date') or '') <= soon],
+        'completed_count': sum(1 for v in vacc_rows if v.get('status') == 'completed'),
+        'total': len(vacc_rows),
+        # 计划还没初始化时给个提示，前端据此引导去疫苗页生成计划
+        'initialized': len(vacc_rows) > 0,
+    }
+
+    # 5) 这个阶段家长最常查的百科条目（标题缺失就跳过，不因缺条目报错）
+    wanted = guidance_data.COMMON_QUESTION_TITLES.get(stage_key, [])
+    wiki_map = {}
+    if wanted:
+        placeholders = ','.join('?' * len(wanted))
+        for row in db.execute(
+                f'SELECT * FROM baby_wiki WHERE title IN ({placeholders})', tuple(wanted)).fetchall():
+            wiki_map[row['title']] = row_to_dict(row)
+    common_questions = [
+        {'title': t, 'id': wiki_map[t]['id'], 'category': wiki_map[t].get('category', '')}
+        for t in wanted if t in wiki_map
+    ]
+
+    return jsonify({
+        'success': True,
+        'data': {
+            'age_months': age_months,
+            'stage': guide.get('stage'),
+            'stage_label': guidance_data.stage_label(age_months),
+            'age_label': f'{age_months}个月',
+            'development': guide,
+            'activities': activities,
+            'recipes': recipes,
+            'vaccines': vaccines,
+            'common_questions': common_questions,
+            'safety_checklist': guidance_data.safety_checklist(age_months),
+            'red_flags': guidance_data.red_flags(age_months),
+            'first_aid': guidance_data.FIRST_AID,
+            'disclaimer': guidance_data.DISCLAIMER,
+        }
+    })
