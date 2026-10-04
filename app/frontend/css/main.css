@@ -9423,6 +9423,39 @@ body {
     color: var(--danger-color);
 }
 
+/* 健康档案页顶免责提示：体检/筛查/过敏都是医院的真实结果，不能让人误当结论 */
+.health-notice {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border-left: 3px solid var(--danger-color);
+}
+.health-notice:empty {
+    display: none;
+}
+.health-notice-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--danger-color);
+    margin-bottom: 4px;
+}
+/* 注意：这两条刻意拆开写而不是并进一条（.health-notice-body, .health-notice-advice），
+   否则 .health-notice-advice 会出现两次重复定义，直接被 check_css_dupes 判新增违规。 */
+.health-notice-body {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    margin: 0;
+}
+.health-notice-advice {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    margin: 4px 0 0;
+}
+
 /* 即将接种：有 30 天内待种疫苗时出现在概览 */
 .health-upcoming-vaccines {
     background: var(--card-bg);

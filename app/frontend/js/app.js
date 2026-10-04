@@ -16000,9 +16000,28 @@ let _currentReminders = [];
 let _editingCheckupId = null;
 let _editingReminderId = null;
 
+// 健康档案是家长最常逛、也最容易把「自己记的数」当结论的地方，
+// 页顶必须常驻一句免责提示。文案走 /api/health/notice（后端单一来源），这里只渲染。
+function loadHealthNotice() {
+    const box = document.getElementById('healthNoticeBox');
+    if (!box) return;
+    api('/api/health/notice').then(res => {
+        if (!res.success || !res.notice) return;
+        const n = res.notice;
+        box.innerHTML = '<div class="health-notice-title">' + escapeHtml(n.title) + '</div>'
+            + '<p class="health-notice-body">' + escapeHtml(n.body) + '</p>'
+            + (n.advice ? '<p class="health-notice-advice">' + escapeHtml(n.advice) + '</p>' : '');
+    }).catch(() => {
+        // 提示挂了不值得弹错误：静默留空，别挡着记录
+    });
+}
+
 function initHealthArchivePage() {
     if (_healthTabInitialized) return;
     _healthTabInitialized = true;
+
+    // 免责提示只刷一次：文案由 /api/health/notice 从后端出，这儿只管渲染
+    loadHealthNotice();
 
     // Tab 切换
     document.querySelectorAll('.health-tab').forEach(tab => {
@@ -17353,7 +17372,13 @@ function renderScreeningList(screenings) {
     if (screenings.length === 0) { container.innerHTML = '<p class="empty-tip">暂无筛查记录</p>'; return; }
     const typeMap = { 'vision_筛查': ' 视力筛查', 'hearing_筛查': ' 听力筛查', 'vision_诊断': ' 视力诊断', 'hearing_诊断': ' 听力诊断' };
     const statusMap = { normal: { text: '正常', cls: 'screening-normal' }, abnormal: { text: '异常', cls: 'screening-abnormal' }, borderline: { text: '边缘', cls: 'screening-borderline' }, pending: { text: '待判', cls: 'screening-pending' } };
-    container.innerHTML = screenings.map(s => {
+    // 异常结果置顶：接口本来按日期升序排，家长要翻到最底才能看见「 abnormal」，
+    // 而那恰恰是唯一需要第一时间看到的记录。
+    const abnormalFirst = screenings.slice().sort((a, b) => {
+        const rank = s => (s.result_status === 'abnormal' ? 0 : (s.result_status === 'borderline' ? 1 : 2));
+        return rank(a) - rank(b);
+    });
+    container.innerHTML = abnormalFirst.map(s => {
         const status = statusMap[s.result_status] || statusMap.pending;
         return `<div class="screening-card">
             <div class="screening-card-header"><span class="screening-type">${typeMap[s.screening_type] || s.screening_type}</span><span class="screening-date">${s.screening_date}</span><span class="screening-tag ${status.cls}">${status.text}</span></div>
