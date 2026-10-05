@@ -11681,6 +11681,28 @@ input:checked + .toggle-slider:before {
     animation: petAlert 0.8s ease;
 }
 
+/* 提醒红点：有主动提醒而聊天未打开时亮在头像右上角
+   （⚠ 此块曾被并行会话整块覆盖丢失过一次，2026-10-05 补回） */
+.pet-avatar {
+    position: relative;
+}
+.pet-avatar .pet-dot {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--danger-color);
+    border: 2px solid #fff;
+    display: none;
+    z-index: 3;
+    pointer-events: none;
+}
+.pet-avatar .pet-dot.show {
+    display: block;
+}
+
 @keyframes petAlert {
     0%, 100% { transform: rotate(0); }
     15% { transform: rotate(-8deg); }
