@@ -33,11 +33,14 @@ FRONT = os.path.join(ROOT, 'app', 'frontend')
 EDGE = r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
 OUT = os.path.join(ROOT, 'outputs')
 
-# (page id, 容器 id, 期望文案)
+# (page id, 容器 id, 期望文案, 触发方式)
+# trigger='page' 走 loadPageData；'health-tab' 走健康档案的 loadHealthTabData
 CASES = [
-    ('feeding', 'feedingList', '喂奶记录加载失败'),
-    ('sleep-record', 'sleepList', '睡眠记录加载失败'),
-    ('milestones', 'milestoneList', '成长记录加载失败'),
+    ('feeding', 'feedingList', '喂奶记录加载失败', 'page'),
+    ('sleep-record', 'sleepList', '睡眠记录加载失败', 'page'),
+    ('milestones', 'milestoneList', '成长记录加载失败', 'page'),
+    ('health', 'temperatureList', '体温记录加载失败', 'health-tab:temperature'),
+    ('health', 'growthTable', '生长数据加载失败', 'health-tab:growth'),
 ]
 
 FAILURES = []
@@ -51,7 +54,7 @@ def check(ok, name, detail=''):
     return ok
 
 
-def build_site(workdir, page, container, text):
+def build_site(workdir, page, container, text, trigger='page'):
     dst = os.path.join(workdir, 'site')
     if os.path.exists(dst):
         shutil.rmtree(dst)
@@ -92,13 +95,17 @@ if (typeof App !== 'undefined' && App) { App.currentBaby = 1; }
 """
     open(js_path, 'w', encoding='utf-8').write(js)
 
+    # 健康档案的 Tab 不走 loadPageData，走 loadHealthTabData
+    fire = ("loadHealthTabData(%s);" % json.dumps(trigger.split(':', 1)[1])
+            if trigger.startswith('health-tab:')
+            else "loadPageData(%s);" % json.dumps(page))
     probe = """
 <script>
 window.addEventListener('load', function () {
   var p = %s, cid = %s;
   var sec = document.getElementById('page-' + p);
   if (sec) sec.classList.add('active');
-  try { loadPageData(p); } catch (e) { /* 探针不因异常中断，交给 DOM 判据 */ }
+  try { %s } catch (e) { /* 探针不因异常中断，交给 DOM 判据 */ }
   setTimeout(function () {
     var c = document.getElementById(cid);
     // 自诊断：桩没接管时要能一眼看出来，而不是报成"修复没生效"
@@ -113,7 +120,7 @@ window.addEventListener('load', function () {
   }, 1500);
 });
 </script>
-""" % (json.dumps(page), json.dumps(container))
+""" % (json.dumps(page), json.dumps(container), fire)
     html = html.replace('</body>', probe + '</body>')
     open(html_path, 'w', encoding='utf-8').write(html)
     # 🔴 返回**上一层** site（即含 app/babycare-fpk/ 的那一层）当服务根。
@@ -157,10 +164,10 @@ def main():
     base = tempfile.mkdtemp(prefix='list_err_probe')
     port = 8793
     all_ok = True
-    for i, (page, container, text) in enumerate(CASES):
-        site = build_site(os.path.join(base, page), page, container, text)
+    for i, (page, container, text, trigger) in enumerate(CASES):
+        site = build_site(os.path.join(base, page + '-' + container), page, container, text, trigger)
         port += 1
-        dom = dump_dom(site, port, page)
+        dom = dump_dom(site, port, page + '-' + container)
         html = open(dom, encoding='utf-8').read()
         # 🔴 不能用 `id="PROBE_RESULT"[^>]*>(.*?)</div>` —— 容器内是 innerHTML，
         #    嵌套标签会让非贪婪匹配在第一个 </div> 处截断，文本只剩个">"。
@@ -181,7 +188,6 @@ def main():
         # 顺带钉一条反向：不能是「暂无记录」这种把失败伪装成没数据的文案
         all_ok &= check('暂无记录' not in got_txt or text in got_txt,
                         '失败未被伪装成「暂无记录」', got_txt[:100])
-
     print('-' * 72)
     if FAILURES:
         print('失败 %d 项：%s' % (len(FAILURES), '；'.join(FAILURES)))

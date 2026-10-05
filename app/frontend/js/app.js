@@ -10800,7 +10800,12 @@ function initTemperature() {
 function loadTemperaturePage() {
     if (!App.currentBaby) return;
     api(`/api/babies/${App.currentBaby}/temperatures`).then(res => {
-        if (!res.success) return;
+        // 🔴 失败必须让用户看见：早先只 `if (!res.success) return;`，
+        // 接口一挂 temperatureList 保持空白，用户以为"今天没量体温"。
+        if (!res.success) {
+            renderListError(document.getElementById('temperatureList'), '体温记录加载失败，请下拉刷新重试');
+            return;
+        }
         const temps = res.data;
 
         if (temps.length === 0) {
@@ -16818,10 +16823,26 @@ let _growthChartInstance = null;
 function loadGrowthChart(metric = 'weight') {
     if (!App.currentBaby) return;
     api(`/api/health/trend/${App.currentBaby}?metric=${metric}`).then(res => {
-        if (!res.success) return;
+        // 🔴 这页比列表页更隐蔽：canvas 在接口失败时保持空白或上一张图，
+        //    用户分不清是"没数据"还是"加载失败"。canvas 画不了字，
+        //    所以提示落在它下方的表格区，用户看得到。
+        if (!res.success) {
+            renderListError(document.getElementById('growthTable'), '生长数据加载失败，请下拉刷新重试');
+            clearGrowthCanvas();
+            return;
+        }
         renderGrowthChart(metric, res.data);
         renderGrowthTable(metric, res.data);
     });
+}
+
+/** 失败时把 canvas 擦干净。⚠ 不能留着上一张图——那会让失败看起来像"数据没更新"。 */
+function clearGrowthCanvas() {
+    const canvas = document.getElementById('growthChart');
+    if (!canvas || typeof CanvasRenderingContext2D === 'undefined') return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
 function renderGrowthChart(metric, data) {

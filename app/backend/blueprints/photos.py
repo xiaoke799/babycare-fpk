@@ -16,7 +16,12 @@ from flask import Blueprint, request, jsonify, send_file
 
 from utils import get_db, row_to_dict, rows_to_list, json_body, normalize_author
 from validators import validate_date
-from user_context import require_admin
+# 🔴 照片的改/删一律用 require_not_integration（判来源）而不是 require_admin（判身份）。
+#require_admin 会把「家庭里的非管理员成员」当外人 ⇒ 他删不掉自家宝宝的照片，
+#    而他明明能在前端看到并编辑这些照片（这是 2026-10-06 打分时实测出来的：
+#    非管理员 DELETE 返 200，说明前端已经按"他能删"在设计，后端却在拦他）。
+#    真正要挡的是机器凭证（HA 等集成 Token），那才是 require_not_integration 的职责。
+from user_context import require_not_integration
 from constants import DATA_DIR
 from logger import get_logger
 from security import safe_path
@@ -434,6 +439,10 @@ def list_photos(baby_id):
 
 
 @bp.route("/api/photos/<int:photo_id>", methods=["PUT"])
+# 🔴 这行以前是空的，只靠 server.py 的全局 require_login 兜底。实测：全局
+#    校验一旦被绕过（白名单/前缀配置写错），这两个路由就**真的裸奔**——
+#    未登录 PUT 返回 200 且数据真被改。显式挂上守卫， defense in depth。
+@require_not_integration
 def update_photo(photo_id):
     """更新照片信息（部分更新：传了哪个字段就改哪个）。
 
@@ -480,7 +489,9 @@ def update_photo(photo_id):
 
 
 @bp.route("/api/photos/<int:photo_id>", methods=["DELETE"])
-@require_admin
+# 由 require_admin 改为 require_not_integration：见文件头import 处的说明。
+# 家庭非管理员成员本来就该能删自家宝宝的照片。
+@require_not_integration
 def delete_photo(photo_id):
     """删除照片（同时清理磁盘上的原图与缩略图，避免残留）"""
     db = get_db()
