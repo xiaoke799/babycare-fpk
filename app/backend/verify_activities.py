@@ -120,11 +120,44 @@ if rows:
 else:
     chk(False, "popular 排序带 played_count 字段", "没数据没法验")
 
-print("\n=== 5. 空态文案（3 岁+ 超范围时要说人话）===")
+print("\n=== 5. 空态文案（超范围时要说人话）===")
 js = open(os.path.join(FRONTEND, "js", "app.js"), encoding="utf-8").read()
 chk("renderActivityList(activities, ageMonths)" in js,
     "renderActivityList 收了月龄参数（要区分「超范围」与「筛空了」）")
-chk("活动库目前覆盖" in js, "超范围时给出说明文案（不是干巴巴一句「暂无匹配」）")
+chk("活动库暂时没有适合" in js, "超范围时给出说明文案（不是干巴巴一句「暂无匹配」）")
+chk("fallback=1" in js, "前端兜底请求带 fallback=1")
+# 上一轮的兜底写法是 sort=popular / 不传 age_months ⇒ 3 岁用户会拿到
+# 0-3 月的「黑白卡追视」。看着有内容，其实完全不适合 —— 比空白更糟。
+chk("sort=popular&baby_id=" not in js.split("function renderActivityList")[-1][:2000],
+    "兜底不再用 sort=popular（那会给超龄宝宝新生儿内容）")
+chk("activityAgeRangeText" in js and "activity-age-gap" in
+    open(os.path.join(FRONTEND, "css", "main.css"), encoding="utf-8").read(),
+    "兜底卡片标出「适合几岁」（如实告知不是精确匹配）")
+
+print("\n=== 6. 兜底给的是「月龄最近」而不是「排序最前」（2026-10-05 修）===")
+# 8 岁（96 月）远超库上限 60
+code, rows = get("/api/activities?fallback=1&limit=6&age_months=96")
+chk(bool(rows), "超范围时兜底有内容", f"{len(rows or [])} 条")
+if rows:
+    # 关键：不能给 0-3 月的内容。给的话「看着有内容，其实完全不适合」。
+    too_young = [r for r in rows if (r.get("min_age_months") or 0) <= 6]
+    chk(not too_young, "兜底不给新生儿内容（3 岁用户拿到黑白卡追视 = 没兜）",
+        f"混入 {[r.get('title') for r in too_young]}")
+    # 应给距离最近的一档，这里 60 月（5 岁）比 6 月近得多
+    nearest = max((r.get("min_age_months") or 0) for r in rows)
+    chk(nearest >= 36, "兜底给的是较年长的一档", f"最大起始月龄 {nearest}")
+    chk(all("age_gap" in r for r in rows), "每条都带 age_gap（差多少月龄）")
+    gaps = {r.get("age_gap") for r in rows}
+    chk(gaps == {36}, "age_gap 算对了（96 - 60 = 36）", f"实际 {gaps}")
+
+# 区间内有内容时不该触发兜底
+code, rows = get("/api/activities?fallback=1&limit=6&age_months=12")
+chk(bool(rows) and "age_gap" not in rows[0],
+    "区间内有内容时不触发兜底（不硬塞 age_gap）")
+
+# 不传 fallback 就不兜底（别让其他调用点被动拿到近似内容）
+code, rows = get("/api/activities?limit=6&age_months=96")
+chk(not rows, "不传 fallback 就不兜底（96 月龄仍为 0 条）", f"实际 {len(rows or [])}")
 
 print()
 print(f"通过 {_pass} 项，失败 {_fail} 项")

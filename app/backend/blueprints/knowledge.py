@@ -420,14 +420,19 @@ def get_activities():
       age_months  按月龄区间筛（min <= m <= max）
       sort        age（默认，按起始月龄升序）| popular（按玩过的次数）
       limit       最多返回几条，钳到 200
+      baby_id     配合 sort=popular，只统计这个宝宝玩过的次数
+                  （多宝宝家庭里否则会串到兄弟姐妹的记录）
+      fallback=1  月龄区间内一条都没有时，改给「月龄距离最近」的一批，
+                  每条附 age_gap（差几个月龄，0 = 精确落在区间内）
 
-    ⚠ sort/limit 是真支持的，别在前端写不认的参数 ——
+    ⚠ sort/limit/fallback/baby_id 都是真支持的，别在前端写不认的参数 ——
     不认的 query 参数会被静默忽略，表现为「接口 200 但顺序没变/条数没少」，
     很容易被当成前端 bug 去查。
     """
     category = request.args.get('category', '')
     age_months = request.args.get('age_months', type=int)
     sort = (request.args.get('sort') or 'age').strip()
+    fallback = request.args.get('fallback') == '1'
 
     db = get_db()
     params: list = []
@@ -468,11 +473,33 @@ def get_activities():
         sql += ' ORDER BY min_age_months, title'
 
     limit = request.args.get('limit', type=int)
-    if limit is not None and limit > 0:
+    capped = min(limit, 200) if (limit and limit > 0) else None
+    if capped is not None:
         sql += ' LIMIT ?'
-        params.append(min(limit, 200))
+        params.append(capped)
 
     rows = db.execute(sql, params).fetchall()
+
+    # ── 兜底：月龄区间内一条都没有（活动库暂未覆盖到这个阶段）──
+    # ⚠ **不能用 sort=popular 或「不传 age_months」来兜底** ——
+    # 那是「按月龄升序取前 N 条」，3 岁用户会拿到 0-3 月的「黑白卡追视」，
+    # 比空白更糟：看着有内容，其实完全不适合这个年龄。
+    # 正解是取**月龄距离最近**的一段，并如实告知差多少个月龄。
+    if fallback and age_months is not None and not rows:
+        near = db.execute(
+            # 距离 = 该月龄到区间 [min, max] 的距离，落在区间内为 0。
+            'SELECT *, MIN(? - min_age_months, ? - max_age_months) AS gap'
+            ' FROM baby_activities ORDER BY gap ASC, min_age_months, title LIMIT ?',
+            (age_months, age_months, capped or 6),
+        ).fetchall()
+        for r in near:
+            r = dict(r)
+            lo = r.get('min_age_months') or 0
+            hi = r.get('max_age_months') or 0
+            r['age_gap'] = (lo - age_months) if age_months < lo else (
+                (age_months - hi) if age_months > hi else 0)
+            rows.append(r)
+
     return jsonify({'success': True, 'data': rows_to_list(rows)})
 
 
