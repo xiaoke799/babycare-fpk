@@ -36,10 +36,36 @@ mf = outer.extractfile('manifest').read().decode('utf-8')
 # fnpack 打包时会把 manifest 重排成 `key = value`（等号两侧补空格），
 # 因此用「去空白后包含」来判断，避免误报。
 mf_flat = ''.join(mf.split())
-for k in ['appname=babycare-fpk', 'version=0.0.1', 'platform=all',
+for k in ['appname=babycare-fpk', 'platform=all',
           'os_min_version=1.1.3100', 'install_dep_apps=python312',
           'desktop_applaunchname=babycare-fpk.main']:
     chk('manifest 含 ' + k, ''.join(k.split()) in mf_flat)
+
+# 版本号**别写死**：这里原来是 `version=0.0.1`，一发版（0.0.2）就当场转红 ——
+# 跟「别把今天是几号写进断言」是同一个坑。改成两条不变的判据：
+#   ① 包内 version 形如 x.y.z；
+#   ② 包内 version 必须等于仓库 manifest 的 version（包和仓库对得上）。
+# 这样发版只要改 manifest 一处，门禁不用跟着改，而「包是旧包」照样拦得住。
+import os as _os
+import re as _re
+_pkg_ver = ''
+for _ln in mf.splitlines():
+    if _ln.strip().startswith('version'):
+        _pkg_ver = _ln.partition('=')[2].strip()
+        break
+_ws_manifest = _os.path.join(
+    _os.path.dirname(_os.path.abspath(__file__)), '..', '..', 'manifest')
+_ws_ver = ''
+try:
+    for _ln in open(_ws_manifest, encoding='utf-8'):
+        if _ln.strip().startswith('version'):
+            _ws_ver = _ln.partition('=')[2].strip()
+            break
+except OSError:
+    pass
+chk('包内 version 已声明且形如 x.y.z', bool(_re.fullmatch(r'\d+\.\d+\.\d+', _pkg_ver)))
+chk('包内 version(%s) 与仓库 manifest(%s) 一致' % (_pkg_ver, _ws_ver),
+    bool(_pkg_ver) and _pkg_ver == _ws_ver)
 
 # ---- 回归门禁：manifest 值不能被 INI 注释符 `;` 截断（2026-09-19 事故）----
 # fnpack 打包时把行内 `;` 当注释，desc 里写 `style="width:100%;border-radius..."`
