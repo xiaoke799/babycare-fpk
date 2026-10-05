@@ -19,6 +19,26 @@ from typing import Optional, Tuple, Dict, Any
 logger = logging.getLogger(__name__)
 
 
+def _trace(step, msg, trace_id=None) -> None:
+    """链路日志（复用 ai_engine 的脱敏 + 一行化规则）。
+
+    ai_client 是 ai_engine 的"外层"（重试/熔断/缓存都在这层），
+    以前这层的两个前置拦截是完全静默的，是"配置看着没问题却不生效"的
+    头号藏身处。这里把每一步都记下来，和 ai_engine 里那些 trace 拼成一条链。
+
+    trace_id 由 call_llm_with_resilience 生成后往下传，**重试也复用同一个**，
+    所以 `grep 'llm#<id>'` 能一次捞全这趟调用的所有日志。
+    """
+    try:
+        from ai_engine import llm_trace, _new_trace_id
+        llm_trace(trace_id or _new_trace_id(), step, msg)
+    except Exception:
+        try:
+            logger.info('[llm] %s %s', step, msg)
+        except Exception:
+            pass
+
+
 # ==================== LRU 缓存 ====================
 
 class LRUCache:
@@ -227,6 +247,7 @@ def call_llm_with_resilience(
     tools: Optional[list] = None,
     execute_tool_fn=None,
     max_tool_rounds: int = 5,
+    trace_id: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
     """
     带完整韧性保护的 LLM 调用（支持工具调用 / Function Calling）。
@@ -238,10 +259,20 @@ def call_llm_with_resilience(
         tools: 工具定义列表（OpenAI function calling 格式）
         execute_tool_fn: (tool_name, args_dict) -> dict 的执行回调
         max_tool_rounds: 工具调用最大循环次数
+        trace_id: 本次调用的链路 id；不传就自动生成。**重试也复用它**，
+                  这样一个 trace id 就能 grep 出同一趟调用的全部日志（含重试）。
     
     Returns:
         (success, answer)
     """
+    # 本趟调用的链路 id：往下贯穿到重试与底层 HTTP，日志可用 grep 'llm#<id>' 一次捞全
+    if not trace_id:
+        try:
+            from ai_engine import _new_trace_id
+            trace_id = _new_trace_id()
+        except Exception:
+            trace_id = None
+
     # 1. 缓存命中（仅当无工具调用时才使用缓存，因为工具结果可能受时间影响）
     if use_cache and not tools:
         try:
@@ -253,11 +284,15 @@ def call_llm_with_resilience(
         cached = _llm_cache.get(cache_key)
         if cached is not None:
             logger.debug("LLM 缓存命中: %s...", question[:30])
+            _trace('⓪', '缓存命中（provider=%s model=%s）→ 直接返回旧答案，未发起真实调用'
+                   % (_provider or '(空)', model or '(默认)'), trace_id)
             return True, cached
 
     # 2. 熔断检查
     if not _circuit_breaker.can_execute():
         logger.warning("熔断器断开，跳过 LLM 调用")
+        _trace('②', '熔断器状态=OPEN，跳过本次调用（连续失败达阈值后约 %ss 自动恢复）'
+               % getattr(_circuit_breaker, '_recovery_timeout', '?'), trace_id)
         return False, None
 
     # 3. 实际调用（带重试）
@@ -286,9 +321,12 @@ def call_llm_with_resilience(
                 _circuit_breaker.record_success()
                 return True, answer
             _circuit_breaker.record_failure()
+            _trace('⑦', '工具调用分支失败（ok=%s answer=%s）→ 记录一次熔断失败计数，当前状态=%s'
+                   % (ok, bool(answer), _circuit_breaker.state), trace_id)
             return False, None
         else:
-            ok, answer = _call_llm_with_retry(question, baby_context, history, model)
+            ok, answer = _call_llm_with_retry(question, baby_context, history, model,
+                                              trace_id=trace_id)
             if ok:
                 _circuit_breaker.record_success()
                 # 缓存结果
@@ -297,10 +335,14 @@ def call_llm_with_resilience(
                 return True, answer
             else:
                 _circuit_breaker.record_failure()
+                _trace('⑦', '重试后仍未成功 → 记录一次熔断失败计数，当前状态=%s'
+                       % _circuit_breaker.state, trace_id)
                 return False, None
     except Exception as e:
         _circuit_breaker.record_failure()
         logger.error("LLM 调用最终失败: %s", e)
+        _trace('✗', '韧性层异常中止 %s: %s → 熔断失败计数，当前状态=%s'
+               % (type(e).__name__, e, _circuit_breaker.state), trace_id)
         return False, None
 
 
@@ -311,22 +353,36 @@ def _call_llm_with_retry(
     baby_context: Optional[str] = None,
     history: Optional[list] = None,
     model: Optional[str] = None,
+    trace_id: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
     """内部：带重试的 LLM 调用（使用 ai_engine 的 call_llm）
 
     说明：call_llm 内部会自行捕获异常并返回 (False, None)，不会向外抛，
     因此这里在"未成功"时主动抛 LLMCallError，退避重试才真正生效。
     配置类失败（未选厂商 / 云端未同意外发）重试也没有意义，直接返回。
+
+    ⚠ 这两个"直接返回"以前是**完全静默**的（连一行日志都没有），
+    排查"配置看着没问题却不生效"时最容易卡在这里 —— 会话里的 LLM 配置
+    若没同步上（multiprocess 下各 worker 各有一份内存配置），
+    表现就是这里 provider 为空、悄无声息地退回规则引擎。
     """
     from ai_engine import call_llm, LLM
 
     provider = LLM.get('provider') or ''
     if not provider:
+        _trace('②', '重试层拦截：内存配置里 provider 为空 —— 本 worker 的 LLM 配置未同步'
+                     '（多进程下各 worker 各持一份内存配置，请确认已保存并成功应用）',
+               trace_id)
         return False, None
     if provider not in ('ollama', 'lmstudio') and not LLM.get('consent_cloud'):
+        _trace('②', '重试层拦截：provider=%s 云端厂商但 consent_cloud=False，不发无效调用' % provider,
+               trace_id)
         return False, None
 
-    ok, answer = call_llm(question, baby_context, history, model_override=model)
+    _trace('③', '重试层放行 → 进入 ai_engine.call_llm provider=%s model=%s'
+           % (provider, model or LLM.get('model') or '(默认)'), trace_id)
+    ok, answer = call_llm(question, baby_context, history, model_override=model,
+                          trace_id=trace_id)
     if not ok:
         raise LLMCallError('LLM 调用未成功')
     return True, answer

@@ -75,6 +75,14 @@ def _ensure_llm_applied():
             # configure_llm 认不了 dict 形态的自定义模型，这里单独补
             if disk_custom and LLM.get('custom_models') != disk_custom:
                 LLM['custom_models'] = dict(disk_custom)
+            try:
+                from ai_engine import llm_trace, _new_trace_id
+                llm_trace(_new_trace_id(), '①',
+                          '配置已同步到本 worker：provider=%s model=%s key明文=%d字符'
+                          % (LLM.get('provider'), LLM.get('model'),
+                             len(decrypt_api_key(LLM.get('api_key') or ''))))
+            except Exception:
+                pass
 
         # api_key 按明文比对（比密文没意义：每次加密的 IV 都不同，永远"不相等"）
         if mem_plain != disk_plain:
@@ -91,6 +99,13 @@ def _ensure_llm_applied():
                 return
     except Exception as e:
         logger.warning("_ensure_llm_applied 失败: %s", e)
+        # 以前这里只写日志、调用方毫无察觉：配置同步失败会直接导致
+        # "明明配好了却一直走规则引擎"，且失败原因藏在日志深处。
+        try:
+            from ai_engine import _set_last_llm_error
+            _set_last_llm_error('配置同步失败: %s: %s' % (type(e).__name__, e))
+        except Exception:
+            pass
 
 
 # ==================== AI 分析 API ====================
@@ -292,6 +307,21 @@ def ai_chat():
                               or PROVIDER_TEMPLATES.get(LLM.get('provider', ''), {}).get('default_model', '规则引擎'))
             else:
                 used_model = '规则引擎'
+
+            # ---- 本次 AI 问答的**结论行**：一次失败的所有关键事实汇总成一行 ----
+            # 排查「配好了却一直走规则引擎」时，只要 grep 这一行就够，
+            # 不用去把前面几跳的日志按 trace id 拼回来。
+            try:
+                from ai_engine import llm_trace, _new_trace_id
+                llm_trace(
+                    _new_trace_id(), '══ 本次问答结论',
+                    'provider=%s model_sel=%s llm_enabled=%s 实际用=%s%s'
+                    % (provider_now or '(空)', model_sel or '(跟随设置)',
+                       llm_enabled, used_model,
+                       ('｜回退原因：' + str(fallback_reason)[:200]) if fallback_reason else '')
+                )
+            except Exception:
+                pass
 
             return jsonify({
                 'success': True,
