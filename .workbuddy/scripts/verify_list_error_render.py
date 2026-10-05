@@ -41,7 +41,21 @@ CASES = [
     ('milestones', 'milestoneList', '成长记录加载失败', 'page'),
     ('health', 'temperatureList', '体温记录加载失败', 'health-tab:temperature'),
     ('health', 'growthTable', '生长数据加载失败', 'health-tab:growth'),
+    # ---- 报表页（2026-10-06 新增）----
+    # 🔴 这三页原先全是 `if (!res.success) return;` 静默失败，
+    #    而且切 tab 时上一 tab 的数字会残留（loadReportData 里没先清）。
+    #    提示统一落在 #reportSummaryCards —— canvas 画不了字，
+    #    落 reportStats 会让趋势图上方空着一块，语义也弱。
+    ('reports', 'reportSummaryCards', '加载失败', 'report:sleep'),
+    ('reports', 'reportSummaryCards', '加载失败', 'report:diaper'),
+    # ---- 作息节律页：失败提示落 #patternStats ----
+    ('pattern', 'patternStats', '节律数据加载失败', 'page'),
 ]
+
+# (page id, 容器 id, 期望文案, 触发方式)
+# trigger='page' 走 loadPageData；'health-tab' 走健康档案的 loadHealthTabData；
+# 'report:<tab>' 走 loadReportData(tab) —— 它不是 loadPageData 的一分支，
+# 必须显式调，否则报表页永远测不到（测了 5 个 case 全绿也不代表报表页没问题）。
 
 FAILURES = []
 
@@ -95,10 +109,14 @@ if (typeof App !== 'undefined' && App) { App.currentBaby = 1; }
 """
     open(js_path, 'w', encoding='utf-8').write(js)
 
-    # 健康档案的 Tab 不走 loadPageData，走 loadHealthTabData
-    fire = ("loadHealthTabData(%s);" % json.dumps(trigger.split(':', 1)[1])
-            if trigger.startswith('health-tab:')
-            else "loadPageData(%s);" % json.dumps(page))
+    # 健康档案的 Tab 不走 loadPageData，走 loadHealthTabData；
+    # 报表页也不走 loadPageData，走 loadReportData(tab)
+    if trigger.startswith('health-tab:'):
+        fire = "loadHealthTabData(%s);" % json.dumps(trigger.split(':', 1)[1])
+    elif trigger.startswith('report:'):
+        fire = "loadReportData(%s);" % json.dumps(trigger.split(':', 1)[1])
+    else:
+        fire = "loadPageData(%s);" % json.dumps(page)
     probe = """
 <script>
 window.addEventListener('load', function () {

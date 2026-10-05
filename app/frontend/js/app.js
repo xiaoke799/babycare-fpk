@@ -1644,8 +1644,19 @@ async function addFamilyMember() {
 }
 
 async function deleteFamilyMember(id) {
+    // 🔴 这里以前一句确认都没有：界面上只是个 `&times;` 小按钮，点一下直接删，
+    //    误点无法挽回。而其余 14 个删除入口都有 confirm（见 deleteTeethRecord 等）。
+    //    成员标签是「谁在照顾宝宝」这种身份信息，删错了看不出来还重建不了。
+    if (!confirm('确定要删除这个家庭成员标签吗？')) return;
     try {
-        await api('/api/settings/family-members/' + id, { method: 'DELETE' });
+        const res = await api('/api/settings/family-members/' + id, { method: 'DELETE' });
+        // ⚠ api() 失败时不一定抛异常（网络层才抛），只看 try/catch 会把
+        //   「删失败」当成「删成功了」——这里显式判 success。
+        if (res && res.success === false) {
+            showToast.error(res.message || '删除失败');
+            return;
+        }
+        showToast.success('已删除');
         await loadFamilyMembers(true);
         await renderFamilyMembers();
     } catch (e) {
@@ -8106,7 +8117,12 @@ function removeCustomModel(modelName, providerId) {
         if (opt) opt.remove();
     }
 
-    showToast('已移除: ' + modelName);
+    // ⚠ 这里**故意不加 confirm**：它只从当前页面状态移除（内存数组 + 下拉框），
+    //   没调 DELETE 接口，刷新页面就恢复得出来——所以它不属于 D6 判据里
+    //   "会丢数据"的那一类（对比 removeBatchRow 只删未提交的行）。
+    //   真正的缺口是**文案误导**：原来只说「已移除」，用户会以为配置真被删了，
+    //   刷新后模型又出现 ⇒ 像是出了 bug。改成说清它是临时移除。
+    showToast('已从列表移除: ' + modelName + '（刷新后需在配置中重新保存才会真正删除）');
 }
 
 function initCustomModelEvents() {
@@ -12317,16 +12333,35 @@ function deleteFontanelle(id) {
 function loadPatternData() {
     if (!App.currentBaby) return;
     api(`/api/babies/${App.currentBaby}/pattern/${currentPatternType}?days=7`).then(res => {
-        if (!res.success) return;
-        const data = res.data;
+        if (!res.success) {
+            renderPatternError(res.message);
+            return;
+        }
+        // ⚠ 后端永远返回 24 条（0~23 时段），没记录时是 24 个 0。
+        // 不判全零的话，页面会在完全没数据的情况下输出
+        // 「宝宝喂奶节律良好，白天喂奶充足」+「高峰时段 0:00」——
+        // 这是凭空编结论，比显示空白危险得多。
+        const data = res.data || [];
+        const hasData = currentPatternType === 'feeding'
+            ? data.some(d => (Number(d.count) || 0) > 0 || (Number(d.amount) || 0) > 0)
+            : data.some(d => (Number(d.total) || 0) > 0);
+        if (!hasData) {
+            renderPatternEmpty();
+            return;
+        }
 
         if (currentPatternType === 'feeding') {
             // 统计
-            const totalCount = data.reduce((s, d) => s + d.count, 0);
-            const peak = data.reduce((max, d) => d.count > max.count ? d : max, data[0]);
-            const totalAmount = data.reduce((s, d) => s + d.amount, 0);
+            const totalCount = data.reduce((s, d) => s + (Number(d.count) || 0), 0);
+            // ⚠ 高峰时段不能直接取 data[0] 兜底：全0 时会得到「高峰 0:00」。
+            // 这里虽已由 hasData 挡住零值，仍按 count 取真峰值，语义才对。
+            const peak = data.reduce((max, d) =>
+                (Number(d.count) || 0) > (Number(max.count) || 0) ? d : max, data[0]);
+            const totalAmount = data.reduce((s, d) => s + (Number(d.amount) || 0), 0);
 
-            document.getElementById('patternStats').innerHTML = `
+            const statsEl = document.getElementById('patternStats');
+            if (statsEl) {
+                statsEl.innerHTML = `
                 <div class="pattern-stat-card">
                     <span class="pattern-stat-value">${totalCount.toFixed(0)}</span>
                     <span class="pattern-stat-label">7天喂奶次数</span>
@@ -12344,29 +12379,42 @@ function loadPatternData() {
                     <span class="pattern-stat-label">日均奶量</span>
                 </div>
             `;
+            }
 
             drawFeedingPattern(data);
 
             // 分析
-            const nightFeeds = data.slice(0, 6).reduce((s, d) => s + d.count, 0);
-            const dayFeeds = data.slice(6, 20).reduce((s, d) => s + d.count, 0);
+            const nightFeeds = data.slice(0, 6).reduce((s, d) => s + (Number(d.count) || 0), 0);
+            const dayFeeds = data.slice(6, 20).reduce((s, d) => s + (Number(d.count) || 0), 0);
+            // ⚠ 只有寥寥几次记录时算「节律良好」是伪结论 —— 3次和300 次
+            // 的分布都可能被判成良好。低于 7 天×2 次就明说样本不足。
+            const sampleTooSmall = totalCount < 14;
             const insight = nightFeeds > dayFeeds * 0.3
                 ? '您的宝宝夜间喂奶较频繁，可尝试逐渐减少夜奶次数。'
-                : '宝宝喂奶节律良好，白天喂奶充足。';
+                : (sampleTooSmall
+                    ? '宝宝白天喂奶相对集中，但记录次数还偏少，'
+                      + `目前 7 天共 ${totalCount.toFixed(0)} 次，多记几天判断更准。`
+                    : '宝宝喂奶节律良好，白天喂奶充足。');
 
-            document.getElementById('patternInsight').innerHTML = `
+            const insightEl = document.getElementById('patternInsight');
+            if (insightEl) {
+                insightEl.innerHTML = `
                 <strong> 喂养节律分析</strong><br>
                 ${insight}<br>
                 每日平均喂奶 ${(totalCount / 7).toFixed(1)} 次，总奶量 ${totalAmount.toFixed(0)}ml。
                 高峰时段集中在 ${peak.hour}:00 左右。`;
+            }
 
         } else if (currentPatternType === 'sleep') {
-            const totalSleep = data.reduce((s, d) => s + d.total, 0);
-            const totalNap = data.reduce((s, d) => s + d.nap, 0);
-            const totalNight = data.reduce((s, d) => s + d.night, 0);
-            const peak = data.reduce((max, d) => d.total > max.total ? d : max, data[0]);
+            const totalSleep = data.reduce((s, d) => s + (Number(d.total) || 0), 0);
+            const totalNap = data.reduce((s, d) => s + (Number(d.nap) || 0), 0);
+            const totalNight = data.reduce((s, d) => s + (Number(d.night) || 0), 0);
+            const peak = data.reduce((max, d) =>
+                (Number(d.total) || 0) > (Number(max.total) || 0) ? d : max, data[0]);
 
-            document.getElementById('patternStats').innerHTML = `
+            const sleepStatsEl = document.getElementById('patternStats');
+            if (sleepStatsEl) {
+                sleepStatsEl.innerHTML = `
                 <div class="pattern-stat-card">
                     <span class="pattern-stat-value">${(totalSleep / 7 / 60).toFixed(1)}h</span>
                     <span class="pattern-stat-label">日均睡眠</span>
@@ -12384,20 +12432,73 @@ function loadPatternData() {
                     <span class="pattern-stat-label">睡眠高峰</span>
                 </div>
             `;
+            }
 
             drawSleepPattern(data);
 
+            const sampleTooSmall = totalSleep < 14 * 60;
             const insight = totalNap > totalNight
                 ? '宝宝白天睡眠较多，可适当增加白天活动量。'
-                : '宝宝睡眠分布合理，夜间睡眠充足。';
+                : (sampleTooSmall
+                    ? '目前 7 天睡眠记录偏少，分布仅供参考，建议继续记录后再判断。'
+                    : '宝宝睡眠分布合理，夜间睡眠充足。');
 
-            document.getElementById('patternInsight').innerHTML = `
+            const sleepInsightEl = document.getElementById('patternInsight');
+            if (sleepInsightEl) {
+                sleepInsightEl.innerHTML = `
                 <strong> 睡眠节律分析</strong><br>
                 ${insight}<br>
                 每日平均睡眠 ${(totalSleep / 7 / 60).toFixed(1)} 小时，
                 夜间 ${(totalNight / 7 / 60).toFixed(1)} 小时，小憩 ${(totalNap / 7 / 60).toFixed(1)} 小时。`;
+            }
         }
+    }).catch(err => {
+        renderPatternError('加载失败，请重试');
+        console.error('加载节律数据失败:', err);
     });
+}
+
+/**
+ * 节律页空态。后端恒返回 24 个时段，没记录时全 0 —— 若照常渲染，
+ * 会显示「高峰时段 0:00」并给出「节律良好」的结论。
+ * canvas 画不了字，提示落到 patternStats 区域。
+ */
+function renderPatternEmpty() {
+    const stats = document.getElementById('patternStats');
+    const insight = document.getElementById('patternInsight');
+    const label = currentPatternType === 'sleep' ? '睡眠' : '喂养';
+    if (stats) {
+        // ⚠ 无数据不是错误，别套error-tip（红色）：那是「加载失败」的样式，
+        // 用户看到红色会以为坏了要重装。
+        stats.innerHTML =
+            `<p class="empty-tip">最近 7 天没有${label}记录，` +
+            `补充几次后这里会显示节律分析</p>`;
+    }
+    if (insight) {
+        insight.innerHTML =
+            '<strong> 节律分析</strong><br>暂无可分析的数据。' +
+            `记录 ${label} 满2 天以上，结论才有参考意义。`;
+    }
+    clearPatternChart();
+}
+
+/** 节律页加载失败。同样要擦图，否则旧图留在页面上冒充当前结论。 */
+function renderPatternError(msg) {
+    const stats = document.getElementById('patternStats');
+    const insight = document.getElementById('patternInsight');
+    if (stats) {
+        renderListError(stats, (msg ? msg + '，' : '') + '节律数据加载失败，请重试');
+    }
+    if (insight) insight.innerHTML = '';
+    clearPatternChart();
+}
+
+function clearPatternChart() {
+    const canvas = document.getElementById('patternCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
 function drawFeedingPattern(data) {
@@ -17983,6 +18084,13 @@ function loadReportData(tab) {
     const startStr = formatDate(startDate);
     const endStr = formatDate(endDate);
 
+    // ⚠ 切 tab 时必须先把上一 tab 的残留清掉。否则上一个 tab 是「有数据」、
+    // 下一个 tab 加载失败或无数据，用户会盯着上一次的数字以为这就是当前的结论
+    //（切到 diaper 恰好无数据时 renderStats 根本不会被调用，残留最久）。
+    renderSummaryCards([]);
+    renderStats([]);
+    clearReportChart();
+    
     switch (tab) {
         case 'sleep':
             loadSleepReport(startStr, endStr);
@@ -18001,12 +18109,26 @@ function loadReportData(tab) {
 
 function loadSleepReport(startStr, endStr) {
     api(`/api/babies/${App.currentBaby}/sleep?start=${startStr}&end=${endStr}`).then(res => {
-        if (!res.success) return;
-        const records = res.data;
+        if (!res.success) {
+            renderReportError(res.message);
+            return;
+        }
+        const records = res.data || [];
         
-        // 汇总卡片
-        const totalSleep = records.reduce((sum, r) => sum + (r.duration_minutes || 0), 0);
-        const avgSleep = records.length > 0 ? totalSleep / records.length : 0;
+        if (records.length === 0) {
+            renderReportEmpty(`最近 30 天没有睡眠记录`);
+            return;
+        }
+
+        // 只统计有效时长。⚠ duration_minutes 可能是负数（结束早于开始的脏数据），
+        // 混进统计会得到「总睡眠 -20h」这种结论。直接滤掉，别算进平均。
+        const durations = records
+            .map(r => Number(r.duration_minutes) || 0)
+            .filter(d => d > 0);
+        const validRecords = records.filter(r => (Number(r.duration_minutes) || 0) > 0);
+        
+        const totalSleep = durations.reduce((sum, d) => sum + d, 0);
+        const avgSleep = durations.length > 0 ? totalSleep / durations.length : 0;
         const totalHours = (totalSleep / 60).toFixed(1);
         
         renderSummaryCards([
@@ -18018,24 +18140,42 @@ function loadSleepReport(startStr, endStr) {
         // 绘制趋势图
         drawSleepTrendChart(records, startStr, endStr);
         
-        // 统计信息
+        // ⚠ Math.min 的兜底值不能是 0：Math.min(...正数, 0) 恒等于 0，
+        // 「最短睡眠」就永远显示 0 分钟了（看着像 bug，其实是真错）。
+        // 用 Infinity 兜底，空数组单独判掉。
         renderStats([
-{ label: '最长睡眠', value: Math.max(...records.map(r => r.duration_minutes || 0), 0) + ' 分钟' },
-{ label: '最短睡眠', value: Math.min(...records.map(r => r.duration_minutes || 9999), 0) + ' 分钟' },
-            { label: '夜醒次数', value: '暂无数据' },
+{ label: '最长睡眠', value: durations.length ? Math.max(...durations) + ' 分钟' : '-' },
+{ label: '最短睡眠', value: durations.length ? Math.min(...durations) + ' 分钟' : '-' },
+{ label: '夜醒次数', value: '暂无数据' },
         ]);
+        if (validRecords.length < records.length) {
+            showToast(`${records.length - validRecords.length} 条记录时长异常，未计入统计`);
+        }
+    }).catch(err => {
+        renderReportError('睡眠报表加载失败');
+        console.error('加载睡眠报表失败:', err);
     });
 }
 
 function loadFeedingReport(startStr, endStr) {
     api(`/api/babies/${App.currentBaby}/feedings?start=${startStr}&end=${endStr}`).then(res => {
-        if (!res.success) return;
-        const records = res.data;
+        if (!res.success) {
+            renderReportError(res.message);
+            return;
+        }
+        const records = res.data || [];
         
-        const totalAmount = records.reduce((sum, r) => sum + (r.amount || 0), 0);
-        const breastCount = records.filter(r => r.type === 'breast').length;
-        const bottleCount = records.filter(r => r.type === 'bottle').length;
-        const solidsCount = records.filter(r => r.type === 'solids').length;
+        if (records.length === 0) {
+            renderReportEmpty('最近 30 天没有喂养记录');
+            return;
+        }
+        
+        // ⚠ 分类字段是 feeding_type，不是 type。用 r.type 过滤恒为 0 次，
+        // 界面上「母乳次数 0 次」看起来像真结论，其实是没读到字段。
+        const breastCount = records.filter(r => r.feeding_type === 'breast').length;
+        const bottleCount = records.filter(r => r.feeding_type === 'bottle').length;
+        const solidsCount = records.filter(r => r.feeding_type === 'solids').length;
+        const totalAmount = records.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
         
         renderSummaryCards([
             { value: records.length + '次', label: '喂养次数' },
@@ -18051,16 +18191,29 @@ function loadFeedingReport(startStr, endStr) {
             { label: '辅食次数', value: solidsCount + ' 次' },
             { label: '平均每次', value: records.length > 0 ? Math.round(totalAmount / records.length) + ' ml' : '0 ml' },
         ]);
+    }).catch(err => {
+        renderReportError('喂养报表加载失败');
+        console.error('加载喂养报表失败:', err);
     });
 }
 
 function loadDiaperReport(startStr, endStr) {
     api(`/api/babies/${App.currentBaby}/diapers?start=${startStr}&end=${endStr}`).then(res => {
-        if (!res.success) return;
-        const records = res.data;
+        if (!res.success) {
+            renderReportError(res.message);
+            return;
+        }
+        const records = res.data || [];
         
-        const wetCount = records.filter(r => r.type === 'wet' || r.type === 'both').length;
-        const dirtyCount = records.filter(r => r.type === 'dirty' || r.type === 'both').length;
+        if (records.length === 0) {
+            renderReportEmpty('最近 30 天没有换尿布记录');
+            return;
+        }
+        
+        // ⚠ 字段是 change_time / diaper_type，不是 time / type。
+        // 用错字段时 new Date(undefined) 是 NaN，排序不变、平均间隔算出 NaN 分钟。
+        const wetCount = records.filter(r => r.diaper_type === 'wet' || r.diaper_type === 'both').length;
+        const dirtyCount = records.filter(r => r.diaper_type === 'dirty' || r.diaper_type === 'both').length;
         
         renderSummaryCards([
             { value: records.length + '次', label: '更换次数' },
@@ -18071,43 +18224,63 @@ function loadDiaperReport(startStr, endStr) {
         drawDiaperTrendChart(records, startStr, endStr);
         
         // 计算平均间隔
-        if (records.length > 1) {
-            const sorted = records.sort((a, b) => new Date(a.time) - new Date(b.time));
+        const times = records
+            .map(r => new Date(String(r.change_time || '').replace(' ', 'T')).getTime())
+            .filter(t => !isNaN(t))
+            .sort((a, b) => a - b);
+        if (times.length > 1) {
             let totalInterval = 0;
-            for (let i = 1; i < sorted.length; i++) {
-                totalInterval += (new Date(sorted[i].time) - new Date(sorted[i-1].time)) / (1000 * 60);
+            for (let i = 1; i < times.length; i++) {
+                totalInterval += (times[i] - times[i-1]) / (1000 * 60);
             }
-            const avgInterval = totalInterval / (sorted.length - 1);
+            const avgInterval = totalInterval / (times.length - 1);
             renderStats([
                 { label: '平均间隔', value: avgInterval.toFixed(0) + ' 分钟' },
                 { label: '每天平均', value: (records.length / 30).toFixed(1) + ' 次' },
             ]);
+        } else {
+            // ⚠ 只有 0~1 条时 renderStats 压根不会被调，页面上留着上一个 tab 的数字
+            renderStats([
+                { label: '平均间隔', value: '记录不足，无法计算' },
+                { label: '每天平均', value: (records.length / 30).toFixed(1) + ' 次' },
+            ]);
         }
+    }).catch(err => {
+        renderReportError('尿布报表加载失败');
+        console.error('加载尿布报表失败:', err);
     });
 }
 
 function loadGrowthReport() {
     api(`/api/babies/${App.currentBaby}/growth`).then(res => {
-        if (!res.success) return;
-        const records = res.data;
+        if (!res.success) {
+            renderReportError(res.message);
+            return;
+        }
+        const records = res.data || [];
         
         if (records.length === 0) {
-            renderSummaryCards([
-                { value: '0', label: '记录数' },
-                { value: '-', label: '身高' },
-                { value: '-', label: '体重' },
-            ]);
+            renderReportEmpty('还没有生长记录');
             return;
         }
 
-        const latest = records[0];
-        const previous = records.length > 1 ? records[1] : null;
-        const heightGrowth = previous ? (latest.height - previous.height).toFixed(1) : '-';
-        const weightGrowth = previous ? (latest.weight - previous.weight).toFixed(1) : '-';
+        // ⚠ 只留有身高或体重的那条，否则latest.height 是 undefined，
+        // 卡片上会出现「undefinedcm」。
+        const usable = records.filter(r => r.height != null || r.weight != null);
+        if (usable.length === 0) {
+            renderReportEmpty('生长记录缺少身高体重数据');
+            return;
+        }
+        const latest = usable[0];
+        const previous = usable.length > 1 ? usable[1] : null;
+        const heightGrowth = previous && latest.height != null && previous.height != null
+            ? (latest.height - previous.height).toFixed(1) : '-';
+        const weightGrowth = previous && latest.weight != null && previous.weight != null
+            ? (latest.weight - previous.weight).toFixed(1) : '-';
         
         renderSummaryCards([
-            { value: latest.height + 'cm', label: '最新身高' },
-            { value: latest.weight + 'kg', label: '最新体重' },
+            { value: latest.height != null ? latest.height + 'cm' : '-', label: '最新身高' },
+            { value: latest.weight != null ? latest.weight + 'kg' : '-', label: '最新体重' },
             { value: records.length + '次', label: '记录次数' },
         ]);
 
@@ -18118,18 +18291,67 @@ function loadGrowthReport() {
             { label: '体重变化', value: (weightGrowth !== '-' ? '+'+weightGrowth+'kg' : '-') },
             { label: 'BMI', value: latest.bmi || '-' },
         ]);
+    }).catch(err => {
+        renderReportError('生长报表加载失败');
+        console.error('加载生长报表失败:', err);
     });
+}
+
+/**
+ * 取一条记录的日期键（YYYY-MM-DD），用来给趋势图按天聚合。
+ * ⚠ 各表的时间列名不统一：sleep/feeding 是 start_time，diaper 是 change_time。
+ * 库里是 'YYYY-MM-DD HH:MM' 或 'YYYY-MM-DDTHH:MM'（T 版要换掉）。
+ * 返回空串表示这条记录没有可用日期，调用方应当跳过。
+ */
+function recordDateKey(r) {
+    if (!r) return '';
+    const raw = r.start_time || r.change_time || r.record_date || r.record_time || r.date || '';
+    if (!raw) return '';
+    // 'YYYY-MM-DDTHH:MM' → 取 'YYYY-MM-DD'；直接 split('T') 也能覆盖带空格的
+    return String(raw).trim().replace('T', ' ').slice(0, 10);
 }
 
 function renderSummaryCards(cards) {
     const container = document.getElementById('reportSummaryCards');
     if (!container) return;
+    if (!cards || cards.length === 0) { container.innerHTML = ''; return; }
     container.innerHTML = cards.map(c => `
         <div class="report-summary-card">
             <div class="report-summary-value">${c.value}</div>
             <div class="report-summary-label">${c.label}</div>
         </div>
     `).join('');
+}
+
+/**
+ * 报表页的空态。⚠ 必须和「加载失败」区分开：
+ * 失败时留白或沿用旧数字，用户会以为「这 30 天确实没记录」，而真相是接口挂了。
+ */
+function renderReportEmpty(msg) {
+    renderSummaryCards([]);
+    renderStats([]);
+    renderListError(document.getElementById('reportSummaryCards'), msg || '暂无数据');
+}
+
+/**
+ * 报表页的加载失败提示。落点选reportSummaryCards（canvas 画不了字），
+ * 同时把 canvas 擦掉 —— 否则旧图还在，「图有、数据是新页的」会误导。
+ */
+function renderReportError(msg) {
+    renderSummaryCards([]);
+    renderStats([]);
+    renderListError(document.getElementById('reportSummaryCards'),
+        (msg ? msg + '，' : '') + '加载失败，请重试');
+    clearReportChart();
+}
+
+/** 擦掉报表趋势图。切 tab / 空态 / 失败都要调，否则上一张图会留在页面上冒充当前结论。 */
+function clearReportChart() {
+    const canvas = document.getElementById('reportChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
 function renderStats(stats) {
@@ -18166,15 +18388,22 @@ function drawSleepTrendChart(records, startStr, endStr) {
     const chartH = height - padding.top - padding.bottom;
 
     // 按日期分组
+    // ⚠ 字段名必须对上真实列：sleep_records 是 start_time / duration_minutes，
+    // 没有 start_date / duration。用 r.duration || 0 的话每天都是 0，
+    // 趋势图会画成一条贴底的平线，却顶着「睡眠时长趋势」的标题。
     const dailyData = {};
     records.forEach(r => {
-        const date = r.start_date || r.start_time?.split(' ')[0];
+        const date = recordDateKey(r);
         if (!date) return;
-        dailyData[date] = (dailyData[date] || 0) + (r.duration || 0);
+        const minutes = Number(r.duration_minutes) || 0;
+        // 负数（结束早于开始的脏数据）不画成向下的柱，先滤掉
+        dailyData[date] = (dailyData[date] || 0) + (minutes > 0 ? minutes : 0);
     });
 
     const dates = Object.keys(dailyData).sort();
-    if (dates.length === 0) {
+    if (dates.length === 0 || dates.every(d => !dailyData[d])) {
+        // ⚠ 不只是「没记录」：有记录但时长全是 0/负数时也一样。
+        // 只判 length === 0 的话，有数据的页面会画出一条贴底平线冒充趋势。
         ctx.fillStyle = '#999';
         ctx.font = '14px sans-serif';
         ctx.textAlign = 'center';
@@ -18253,9 +18482,10 @@ function drawFeedingTrendChart(records, startStr, endStr) {
     // 按日期分组
     const dailyData = {};
     records.forEach(r => {
-        const date = r.start_date || r.time?.split(' ')[0];
+        // ⚠ feeding_records 的时间列是 start_time，没有 start_date / time
+        const date = recordDateKey(r);
         if (!date) return;
-        dailyData[date] = (dailyData[date] || 0) + (r.amount || 0);
+        dailyData[date] = (dailyData[date] || 0) + (Number(r.amount) || 0);
     });
 
     const dates = Object.keys(dailyData).sort();
@@ -18330,7 +18560,10 @@ function drawDiaperTrendChart(records, startStr, endStr) {
 
     const dailyData = {};
     records.forEach(r => {
-        const date = r.time?.split(' ')[0] || r.start_date;
+        // ⚠ diaper_records 的时间列是 change_time，没有 time / start_date。
+        // 原先写 r.time?.split(...) 时 dailyData 恒空，函数第二行就 return 了——
+        // 「每日排泄次数」这张图从来没画出来过，但页面看不出任何异常。
+        const date = recordDateKey(r);
         if (!date) return;
         dailyData[date] = (dailyData[date] || 0) + 1;
     });
