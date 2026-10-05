@@ -1,5 +1,5 @@
 appname=babycare-fpk
-version=0.0.1
+version=0.0.2
 display_name=育儿宝
 desc=<p><b>育儿宝 BabyCare</b> · 飞牛 fnOS 本地优先育儿记录应用<br>数据全部留在你自己的 NAS 里，不上传任何第三方云端</p><p><b>简体中文</b><br>多宝宝一键切换<br>喂奶 · 睡眠 · 尿布 · 辅食随手记<br>WHO 生长曲线 · 身高体重头围百分位 · BMI<br>成长里程碑 · 发育飞跃期 · ASQ 筛查结果登记<br>疫苗 · 用药 / 体检提醒 · 体温 · 体检 · 看诊摘要<br>育儿日记 · 成长对比照片 · 育儿知识库<br>AI 育儿问答（本地规则引擎 + 可选大模型）<br>数据导出导入 · 自动备份</p><p><b>English</b><br>BabyCare is a local-first parenting tracker for your fnOS NAS — all data stays on your device, never uploaded to any third-party cloud<br>Multi-baby profiles<br>Feeding, sleep, diaper and solids logging<br>WHO growth curves · Height / weight / head percentiles · BMI<br>Milestones · Developmental leaps · ASQ result entry<br>Vaccines · Medication / checkup reminders · Temperature · Checkups · Clinic summary<br>Diary · Growth photos · Knowledge base<br>AI assistant (on-device rule engine + optional LLM)<br>Data export / import · Auto backup</p><p><b>隐私 Privacy</b><br>默认全部本地处理。AI 可接本地 Ollama，也可接 OpenAI 兼容接口（联网模式下宝宝数据会发往对应服务商，详见隐私政策）。</p><p>项目主页 / Project · https://github.com/xiaoke799/babycare-fpk</p>
 source=thirdparty
@@ -16,5 +16,5 @@ ctl_stop=true
 run_as=package
 disable_authorization_path=false
 category=utilities
-changelog=v0.0.1 - 版本管理起点（git tag v0.0.1）：综合育儿应用，含成长记录、WHO 生长曲线、喂养/睡眠/尿布/疫苗/健康档案、AI 助手（本地规则引擎 + 云端大模型）、知识库、备份导出。后续开发节点：删除安全码、宝宝资料编辑、含相册 ZIP 备份、fnOS 共享目录导出/恢复、Home Assistant 集成与 API Token。
+changelog=v0.0.2 - 内容合规与写入收口。清理知识库与百科里全部具体用药剂量和医疗建议，新增按宝宝月龄聚合的「本月育儿要点」页（发育特点·疫苗·能玩·能吃·常见疑问·安全排查·预警信号·急救），健康档案页顶常驻「只作记录、不能代替医生诊断」提示。修复提醒调度器静默失效（此前所有喂养/睡眠/尿布/疫苗/用药/体检提醒一条都不会发）、数据库迁移失败静默掐断、webhook 限流可被伪造 X-Forwarded-For 绕过、健康档案改指标会丢失指标归属等问题，各记录写入端统一时间格式并清洗历史脏数据。
 checksum=
