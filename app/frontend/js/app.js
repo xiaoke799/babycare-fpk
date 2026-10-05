@@ -368,9 +368,9 @@ function initMascot() {
             '宝宝的一点小进步都是大成就',
             '育儿没有标准答案，你和宝宝最棒'
         ],
-        longGap: [   // 距上次喂奶较长时
-            '宝宝好像有一阵子没吃奶了，留意下饥饿信号哦',
-            '距离上次喂奶有点久了，看看宝宝要不要吃奶～',
+        longGap: [   // 距上次喂奶较长时（{h} 会被替换成实际间隔小时数）
+            '宝宝好像已经 {h} 小时没吃奶了，留意下饥饿信号哦',
+            '距离上次喂奶已经 {h} 小时啦，看看宝宝要不要吃奶～',
             '该喂奶了吗？小萌帮你记着呢'
         ],
         noRecord: [  // 今天还没任何记录
@@ -397,6 +397,32 @@ function initMascot() {
     let mascotSnapshot = null;
     let mascotSnapshotAt = 0;
     const SNAPSHOT_DAYS = 7;
+    // 库内时间 'YYYY-MM-DD HH:MM:SS'：空格直接 new Date 在 Safari/部分 WebView 返回 NaN，
+    // 换成 'T'（ISO 本地时间）后各内核都支持。
+    function parseTs(s) {
+        const str = String(s || '').trim();
+        if (!str) return null;
+        const d = new Date(str.includes('T') ? str : str.replace(' ', 'T'));
+        return isNaN(d.getTime()) ? null : d;
+    }
+    // 距上次喂奶的分钟数（无记录返回 null）
+    function feedGapMin(snap) {
+        if (!snap || !snap.lastFeedAt) return null;
+        return Math.max(0, Math.round((Date.now() - snap.lastFeedAt.getTime()) / 60000));
+    }
+    // 间隔提醒阈值：优先用宝宝自己的节奏（近 7 天平均间隔 × 1.5），兜底 3 小时。
+    // 只做「比平时晚了不少」的事实陈述 + 温和提醒，不写医学建议（合规铁律）。
+    function feedGapThresholdMin(snap) {
+        if (snap && snap.avgFeedGapMin && snap.avgFeedGapMin > 0) {
+            return Math.max(Math.round(snap.avgFeedGapMin * 1.5), 150);
+        }
+        return 180;
+    }
+    // longGap 文案：把 {h} 替换成实际间隔小时数（不满 1 小时按 1 算，避免出现"0 小时"）
+    function longGapWords(gapMin) {
+        const h = Math.max(1, Math.floor(gapMin / 60));
+        return warmWords.longGap.map(t => t.replace('{h}', h));
+    }
     async function refreshMascotSnapshot() {
         const baby = App.babies?.find(b => b.id === App.currentBaby);
         if (!baby) { mascotSnapshot = null; return; }
@@ -421,6 +447,20 @@ function initMascot() {
         const todayFed = feeding.today || {};
         let feedCount = 0, feedAmount = 0;
         Object.keys(todayFed).forEach(k => { feedCount += todayFed[k].count || 0; feedAmount += todayFed[k].amount || 0; });
+
+        // 喂奶间隔数据（驱动 longGap 提醒）：最近一次喂奶时间 + 近 7 天平均间隔。
+        // ⚠ 浏览器解析 'YYYY-MM-DD HH:MM:SS' 在 Safari/部分 WebView 会 NaN，
+        //   统一先把空格换成 'T' 再 new Date（ISO 本地时间全内核支持）。
+        const feedTimes = feedWeek
+            .map(r => parseTs(r.start_time || r.feed_time || r.created_at))
+            .filter(t => t && !isNaN(t.getTime()))
+            .sort((a, b) => a - b);
+        let avgFeedGapMin = null;
+        if (feedTimes.length >= 2) {
+            let totalGap = 0;
+            for (let i = 1; i < feedTimes.length; i++) totalGap += feedTimes[i] - feedTimes[i - 1];
+            avgFeedGapMin = Math.round((totalGap / (feedTimes.length - 1)) / 60000);
+        }
         mascotSnapshot = {
             baby, today, days: SNAPSHOT_DAYS,
             // 任一请求失败就标记出来：否则会把"没拉到"误报成"没有记录"
@@ -428,6 +468,8 @@ function initMascot() {
             feeding, feedCount, feedAmount,
             feedWeek, feedWeekCount: feedWeek.length,
             feedWeekAmount: feedWeek.reduce((s, r) => s + (r.amount || 0), 0),
+            lastFeedAt: feedTimes.length ? feedTimes[feedTimes.length - 1] : null,
+            avgFeedGapMin,
             sleeps, sleepMinToday: sleeps.reduce((s, r) => s + (r.duration_minutes || 0), 0),
             sleepsWeek, sleepMinWeek: sleepsWeek.reduce((s, r) => s + (r.duration_minutes || 0), 0),
             diapers, diapersWeek,
@@ -449,6 +491,11 @@ function initMascot() {
         const period = getTimePeriod();
         const pool = [];
         if (snap) {
+            // 距上次喂奶超过宝宝自己的节奏（平均间隔×1.5，兜底 3h）→ 优先给喂养提醒
+            const gap = feedGapMin(snap);
+            if (gap !== null && gap > feedGapThresholdMin(snap) && period !== 'night') {
+                pool.push(...longGapWords(gap));
+            }
             if (snap.feedCount === 0 && period !== 'night') pool.push(...warmWords.noRecord);
             if (period === 'night') pool.push(...warmWords.sleepNight);
         }
@@ -464,6 +511,8 @@ function initMascot() {
         // 文案必须与 QUERY_CARDS 里的卡片标题一一对应，不要再出现"写着7天、只给今天"的情况。
         const queries = [
             '查询今日概览',
+            '查询今日喂养',
+            '查询今日睡眠',
             '查询近7天喂养',
             '查询近7天睡眠',
             '查询尿布情况',
@@ -492,6 +541,16 @@ function initMascot() {
     function setMascotState(state) {
         avatar.parentElement.classList.remove('happy', 'thinking', 'alert');
         if (state) avatar.parentElement.classList.add(state);
+    }
+
+    // ---- 提醒红点：有 alert 级主动提醒而聊天面板未打开时亮起，打开聊天即清除 ----
+    function showMascotDot() {
+        const dot = document.getElementById('xiaomengDot');
+        if (dot) dot.classList.add('show');
+    }
+    function clearMascotDot() {
+        const dot = document.getElementById('xiaomengDot');
+        if (dot) dot.classList.remove('show');
     }
 
     function popBubble(text, state) {
@@ -710,6 +769,7 @@ function initMascot() {
     function openChat() {
         chat.classList.add('show');
         setTimeout(() => chatInput.focus(), 50);
+        clearMascotDot();
         loadChatHistory();
         renderQuickQuestions();
         // 每次打开刷新快照（帮助问候 + 卡片都是最新数据）
@@ -968,7 +1028,16 @@ function initMascot() {
                     data.history.forEach(msg => {
                         const el = document.createElement('div');
                         el.className = `chat-msg ${msg.role === 'user' ? 'user' : 'bot'}`;
-                        el.textContent = msg.content;
+                        if (msg.role === 'user') {
+                            el.textContent = msg.content;
+                        } else {
+                            // 历史里的 bot 消息与实时回复同一套渲染（**加粗**/换行），
+                            // 原先 textContent 纯文本会把样式符号原样露出来
+                            const body = document.createElement('div');
+                            body.className = 'chat-msg-body';
+                            body.innerHTML = renderBotText(msg.content);
+                            el.appendChild(body);
+                        }
                         chatBody.appendChild(el);
                     });
                     renderQuickQuestions();
@@ -980,10 +1049,12 @@ function initMascot() {
 
     // ---- 主动关怀定时器 ----
     // 每 60 秒补一次数据快照；每 180 秒基于真实状态决定是否给一条提醒：
+    //    - 距上次喂奶超过宝宝自己的节奏（优先级最高，同一间隔周期只提醒一次）
     //    - 今天还没记录（10 点后）→ 提醒记录
     //    - 夜间活跃（22 点后）→ 提醒休息
     //    - 其他 → 小概率随机暖心问候，避免骚扰
     let careTicker = 0;
+    let lastGapRemindKey = '';   // 去重：同一次「超时间隔」只主动弹一次，喂过奶（lastFeedAt 变化）才重新计
     setInterval(() => {
         // 每次都补快照，保证卡片和问候基于最新数据
         if (mascotSnapshot && snapshotAgeMs() > 45 * 1000) refreshMascotSnapshot().catch(() => {});
@@ -992,7 +1063,16 @@ function initMascot() {
             const snap = mascotSnapshot;
             const period = getTimePeriod();
             const h = new Date().getHours();
-            if (snap && snap.feedCount === 0 && h >= 10 && period !== 'night') {
+            const gap = feedGapMin(snap);
+            if (gap !== null && gap > feedGapThresholdMin(snap) && period !== 'night' && h >= 6) {
+                const key = String(snap.lastFeedAt.getTime());
+                if (lastGapRemindKey !== key) {
+                    lastGapRemindKey = key;
+                    const words = longGapWords(gap);
+                    popBubble(words[Math.floor(Math.random() * words.length)], 'alert');
+                    showMascotDot();
+                }
+            } else if (snap && snap.feedCount === 0 && h >= 10 && period !== 'night') {
                 getContextualWarmWord().then(t => popBubble(t, 'alert')).catch(() => {});
             } else if (period === 'night' && h >= 22 && Math.random() < 0.5) {
                 popBubble(warmWords.sleepNight[Math.floor(Math.random() * warmWords.sleepNight.length)] || pickWarmWord(), 'alert');
@@ -1059,6 +1139,26 @@ function formatDateTime(datetime) {
     const d = parseDateSafe(datetime);
     if (!d) return String(datetime).slice(0, 16);   // 解析不了就原样展示，别显示 Invalid Date
     return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * 记录时间 → 「今天 14:30」「昨天 09:00」「9月12日 10:00」「2025年12月3日 10:00」。
+ *
+ * 为什么不直接用 formatDateTime：它不带年份。换尿布/喂奶/睡眠/趴睡这些记录会攒好几年，
+ * 翻到去年的「10/5 14:30」和今年的根本分不清。喂奶、换尿布、趴睡三处统一用这一份。
+ */
+function formatRecordTime(datetime) {
+    if (!datetime) return '';
+    const d = parseDateSafe(datetime);
+    if (!d) return String(datetime).slice(0, 16);
+    const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const now = new Date();
+    if (formatDate(d) === formatDate(now)) return `今天 ${hm}`;
+    const yest = new Date();
+    yest.setDate(yest.getDate() - 1);
+    if (formatDate(d) === formatDate(yest)) return `昨天 ${hm}`;
+    const year = d.getFullYear() === now.getFullYear() ? '' : d.getFullYear() + '年';
+    return `${year}${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
 }
 
 /** 秒 → 「12分30秒」（喂奶/吸奶时长展示） */
@@ -4715,7 +4815,7 @@ function saveSleepEdit(id) {
 function renderDiaperItems(r) {
     const typeMap = { wet: '💧 小便', dirty: '💩 大便', both: '💧💩 都有', dry: '✅ 干爽' };
     const colorMap = { black: '黑色', brown: '棕色', green: '绿色', yellow: '黄色', other: '其他' };
-    const skinMap = { normal: '😊 正常', slight_red: '😐 轻微发红', rash: '😟 红臀', severe_rash: '😢 严重红臀' };
+    const skinMap = { normal: '正常', slight_red: '轻微发红', rash: '红臀', severe_rash: '重度红臀' };
     const skinClass = { normal: 'skin-normal', slight_red: 'skin-slight', rash: 'skin-rash', severe_rash: 'skin-severe' };
 
     return `
@@ -4724,7 +4824,7 @@ function renderDiaperItems(r) {
             <button class="care-edit" onclick="editDiaper(${r.id})">✎</button>
             <div class="care-item-header">
                 <span class="care-type">${typeMap[r.diaper_type] || r.diaper_type}</span>
-                <span class="care-time">${formatDateTime(r.change_time)}</span>
+                <span class="care-time">${escapeHtml(formatRecordTime(r.change_time))}</span>
             </div>
             <div class="care-detail">
                 ${r.color ? '<span class="care-color">' + (colorMap[r.color] || r.color) + ' </span>' : ''}
@@ -18522,12 +18622,43 @@ function initTummytimePage() {
     document.getElementById('tummyPauseBtn')?.addEventListener('click', pauseTummyTimer);
     document.getElementById('tummyStopBtn')?.addEventListener('click', stopTummyTimer);
     document.getElementById('setTummyGoalBtn')?.addEventListener('click', showTummytimeGoalDialog);
+    // 记录列表的日期档位（只筛列表，统计/目标/图表仍按全量算）
+    const tabs = document.getElementById('tummytimeRangeTabs');
+    if (tabs && !tabs._bound) {
+        tabs._bound = true;
+        tabs.addEventListener('click', (e) => {
+            const t = e.target.closest('.tab-btn');
+            if (!t) return;
+            tabs.querySelectorAll('.tab-btn').forEach(x => x.classList.remove('active'));
+            t.classList.add('active');
+            tummytimeRange = parseInt(t.dataset.range) || 0;
+            renderTummytimeList(App.tummytimeRecords || []);
+        });
+    }
     // 加载目标设置
     loadTummytimeGoal();
 }
 
+/** 正在编辑的趴睡记录（null = 新增）。后端 PUT 一直没人用 —— 以前记错只能删了重录。 */
+let editingTummytimeId = null;
+let editingTummytimeOriginal = null;
+/** 记录列表的日期档位：7=近7天 30=近30天 0=全部（只筛列表） */
+let tummytimeRange = 7;
+
+function filterTummytimeByRange(records) {
+    if (tummytimeRange === 0) return records;
+    const from = new Date();
+    from.setDate(from.getDate() - (tummytimeRange - 1));
+    // 库内时间是定宽的 'YYYY-MM-DD HH:MM:SS'，可以直接按字符串比
+    const fromTs = formatDate(from) + ' 00:00:00';
+    return records.filter(r => (r.start_time || '') >= fromTs);
+}
+
 function showTummytimeModal() {
     // 重置表单
+    editingTummytimeId = null;
+    editingTummytimeOriginal = null;
+    setText('tummytimeModalTitle', '添加趴睡训练记录');
     document.getElementById('tummytimeDuration').value = '';
     document.getElementById('tummytimeNote').value = '';
     document.getElementById('tummytimeMilestone').value = '';
@@ -18555,12 +18686,24 @@ function submitTummytimeRecord() {
         note: note
     };
 
-    api(`/api/babies/${App.currentBaby}/tummytime`, {
-        method: 'POST',
+    // ⚠️ 编辑时必须把原来的 end_time 一起回传：后端 _parse_tummytime_payload 收不到
+    //    end_time 就置空，等于**每次编辑都会抹掉计时器记录的开始/结束时间**。
+    const editing = editingTummytimeId;
+    if (editing && editingTummytimeOriginal) {
+        data.end_time = editingTummytimeOriginal.end_time || '';
+    }
+    const url = editing
+        ? `/api/babies/${App.currentBaby}/tummytime/${editing}`
+        : `/api/babies/${App.currentBaby}/tummytime`;
+
+    api(url, {
+        method: editing ? 'PUT' : 'POST',
         body: JSON.stringify(data)
     }).then(res => {
         if (res.success) {
-            showToast.success('趴睡训练记录已保存');
+            showToast.success(editing ? '趴睡训练记录已更新' : '趴睡训练记录已保存');
+            editingTummytimeId = null;
+            editingTummytimeOriginal = null;
             hideModal('tummytimeModal');
             loadTummytimeRecords();
         } else {
@@ -18569,6 +18712,24 @@ function submitTummytimeRecord() {
     }).catch(err => {
         showToast.error('保存失败: ' + err.message);
     });
+}
+
+/** 编辑趴睡训练记录：回填表单后复用同一个弹窗提交（与换尿布的 editDiaper 同一套范式） */
+function editTummytimeRecord(id) {
+    if (!App.currentBaby) return;
+    api(`/api/babies/${App.currentBaby}/tummytime/${id}`).then(res => {
+        if (!res.success) return showToast.error('加载失败');
+        const r = res.data;
+        editingTummytimeId = r.id;
+        editingTummytimeOriginal = r;
+        setText('tummytimeModalTitle', '编辑趴睡训练记录');
+        document.getElementById('tummytimeStart').value =
+            (r.start_time || '').slice(0, 16).replace(' ', 'T');
+        document.getElementById('tummytimeDuration').value = r.duration_minutes || '';
+        document.getElementById('tummytimeMilestone').value = r.milestone || '';
+        document.getElementById('tummytimeNote').value = r.note || '';
+        showModal('tummytimeModal');
+    }).catch(err => showToast.error('加载失败: ' + err.message));
 }
 
 function startTummyTimer() {
@@ -18646,22 +18807,26 @@ function loadTummytimeRecords() {
 function renderTummytimeList(records) {
     const container = document.getElementById('tummytimeList');
     if (!container) return;
-    if (records.length === 0) {
-        container.innerHTML = '<p class="empty-tip">暂无趴睡训练记录</p>';
+    const list = filterTummytimeByRange(records || []);
+    if (list.length === 0) {
+        container.innerHTML = `<p class="empty-tip">${tummytimeRange === 0 ? '暂无趴睡训练记录' : '这段时间没有训练记录'}</p>`;
         return;
     }
-    container.innerHTML = records.map(r => `
+    container.innerHTML = list.map(r => `
         <div class="tummytime-item-card">
             <div class="tummytime-item-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
             </div>
             <div class="tummytime-item-info">
-                <div class="tummytime-item-date">${escapeHtml(r.start_time)}</div>
+                <div class="tummytime-item-date">${escapeHtml(formatRecordTime(r.start_time))}</div>
                 <div class="tummytime-item-duration">时长: ${escapeHtml(String(r.duration_minutes || r.duration || 0))} 分钟</div>
-                ${r.milestone ? `<div class="tummytime-item-milestone">🏆 ${escapeHtml(r.milestone)}</div>` : ''}
+                ${r.milestone ? `<div class="tummytime-item-milestone">${escapeHtml(r.milestone)}</div>` : ''}
                 ${r.note ? `<div class="tummytime-item-note">${escapeHtml(r.note)}</div>` : ''}
             </div>
-            <button class="tummytime-delete" onclick="deleteTummytimeRecord(${r.id})" title="删除">✕</button>
+            <div class="tummytime-item-actions">
+                <button class="tummytime-edit" onclick="editTummytimeRecord(${r.id})" title="编辑">✎</button>
+                <button class="tummytime-delete" onclick="deleteTummytimeRecord(${r.id})" title="删除">✕</button>
+            </div>
         </div>
     `).join('');
 }

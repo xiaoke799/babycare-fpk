@@ -8785,6 +8785,22 @@ body {
     font-variant-numeric: tabular-nums;
 }
 
+/* 皮肤状况用「按严重度着色的圆点」而不是表情：
+   表情看不出轻重（😟 和 😢 的差别太主观），颜色和记录列表左边框那套一致。 */
+.skin-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: -1px;
+}
+
+.dot-normal { background: #66BB6A; }
+.dot-slight { background: #E0A33E; }
+.dot-rash { background: #E4573D; }
+.dot-severe { background: #B3321F; }
+
 /* 月龄超出活动库时的空态：一行说明 + 一句补充 + 一组兜底推荐卡片 */
 .activity-empty-sub {
     font-size: 12px;

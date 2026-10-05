@@ -77,7 +77,8 @@ STATE = {
     ],
     "tummytime": [
         {"id": 401, "baby_id": 1, "start_time": D_TODAY + " 10:00:00",
-         "end_time": D_TODAY + " 10:03:00", "duration_minutes": 3, "milestone": "", "note": ""},
+         "end_time": D_TODAY + " 10:03:00", "duration_minutes": 3,
+         "milestone": "保持1分钟", "note": ""},
     ],
 }
 
@@ -147,6 +148,15 @@ class Handler(SimpleHTTPRequestHandler):
                 rows = sorted(STATE["tummytime"],
                               key=lambda r: r["start_time"], reverse=True)
                 return self._json({"success": True, "data": rows})
+            # 单条查询：编辑回填要用。漏了这个接口的话，编辑会拿到空数组，
+            # 表单全空 —— 症状和「编辑功能坏了」一模一样，测的人会一头雾水。
+            m1 = re.match(r"^/api/babies/\d+/tummytime/(\d+)$", path)
+            if m1:
+                rid = int(m1.group(1))
+                for r in STATE["tummytime"]:
+                    if r["id"] == rid:
+                        return self._json({"success": True, "data": dict(r)})
+                return self._json({"success": False, "message": "记录不存在"}, 404)
             if path == "/api/babies/1/dashboard":
                 return self._json({"success": True, "data": {
                     "baby_profile": {"name": "验证宝宝", "age": "1岁3个月"},
@@ -174,6 +184,19 @@ class Handler(SimpleHTTPRequestHandler):
                 "milestone": body.get("milestone", ""), "note": body.get("note", ""),
             })
             return self._json({"success": True, "message": "已记录"})
+        # ⚠️ 换尿布的 POST 必须**真的建记录**。早先这里直接返回 success，
+        #    于是「点皮肤标注后列表条数不变」那条断言在旧 bug（POST 建记录）下
+        #    也会通过 —— 假后端把缺陷藏住了。负向对照时才发现，已补。
+        if re.match(r"^/api/babies/\d+/diaper$", path):
+            nid = max([r["id"] for r in STATE["diaper"]] or [300]) + 1
+            STATE["diaper"].append({
+                "id": nid, "baby_id": 1,
+                "change_time": body.get("change_time") or (D_TODAY + " 23:00:00"),
+                "diaper_type": body.get("diaper_type") or "wet",
+                "color": None, "skin_condition": body.get("skin_condition") or None,
+                "brand": None, "note": "",
+            })
+            return self._json({"success": True, "message": "已添加"})
         return self._json({"success": True})
 
     def do_PUT(self):
@@ -196,6 +219,22 @@ class Handler(SimpleHTTPRequestHandler):
                         "note": body.get("note", ""),
                     })
                     return self._json({"success": True, "message": "已更新"})
+            return self._json({"success": False, "message": "记录不存在"}, 404)
+        m = re.match(r"^/api/babies/\d+/tummytime/(\d+)$", path)
+        if m:
+            rid = int(m.group(1))
+            for r in STATE["tummytime"]:
+                if r["id"] == rid:
+                    # ⚠️ 必须复刻真实后端 _parse_tummytime_payload 的行为：
+                    #    收不到 end_time 就置空。这样前端漏回传 end_time 时本测试才会真的红，
+                    #    否则一个「什么都能过」的假后端会把数据丢失这个缺陷藏住。
+                    r["start_time"] = body.get("start_time", r["start_time"])
+                    r["end_time"] = body.get("end_time") or None
+                    r["duration_minutes"] = int(body.get("duration")
+                                                or body.get("duration_minutes") or 0)
+                    r["milestone"] = body.get("milestone", "")
+                    r["note"] = body.get("note", "")
+                    return self._json({"success": True})
             return self._json({"success": False, "message": "记录不存在"}, 404)
         return self._json({"success": True})
 
@@ -237,6 +276,14 @@ setTimeout(async function(){
     log.push('skinBadgeShown=' + items('#diaperList .care-skin'));
     log.push('todayAfterSkin=' + txt('diaperTodayCount'));
 
+    // ⚠️ 判「有没有偷偷建记录」不能只看列表条数：列表一页只放 3 条，
+    //    多出来的那条会被挤到第二页，第一屏看着一模一样 ⇒ 怎么改都通过。
+    //    这里读后端返回的 total（不受分页影响）—— 注意别去数 data.length，
+    //    那个同样被页大小夹住（我就踩过一次）。
+    var totalAfterSkin = 0;
+    await api('/api/babies/1/diaper?limit=200').then(function(r){ totalAfterSkin = r.total; });
+    log.push('diaperTotalAfterSkin=' + totalAfterSkin);
+
     // 切到「全部」：应能看到窗口外的旧记录
     var allTab = document.querySelector('#diaperRangeTabs [data-range="0"]');
     if (allTab) allTab.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
@@ -273,6 +320,49 @@ setTimeout(async function(){
     await wait(500);
     log.push('timerRunningAfterLeave=' + tummyTimerRunning);
     log.push('leaveToast=' + toastText());
+
+    // ==================== 记录可编辑 + 列表打磨 ====================
+    switchPage('tummytime');
+    await wait(800);
+    log.push('tummyCards=' + items('#tummytimeList .tummytime-item-card'));
+    log.push('tummyEditBtns=' + items('#tummytimeList .tummytime-edit'));
+    log.push('tummyItemTime=' + (document.querySelector('.tummytime-item-date')
+      ? document.querySelector('.tummytime-item-date').textContent : 'NULL'));
+    log.push('tummyRangeTabs=' + document.querySelectorAll('#tummytimeRangeTabs .tab-btn').length);
+    log.push('tummyMilestoneHasEmoji=' + (document.querySelector('.tummytime-item-milestone')
+      ? (document.querySelector('.tummytime-item-milestone').textContent.indexOf('\\u{1F3C6}') >= 0) : 'n/a'));
+    log.push('skinDots=' + items('#skinConditionBar .skin-dot'));
+
+    // 点编辑 → 弹窗回填。**指定 id=401 那条**：此时列表里还有前面 45 秒那条新记录，
+    // 用「第一个编辑按钮」会点到新记录上，回填值就成了 1，测不到真正的回填。
+    var editBtn = Array.prototype.filter.call(
+      document.querySelectorAll('#tummytimeList .tummytime-edit'),
+      function(b){ return (b.getAttribute('onclick') || '').indexOf('(401)') >= 0; })[0];
+    log.push('editBtn401Found=' + (!!editBtn));
+    if (editBtn) editBtn.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
+    await wait(800);
+    log.push('editModalTitle=' + txt('tummytimeModalTitle'));
+    log.push('editDurationValue=' + ((document.getElementById('tummytimeDuration')||{}).value || 'NULL'));
+    log.push('editModalShown=' + (document.getElementById('tummytimeModal').className.indexOf('show') >= 0));
+
+    // 改时长后提交 → 应走 PUT 且今日分钟变成新值
+    document.getElementById('tummytimeDuration').value = '7';
+    submitTummytimeRecord();
+    await wait(1000);
+    log.push('tummyTodayMinAfterEdit=' + txt('statTodayMin'));
+    log.push('editToast=' + toastText());
+    // 关键：编辑**不能**把原来的 end_time 抹掉（假后端复刻了「收不到就置空」）
+    // ⚠️ 必须**按 id 找 401**：列表按时间倒序，[0] 是前面 45 秒那条新记录，
+    //    断言它的话怎么改都通过 —— 这就是「断言打在错对象上」的假绿。
+    var r401 = (App.tummytimeRecords || []).filter(function(r){ return r.id === 401; })[0];
+    log.push('r401Found=' + (!!r401));
+    log.push('endTimeAfterEdit=' + (r401 ? (r401.end_time || 'NULL') : 'NOT_FOUND'));
+
+    // 列表日期档位：切到「全部」
+    var tAll = document.querySelector('#tummytimeRangeTabs [data-range="0"]');
+    if (tAll) tAll.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
+    await wait(400);
+    log.push('tummyItemsAll=' + items('#tummytimeList .tummytime-item-card'));
   } catch (e) {
     log.push('EXCEPTION=' + e.message);
   }
@@ -395,7 +485,9 @@ window.addEventListener('error', function(e){ window.__errs.push(String(e.messag
         check("皮肤选项含「重度红臀」（后端枚举一直支持，UI 之前缺）",
               "重度红臀" in d("skinBtns"), d("skinBtns"))
 
-        check("点皮肤标注后列表条数不变（不再偷偷新建记录）",
+        check("点皮肤标注后**记录总数不变**（绕开分页直查后端，才不会被页大小挡住）",
+              d("diaperTotalAfterSkin") == "5", d("diaperTotalAfterSkin"))
+        check("点皮肤标注后当前页条数也不变",
               d("itemsAfterSkin") == d("itemsBeforeSkin"),
               {"before": d("itemsBeforeSkin"), "after": d("itemsAfterSkin")})
         check("点皮肤标注后有「已标注」提示",
@@ -433,6 +525,32 @@ window.addEventListener('error', function(e){ window.__errs.push(String(e.messag
         check("离开页面自动暂停计时器",
               d("timerRunningAfterLeave") == "false", d("timerRunningAfterLeave"))
         check("离开页面有「已暂停」提示", "暂停" in d("leaveToast"), d("leaveToast"))
+
+        # ---- 记录可编辑 + 列表打磨 ----
+        check("每条趴睡记录都有编辑按钮（以前只能删、不能改）",
+              d("tummyEditBtns").isdigit() and d("tummyEditBtns") == d("tummyCards")
+              and int(d("tummyEditBtns")) > 0,
+              {"edit": d("tummyEditBtns"), "cards": d("tummyCards")})
+        check("记录时间用友好格式（今天/昨天/带年份），不是原始时间戳",
+              d("tummyItemTime").startswith("今天 ") or d("tummyItemTime").startswith("昨天 "),
+              d("tummyItemTime"))
+        check("趴睡列表也有日期档位", d("tummyRangeTabs") == "3", d("tummyRangeTabs"))
+        check("里程碑行不再带 🏆 emoji", d("tummyMilestoneHasEmoji") == "false",
+              d("tummyMilestoneHasEmoji"))
+        check("皮肤状况用色点而不是表情（4 个圆点）", d("skinDots") == "4", d("skinDots"))
+
+        check("点编辑打开弹窗且标题变成「编辑」",
+              d("editModalShown") == "true" and "编辑" in d("editModalTitle"),
+              {"shown": d("editModalShown"), "title": d("editModalTitle")})
+        check("编辑时表单回填了原时长", d("editDurationValue") == "3", d("editDurationValue"))
+        check("编辑保存后今日时长按新值重算（走了 PUT 而不是新增一条）",
+              d("tummyTodayMinAfterEdit") == "8",
+              {"实际": d("tummyTodayMinAfterEdit"), "说明": "45秒那条记 1 分钟 + 改成 7 分钟 = 8"})
+        check("编辑提示是「已更新」", "已更新" in d("editToast"), d("editToast"))
+        check("被编辑的那条记录还在（按 id 找，不是列表第一条）",
+              d("r401Found") == "true", d("r401Found"))
+        check("编辑不会抹掉原来的 end_time（假后端复刻了「收不到就置空」）",
+              d("endTimeAfterEdit") not in ("NULL", "NOT_FOUND", ""), d("endTimeAfterEdit"))
         check("JS 无运行时报错", d("jsErrors") == "0", d("jsErrors"))
     finally:
         httpd.shutdown()

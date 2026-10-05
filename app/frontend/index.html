@@ -406,10 +406,10 @@
                 <!-- 皮肤状况快捷记录 -->
                 <div class="skin-condition-bar" id="skinConditionBar">
                     <span class="skin-label">皮肤状况:</span>
-                    <button class="skin-btn" data-skin="normal">😊 正常</button>
-                    <button class="skin-btn" data-skin="slight_red">😐 轻微发红</button>
-                    <button class="skin-btn" data-skin="rash">😟 红臀</button>
-                    <button class="skin-btn" data-skin="severe_rash">😢 重度红臀</button>
+                    <button class="skin-btn" data-skin="normal"><span class="skin-dot dot-normal"></span>正常</button>
+                    <button class="skin-btn" data-skin="slight_red"><span class="skin-dot dot-slight"></span>轻微发红</button>
+                    <button class="skin-btn" data-skin="rash"><span class="skin-dot dot-rash"></span>红臀</button>
+                    <button class="skin-btn" data-skin="severe_rash"><span class="skin-dot dot-severe"></span>重度红臀</button>
                 </div>
                 <p class="skin-hint" id="skinHint">标注会记在<strong>最近一次</strong>换尿布上，不会新增记录</p>
                 <div class="care-tabs" id="diaperRangeTabs">
@@ -2488,6 +2488,11 @@
     <!-- 训练记录 -->
     <div class="tummytime-records">
         <h4 class="section-subtitle">训练记录</h4>
+        <div class="care-tabs" id="tummytimeRangeTabs">
+            <button class="tab-btn active" data-range="7">近7天</button>
+            <button class="tab-btn" data-range="30">近30天</button>
+            <button class="tab-btn" data-range="0">全部</button>
+        </div>
         <div class="tummytime-list" id="tummytimeList">
             <p class="empty-tip">暂无趴睡训练记录</p>
         </div>
@@ -3537,7 +3542,7 @@
 <div class="modal-overlay" id="tummytimeModal">
     <div class="modal">
         <div class="modal-header">
-            <h2>添加趴睡训练记录</h2>
+            <h2 id="tummytimeModalTitle">添加趴睡训练记录</h2>
             <button class="modal-close" onclick="hideModal('tummytimeModal')">✕</button>
         </div>
         <div class="modal-body" id="tummytimeModalBody">
@@ -3692,6 +3697,7 @@
 <div class="pet-mascot" id="xiaomengMascot">
     <div class="pet-bubble" id="xiaomengBubble"></div>
 <button class="pet-avatar" id="xiaomengAvatar" type="button" aria-label="小萌 · 你的育儿小助手" title="单击跟我说话，双击进入聊天">
+            <span class="pet-dot" id="xiaomengDot"></span>
             <img id="xiaomengAvatarImg" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="小萌">
     </button>
 </div>
