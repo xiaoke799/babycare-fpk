@@ -9025,6 +9025,65 @@ body {
     border-left: 3px solid #C62828;
 }
 
+/* 皮肤状况快捷标注栏。
+   ⚠️ 以前这一栏**完全没有样式**（容器和按钮都没有规则），页面上就是几个浏览器
+      默认样式的按钮，跟旁边的 quick-btn 完全不搭。视觉语言对齐 .quick-btn。 */
+.skin-condition-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 16px 4px;
+}
+
+.skin-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.skin-btn {
+    padding: 8px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+    min-height: 38px;
+}
+
+.skin-btn:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-strong);
+}
+
+.skin-btn:active {
+    transform: scale(0.97);
+}
+
+/* 标注说明：告诉用户这是「改最近一次」而不是「新增一条」 */
+.skin-hint {
+    margin: 0;
+    padding: 0 16px 10px;
+    font-size: 12px;
+    color: var(--text-light);
+    line-height: 1.5;
+}
+
+.skin-hint strong {
+    color: var(--primary-strong);
+}
+
+/* 「加载更多」按钮的容器（换尿布等长列表用） */
+.load-more-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 12px 16px 20px;
+}
+
 /* ==================== 出牙追踪 ==================== */
 .teeth-header {
     display: flex;
@@ -14549,3 +14608,68 @@ input:checked + .toggle-slider:before {
     line-height: 1.65;
     color: var(--danger-color);
 }
+
+/* ==================== 日记月份分组 + 内联图放大 + 相册批量上传/大图切换 ==================== */
+
+/* 日记列表按月份分组头 */
+.diary-month-divider {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin: 18px 0 10px;
+    padding: 0 4px 8px;
+    border-bottom: 2px solid var(--border-color);
+}
+.diary-month-divider span {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.diary-month-divider em {
+    font-style: normal;
+    font-size: 12px;
+    color: var(--text-light);
+}
+
+/* 日记内联图片放大层：复用 .qr-zoom-overlay 深底，照片不需要二维码那种白底静区 */
+#diaryImgZoomModal img {
+    background: none;
+    padding: 0;
+    border-radius: 14px;
+    max-height: 80vh;
+}
+
+/* 相册大图查看：照片容器 + 左右切换按钮 */
+.photo-view-stage {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 100%;
+}
+.photo-nav-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    font-size: 26px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-bottom: 4px; /* ‹ › 字形偏上，微调居中 */
+    transition: background 0.2s;
+    -webkit-tap-highlight-color: transparent;
+    z-index: 2;
+}
+.photo-nav-btn:hover {
+    background: rgba(0, 0, 0, 0.7);
+}
+.photo-nav-prev { left: 10px; }
+.photo-nav-next { right: 10px; }

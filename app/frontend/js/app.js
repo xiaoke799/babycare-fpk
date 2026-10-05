@@ -1912,6 +1912,14 @@ function switchPage(page) {
     const prevPage = App.currentPage;
     App.currentPage = page;
 
+    // 趴睡计时器：离开该页就自动暂停。
+    // 以前不会停 —— 切到别的页面后它仍在后台累加，回来时计时对不上了，
+    // 更糟的是用户可能已经过了半小时，最后把时长记到错误的时间段。
+    if (prevPage === 'tummytime' && page !== 'tummytime' && tummyTimerRunning) {
+        pauseTummyTimer();
+        showToast('趴睡计时已暂停');
+    }
+
     // 只读别名页 → 真正要显示的是宿主 section
     const alias = READONLY_ALIAS[page];
     const sectionId = alias ? alias.host : page;
@@ -4130,59 +4138,114 @@ function quickAddSleep(duration, isNap) {
 }
 
 // ==================== 换尿布记录页面 ====================
-function loadDiaperPage() {
+// 换尿布是高频记录（每天 6-10 次），列表必须能按日期看、还能翻页。
+// ⚠️ 后端 /diaper 早就支持 start / limit / offset 并返回 total + has_more，
+//    但这里以前一个参数都没传，等于默认拉最近 500 条全量渲染 —— 记录一多就没法看。
+let diaperRange = 1;                 // 1=今日 3=近3天 7=近7天 0=全部
+const DIAPER_PAGE_SIZE = 100;
+let diaperLoaded = 0;                // 已加载条数（翻页用）
+
+/**
+ * 「上次换尿布」要的是**全局**最近一条，不能跟着列表的日期筛选走：
+ * 选「今日」而今天还没换过时，它应该显示「3小时前」，而不是「--」。
+ */
+function loadDiaperLatest() {
+    if (!App.currentBaby) return;
+    api(`/api/babies/${App.currentBaby}/diaper?limit=1`).then(res => {
+        if (!res.success) return;
+        const latest = (res.data || [])[0] || null;
+        App.diaperLatest = latest;
+        const lastEl = document.getElementById('diaperLastTime');
+        if (!lastEl) return;
+        if (!latest || !latest.change_time) {
+            lastEl.textContent = '--';
+            return;
+        }
+        const diffMin = Math.floor((new Date() - new Date(latest.change_time)) / 60000);
+        if (diffMin < 0) lastEl.textContent = '刚刚';
+        else if (diffMin < 60) lastEl.textContent = `${diffMin}分钟前`;
+        else if (diffMin < 1440) lastEl.textContent = `${Math.floor(diffMin / 60)}小时前`;
+        else lastEl.textContent = `${Math.floor(diffMin / 1440)}天前`;
+    });
+}
+
+function loadDiaperPage(append) {
     if (!App.currentBaby) return;
     const container = document.getElementById('diaperList');
     if (!container) return;
 
-    api(`/api/babies/${App.currentBaby}/diaper`).then(res => {
-        if (!res.success) return;
+    const offset = append ? diaperLoaded : 0;
+    const params = new URLSearchParams();
+    if (diaperRange > 0) {
+        const start = new Date();
+        start.setDate(start.getDate() - (diaperRange - 1));
+        params.set('start', formatDate(start));
+    }
+    params.set('limit', String(DIAPER_PAGE_SIZE));
+    params.set('offset', String(offset));
 
-        // 更新统计栏
+    api(`/api/babies/${App.currentBaby}/diaper?${params.toString()}`).then(res => {
+        if (!res.success) return;
+        const rows = res.data || [];
+        const merged = append ? (App.diaperRecords || []).concat(rows) : rows;
+        App.diaperRecords = merged;
+        diaperLoaded = merged.length;
+        const total = res.total != null ? res.total : merged.length;
+
+        // 统计栏：今日口径。四个档位都含今天，所以这里始终正确。
         const today = getToday();
-        const todayRecords = (res.data || []).filter(r => r.change_time && r.change_time.startsWith(today));
+        const todayRecords = merged.filter(r => r.change_time && r.change_time.startsWith(today));
         const wetCount = todayRecords.filter(r => r.diaper_type === 'wet' || r.diaper_type === 'both').length;
         const dirtyCount = todayRecords.filter(r => r.diaper_type === 'dirty' || r.diaper_type === 'both').length;
         const countEl = document.getElementById('diaperTodayCount');
         const wetEl = document.getElementById('diaperTodayWet');
         const dirtyEl = document.getElementById('diaperTodayDirty');
-        const lastEl = document.getElementById('diaperLastTime');
         if (countEl) countEl.textContent = todayRecords.length;
         if (wetEl) wetEl.textContent = wetCount;
         if (dirtyEl) dirtyEl.textContent = dirtyCount;
 
-        // 计算距离上次换尿布时间
-        if (lastEl && res.data && res.data.length > 0) {
-            const lastRecord = res.data[0];
-            if (lastRecord.change_time) {
-                const lastTime = new Date(lastRecord.change_time);
-                const now = new Date();
-                const diffMs = now - lastTime;
-                const diffMin = Math.floor(diffMs / 60000);
-                if (diffMin < 60) {
-                    lastEl.textContent = `${diffMin}分钟前`;
-                } else if (diffMin < 1440) {
-                    lastEl.textContent = `${Math.floor(diffMin / 60)}小时前`;
-                } else {
-                    lastEl.textContent = `${Math.floor(diffMin / 1440)}天前`;
-                }
-            }
-        } else if (lastEl) {
-            lastEl.textContent = '--';
+        if (merged.length === 0) {
+            container.innerHTML = '<p class="empty-tip">暂无换尿布记录<br><small>点击快捷按钮快速记录</small></p>';
+        } else {
+            container.innerHTML = merged.map(renderDiaperItems).join('');
         }
 
-        if (!res.data || res.data.length === 0) {
-            container.innerHTML = '<p class="empty-tip">暂无换尿布记录<br><small>点击快捷按钮快速记录</small></p>';
-            return;
+        // 还有更多才显示「加载更多」
+        const wrap = document.getElementById('diaperLoadMoreWrap');
+        if (wrap) {
+            const more = res.has_more != null ? res.has_more : (diaperLoaded < total);
+            wrap.style.display = more ? 'flex' : 'none';
         }
-        container.innerHTML = res.data.map(renderDiaperItems).join('');
     });
+
+    loadDiaperLatest();
 
     // 绑定添加按钮事件
     const btn = document.getElementById('addDiaperBtnPage');
     if (btn && !btn._bound) {
         btn._bound = true;
         btn.addEventListener('click', () => showRecordModal('diaper'));
+    }
+
+    // 绑定日期档位（与喂奶/睡眠同一套 care-tabs）
+    const tabs = document.getElementById('diaperRangeTabs');
+    if (tabs && !tabs._bound) {
+        tabs._bound = true;
+        tabs.addEventListener('click', (e) => {
+            const t = e.target.closest('.tab-btn');
+            if (!t) return;
+            tabs.querySelectorAll('.tab-btn').forEach(x => x.classList.remove('active'));
+            t.classList.add('active');
+            diaperRange = parseInt(t.dataset.range) || 0;
+            loadDiaperPage(false);
+        });
+    }
+
+    // 绑定「加载更多」
+    const moreBtn = document.getElementById('diaperLoadMoreBtn');
+    if (moreBtn && !moreBtn._bound) {
+        moreBtn._bound = true;
+        moreBtn.addEventListener('click', () => loadDiaperPage(true));
     }
 
     // 绑定快捷操作按钮
@@ -4205,7 +4268,7 @@ function loadDiaperPage() {
             const btn = e.target.closest('.skin-btn');
             if (!btn) return;
             const skin = btn.dataset.skin;
-            quickAddDiaperWithSkin(skin);
+            markSkinOnLatest(skin);
         });
     }
 
@@ -4217,26 +4280,57 @@ function loadDiaperPage() {
     }
 }
 
-// 快捷添加换尿布记录（带皮肤状况）
-function quickAddDiaperWithSkin(skinCondition) {
+// 皮肤状况的展示名（标注提示与列表共用一份）
+const DIAPER_SKIN_LABELS = {
+    normal: '正常', slight_red: '轻微发红', rash: '红臀', severe_rash: '重度红臀'
+};
+
+/**
+ * 皮肤状况快捷标注。
+ *
+ * ⚠️ 这里以前是 quickAddDiaperWithSkin：每点一次就**新增一条 diaper_type='wet' 的记录**。
+ *    连点三次「红臀」会凭空多出三条小便 —— 今日次数/小便次数被污染、列表也乱了，
+ *    而用户只是想说"刚才那次有点红"。皮肤状况本来就是 diaper_records 上的一列，
+ *    语义是给最近那次换尿布加标注，所以正确做法是**更新**而不是新建。
+ *
+ * PUT 是整体替换（必须带 change_time + diaper_type，且会覆盖所有字段），
+ * 因此要把最近那条原样回传、只改 skin_condition。
+ */
+function markSkinOnLatest(skinCondition) {
     if (!App.currentBaby) return;
-    const data = {
-        baby_id: App.currentBaby,
-        diaper_type: 'wet',
-        change_time: nowLocalStr(),
-        skin_condition: skinCondition,
-    };
-    api('/api/babies/' + App.currentBaby + '/diaper', {
-        method: 'POST',
-        body: JSON.stringify(data)
-    }).then(res => {
-        if (res.success) {
-            showToast.success('已记录皮肤状况');
-            loadDiaperPage();
-            loadDashboard();
-        } else {
-            showToast.error(res.message || '添加失败');
+    const label = DIAPER_SKIN_LABELS[skinCondition] || skinCondition;
+    const apply = (latest) => {
+        if (!latest) {
+            showToast.warning('还没有换尿布记录，先记录一次再来标注');
+            return;
         }
+        const when = latest.change_time ? String(latest.change_time).slice(11, 16) : '';
+        api(`/api/babies/${App.currentBaby}/diaper/${latest.id}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                change_time: latest.change_time,
+                diaper_type: latest.diaper_type,
+                color: latest.color || '',
+                skin_condition: skinCondition,
+                brand: latest.brand || '',
+                note: latest.note || ''
+            })
+        }).then(res => {
+            if (res.success) {
+                showToast.success(`已标注${when ? ' ' + when : ''}那次：${label}`);
+                loadDiaperPage(false);
+                loadDashboard();
+            } else {
+                showToast.error(res.message || '标注失败');
+            }
+        }).catch(err => showToast.error('标注失败: ' + err.message));
+    };
+
+    // 现取一次真实的最近一条：不依赖当前列表的日期筛选，
+    // 否则用户在看「上个月」时点标注，会标到列表里那条，而不是真正的最近一次。
+    api(`/api/babies/${App.currentBaby}/diaper?limit=1`).then(res => {
+        if (!res.success) return showToast.error('标注失败：读取最近记录出错');
+        apply((res.data || [])[0] || null);
     });
 }
 
@@ -4816,7 +4910,19 @@ function initDiaryModal() {
         fi.id = 'diaryImageFileInput';
         document.body.appendChild(fi);
         fi.addEventListener('change', onDiaryImagePicked);
+        // 日记阅读页内联图片点击放大（renderDiaryContent 生成的 .diary-inline-img）
+        const dz = document.getElementById('diaryImgZoomModal');
+        if (dz) dz.addEventListener('click', () => hideModal('diaryImgZoomModal'));
         document.addEventListener('click', function (e) {
+            const img = e.target.closest && e.target.closest('.diary-inline-img');
+            if (img) {
+                const zi = document.getElementById('diaryImgZoomImage');
+                if (zi) {
+                    zi.src = img.src;
+                    showModal('diaryImgZoomModal');
+                }
+                return;
+            }
             const b = e.target.closest && e.target.closest('.dt-btn');
             if (!b) return;
             if (b.dataset.md === 'image') { fi.click(); return; }
@@ -4920,6 +5026,15 @@ function loadDiaryList() {
             return;
         }
 
+        // 按月份分组：entry_date 形如 YYYY-MM-DD，后端已按 entry_date DESC 返回。
+        // 遍历时月份变化就插一条分组头，统计各月篇数，长列表一眼能定位到月份。
+        const monthCounts = {};
+        entries.forEach(e => {
+            const m = (e.entry_date || '').slice(0, 7);
+            if (m) monthCounts[m] = (monthCounts[m] || 0) + 1;
+        });
+        let lastMonth = '';
+
         container.innerHTML = `
             <div style="text-align:right;margin-bottom:12px;">
                 <button class="btn btn-primary" onclick="showDiaryModal()" style="width:auto;padding:8px 16px;">+ 写日记</button>
@@ -4928,7 +5043,13 @@ function loadDiaryList() {
                 const mood = moodIcons[entry.mood] || null;
                 const isFav = isDiaryFavorite(entry.id);
                 const photos = parseDiaryPhotos(entry.photos);
+                const month = (entry.entry_date || '').slice(0, 7);
+                const monthHead = month !== lastMonth ? (lastMonth = month,
+                    `<div class="diary-month-divider"><span>${escapeHtml(month.replace('-', ' 年 '))} 月</span><em>${monthCounts[month]} 篇</em></div>`
+                ) : '';
+                const previewText = diaryPreviewText(entry.content);
                 return `
+                ${monthHead}
                 <div class="diary-item" onclick="viewDiary(${entry.id})">
                     <div class="diary-item-header">
                         <div class="diary-title">
@@ -4947,7 +5068,7 @@ function loadDiaryList() {
                         ${entry.author ? `<span class="diary-author-tag">${escapeHtml(entry.author)} 记的</span>` : ''}
                         ${photos.length > 0 ? `<span class="diary-photo-count">📷 ${photos.length}</span>` : ''}
                     </div>
-                    <div class="diary-content">${escapeHtml(diaryPreviewText(entry.content).slice(0, 100))}${diaryPreviewText(entry.content).length > 100 ? '...' : ''}</div>
+                    <div class="diary-content">${escapeHtml(previewText.slice(0, 100))}${previewText.length > 100 ? '...' : ''}</div>
                     ${photos.length > 0 ? `<div class="diary-photos-preview">${photos.slice(0, 3).map(p => `<img src="${App.apiBase}/api/photos/thumbnail/${p}" class="diary-photo-thumb" loading="lazy">`).join('')}${photos.length > 3 ? `<span class="diary-photo-more">+${photos.length - 3}</span>` : ''}</div>` : ''}
                 </div>
             `}).join('')}
@@ -8951,6 +9072,20 @@ function initPhotoModal() {
     document.getElementById('cancelPhotoForm').addEventListener('click', () => hideModal('photoModal'));
     document.getElementById('closePhotoViewModal').addEventListener('click', () => hideModal('photoViewModal'));
 
+    // 大图左右切换：按钮 + 键盘方向键（焦点在输入框时方向键还给输入，不切图）
+    const navPrevBtn = document.getElementById('photoNavPrev');
+    const navNextBtn = document.getElementById('photoNavNext');
+    if (navPrevBtn) navPrevBtn.addEventListener('click', () => navPhotoView(-1));
+    if (navNextBtn) navNextBtn.addEventListener('click', () => navPhotoView(1));
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        const m = document.getElementById('photoViewModal');
+        if (!m || !m.classList.contains('show')) return;
+        const tag = document.activeElement && document.activeElement.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        navPhotoView(e.key === 'ArrowLeft' ? -1 : 1);
+    });
+
     // 成长对比按钮
     const compareBtn = document.getElementById('photoCompareBtn');
     if (compareBtn) {
@@ -8967,7 +9102,7 @@ function initPhotoModal() {
         sortFilter.addEventListener('change', loadPhotosPage);
     }
 
-    document.getElementById('photoForm').addEventListener('submit', function(e) {
+    document.getElementById('photoForm').addEventListener('submit', async function(e) {
         e.preventDefault();
         if (!App.currentBaby) return;
 
@@ -8977,43 +9112,56 @@ function initPhotoModal() {
             return;
         }
 
-        const formData = new FormData();
-        formData.append('photo', fileInput.files[0]);
-        formData.append('photo_date', document.getElementById('photoDate').value);
-        formData.append('description', document.getElementById('photoDesc').value);
-        formData.append('category', document.getElementById('photoCategory')?.value || '');
+        // 支持多选批量上传：日期/分类/描述应用到每一张，逐张调单张接口
+        const files = Array.from(fileInput.files);
+        const photoDate = document.getElementById('photoDate').value;
+        const description = document.getElementById('photoDesc').value;
+        const category = document.getElementById('photoCategory')?.value || '';
 
-        // 显示加载状态，防止重复提交
         const form = document.getElementById('photoForm');
         const submitBtn = form.querySelector('button[type="submit"]');
         const originalText = submitBtn ? submitBtn.textContent : '保存';
         if (submitBtn) {
             submitBtn.disabled = true;
-            submitBtn.textContent = '上传中...';
+            submitBtn.textContent = files.length > 1 ? `上传中 0/${files.length}` : '上传中...';
         }
 
-        fetch(`${App.apiBase}/api/babies/${App.currentBaby}/photos`, {
-            method: 'POST',
-            body: formData
-        })
-        .then(res => res.json())
-        .then(res => {
-            if (res.success) {
-                showToast('照片上传成功');
-                hideModal('photoModal');
-                loadPhotosPage();
-            } else {
-                showToast.error(res.message || '上传失败');
+        let okCount = 0;
+        const failedNames = [];
+        for (let i = 0; i < files.length; i++) {
+            const formData = new FormData();
+            formData.append('photo', files[i]);
+            formData.append('photo_date', photoDate);
+            formData.append('description', description);
+            formData.append('category', category);
+            if (submitBtn && files.length > 1) {
+                submitBtn.textContent = `上传中 ${i + 1}/${files.length}`;
             }
-        })
-        .catch(() => showToast('上传失败，请重试'))
-        .finally(() => {
-            // 恢复按钮状态
-            if (submitBtn) {
-                submitBtn.disabled = false;
-                submitBtn.textContent = originalText;
+            try {
+                const res = await fetch(`${App.apiBase}/api/babies/${App.currentBaby}/photos`, {
+                    method: 'POST',
+                    body: formData
+                }).then(r => r.json());
+                if (res.success) okCount++;
+                else failedNames.push(files[i].name);
+            } catch (err) {
+                failedNames.push(files[i].name);
             }
-        });
+        }
+
+        // 恢复按钮状态
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalText;
+        }
+        if (okCount > 0) {
+            showToast.success(files.length > 1 ? `成功上传 ${okCount} 张照片` : '照片上传成功');
+            hideModal('photoModal');
+            loadPhotosPage();
+        }
+        if (failedNames.length) {
+            showToast.error(`${failedNames.length} 张上传失败：${failedNames.join('、')}`);
+        }
     });
 
     document.getElementById('deletePhotoBtn').addEventListener('click', function() {
@@ -9054,6 +9202,29 @@ function initPhotoModal() {
 
 // 相册分页状态（照片多于一页时靠它做「加载更多」）
 const photoPageState = { limit: 60, offset: 0, items: [], hasMore: false, totalFiltered: 0 };
+// 大图查看当前照片 id（左右切换用）
+let photoViewCurrentId = null;
+
+// 与 renderPhotosGrid 同口径的「当前筛选+排序后的照片列表」，大图导航顺序跟网格视觉顺序一致
+function photoViewList() {
+    const photos = photoPageState.items.slice();
+    const sortFilter = document.getElementById('photoSortFilter');
+    if (sortFilter && sortFilter.value === 'date_asc') {
+        photos.sort((a, b) => new Date(a.photo_date) - new Date(b.photo_date));
+    } else {
+        photos.sort((a, b) => new Date(b.photo_date) - new Date(a.photo_date));
+    }
+    return photos;
+}
+
+function navPhotoView(dir) {
+    const list = photoViewList();
+    if (list.length < 2) return;
+    const idx = list.findIndex(p => String(p.id) === String(photoViewCurrentId));
+    if (idx < 0) return;
+    const next = list[(idx + dir + list.length) % list.length];
+    openPhotoView(next.id);
+}
 
 function loadPhotosPage(reset = true) {
     if (!App.currentBaby) return;
@@ -9154,6 +9325,8 @@ function openPhotoView(photoId) {
     const photo = photoPageState.items.find(p => String(p.id) === String(photoId));
     if (!photo) return;
 
+    photoViewCurrentId = photo.id;
+
     document.getElementById('photoViewImage').src = `${App.apiBase}/api/photos/file/${photo.id}`;
     document.getElementById('photoViewTitle').textContent = photo.photo_date;
     document.getElementById('photoViewInfo').textContent = photo.description || '';
@@ -9171,6 +9344,12 @@ function openPhotoView(photoId) {
         coverBtn.textContent = photo.is_cover ? '已是封面' : '设为封面';
         coverBtn.disabled = !!photo.is_cover;
     }
+    // 只有一张照片时藏起左右切换按钮
+    const multi = photoViewList().length > 1;
+    const prevBtn = document.getElementById('photoNavPrev');
+    const nextBtn = document.getElementById('photoNavNext');
+    if (prevBtn) prevBtn.style.display = multi ? '' : 'none';
+    if (nextBtn) nextBtn.style.display = multi ? '' : 'none';
     showModal('photoViewModal');
 }
 
@@ -15152,18 +15331,75 @@ function debounce(fn, delay) {
 }
 
 // ==================== 活动游戏推荐 ====================
+
+// 分类标签表：key = 后端 baby_activities.category，**必须与种子数据一致**。
+// 新增分类时这里加一项，HTML 不用改（按钮由 /api/activities/categories 动态渲染）。
+// ⚠ 别再加 emoji 到这里 —— 卡片本身已有 icon 字段，分类按钮再带 emoji 会显得重复。
+const ACTIVITY_CAT_LABELS = {
+    physical: { label: '体能', icon: 'icon-activity' },
+    motor: { label: '精细动作', icon: 'icon-hand' },
+    cognitive: { label: '认知', icon: 'icon-eye' },
+    social: { label: '社交', icon: 'icon-users' },
+    language: { label: '语言', icon: 'icon-message' },
+    sensory: { label: '感官', icon: 'icon-wave' },
+    nature: { label: '自然', icon: 'icon-leaf' },
+    creative: { label: '艺术创作', icon: 'icon-palette' },
+    music: { label: '音乐', icon: 'icon-music' },
+};
+
+function activityCatLabel(key) {
+    const hit = ACTIVITY_CAT_LABELS[key];
+    return hit ? hit.label : key;   // 未登记的分类回显原始 key，不静默吞掉
+}
+
+// 分类按钮用**事件委托**绑在容器上：按钮是异步插进来的，
+// init 时逐个 getElementById/addEventListener 会一个都绑不上（静默失效）。
+function _bindActivityCatBar() {
+    const bar = document.getElementById('activityCatBar');
+    if (!bar || bar._bound) return;
+    bar._bound = true;
+    bar.addEventListener('click', e => {
+        const btn = e.target.closest('.activity-cat-ext-btn');
+        if (!btn) return;
+        bar.querySelectorAll('.activity-cat-ext-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        loadActivities(btn.dataset.cat);
+    });
+}
+
+function renderActivityCatBar(cats) {
+    const bar = document.getElementById('activityCatBar');
+    if (!bar) return;
+    // 「全部」永远第一，保留当前选中项
+    const active = bar.querySelector('.activity-cat-ext-btn.active')?.dataset.cat || 'all';
+    const all = ['<button class="activity-cat-ext-btn' +
+        (active === 'all' ? ' active' : '') + '" data-cat="all">全部</button>'];
+    (cats || []).forEach(c => {
+        if (!c || !c.key) return;
+        all.push(`<button class="activity-cat-ext-btn${active === c.key ? ' active' : ''}" ` +
+            `data-cat="${escapeHtml(c.key)}">${escapeHtml(activityCatLabel(c.key))}` +
+            `<span class="cat-count">${c.count}</span></button>`);
+    });
+    bar.innerHTML = all.join('');
+    _bindActivityCatBar();
+}
+
+function loadActivityCategories(ageMonths) {
+    const url = '/api/activities/categories' +
+        (ageMonths != null ? `?age_months=${encodeURIComponent(ageMonths)}` : '');
+    api(url).then(res => {
+        if (res && res.success) renderActivityCatBar(res.data);
+    }).catch(() => {
+        // 接口失败就只留「全部」，不该让整个分类条消失
+        _bindActivityCatBar();
+    });
+}
+
 function initActivitiesPage() {
     if (App.activitiesPageInitialized) return;
     App.activitiesPageInitialized = true;
 
-    // 绑定分类筛选按钮
-    document.querySelectorAll('.activity-cat-ext-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.activity-cat-ext-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            loadActivities(btn.dataset.cat);
-        });
-    });
+    _bindActivityCatBar();
 
     // 绑定统计按钮
     const statsBtn = document.getElementById('activityStatsBtn');
@@ -15193,17 +15429,22 @@ function loadActivities(category = 'all') {
 
     // 获取宝宝年龄来筛选
     const baby = App.babies?.find(b => b.id === App.currentBaby);
+    let ageMonths = null;
     if (baby && baby.birthday) {
-        const ageMonths = calcAgeMonths(baby.birthday);
+        ageMonths = calcAgeMonths(baby.birthday);
         url += `age_months=${ageMonths}`;
         updateAgeBadge(ageMonths);
     }
 
     api(url).then(data => {
         if (data.success) {
-            renderActivityList(data.data);
+            renderActivityList(data.data, ageMonths);
         }
     }).catch(err => console.error('加载活动失败:', err));
+
+    // 分类条跟着当前月龄走：3 岁以后活动库还没内容时，
+    // 每个分类都是 0 条，按钮就都消失了 —— 只留「全部」并说明原因更清楚。
+    loadActivityCategories(ageMonths);
 
     // 加载智能推荐
     loadActivityRecommend();
@@ -15441,18 +15682,47 @@ function calcAgeMonths(birthDate) {
     return Math.floor(diff);
 }
 
-function renderActivityList(activities) {
+function renderActivityList(activities, ageMonths) {
     const container = document.getElementById('activityList');
     if (!container) return;
 
-    if (activities.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-icon"></div><div class="empty-text">暂无匹配的活动</div></div>';
+    if (!activities || activities.length === 0) {
+        // 区分两种空：① 月龄超出活动库范围（3 岁起）② 选中的分类本筛没东西。
+        // 混成一句「暂无匹配的活动」，3 岁用户会以为是 bug。
+        const overRange = ageMonths != null && ageMonths > 36;
+        if (overRange) {
+            const half = Math.floor(ageMonths / 12);
+            const extra = ageMonths % 12;
+            const ageText = extra ? half + ' 岁 ' + extra + ' 个月' : half + ' 岁';
+            container.innerHTML =
+                '<div class="empty-state"><div class="empty-text">活动库目前覆盖 0-36 个月，' +
+                `还没有适合 ${ageText} 的内容</div>` +
+                '<div class="empty-text activity-empty-sub">育儿的陪伴不分年龄段，' +
+                '下面这些仍然适合这个阶段</div>' +
+                '<div class="activity-list" id="activityListFallback"></div></div>';
+            // 放宽月龄再取一批，至少别给 3 岁用户一片空白
+            api('/api/activities?limit=6&sort=popular').then(res => {
+                const box = document.getElementById('activityListFallback');
+                if (!box) return;
+                const rows = (res && res.data) || [];
+                if (!rows.length) { box.innerHTML = ''; return; }
+                box.innerHTML = rows.map(a => activityCardHtml(a)).join('');
+            }).catch(() => {});
+            return;
+        }
+        container.innerHTML =
+            '<div class="empty-state"><div class="empty-icon"></div>' +
+            '<div class="empty-text">这个分类下暂时没有活动，换一个分类看看</div></div>';
         return;
     }
 
-    container.innerHTML = activities.map(a => `
+    container.innerHTML = activities.map(a => activityCardHtml(a)).join('');
+}
+
+function activityCardHtml(a) {
+    return `
         <div class="activity-card" onclick="showActivityDetail(${a.id})">
-            <div class="activity-icon">${a.icon || ''}</div>
+            <div class="activity-icon">${escapeHtml(a.icon || '')}</div>
             <div class="activity-info">
                 <div class="activity-title">${escapeHtml(a.title)}</div>
                 ${a.summary ? `<div class="activity-summary">${escapeHtml(a.summary)}</div>` : ''}
@@ -15462,7 +15732,7 @@ function renderActivityList(activities) {
                 </div>
             </div>
         </div>
-    `).join('');
+    `;
 }
 
 function showActivityDetail(id) {
@@ -18292,18 +18562,26 @@ function stopTummyTimer() {
     if (tummyTimerSeconds > 0) {
         // 保存记录
         if (App.currentBaby) {
-            const now = new Date();
-            const startTime = new Date(now.getTime() - tummyTimerSeconds * 1000);
+            const endTime = new Date();
+            const startTime = new Date(endTime.getTime() - tummyTimerSeconds * 1000);
+            // ⚠️ 以前是 Math.floor(秒/60)：练了 45 秒会存成 **0 分钟**。
+            //    而这个阶段的建议时长本来就是「每次 1-2 分钟」，新生儿往往只有几十秒 ——
+            //    存成 0 之后，今日时长、目标进度、图表全是 0，可「连续天数」却 +1，
+            //    页面自己前后矛盾，用户会以为根本没记上。
+            //    现在四舍五入，且只要练过就至少记 1 分钟；
+            //    真实起止时间一并存进 start_time / end_time，精确时长仍可还原。
+            const minutes = Math.max(1, Math.round(tummyTimerSeconds / 60));
             api(`/api/babies/${App.currentBaby}/tummytime`, {
                 method: 'POST',
                 body: JSON.stringify({
                     start_time: toLocalStr(startTime).slice(0, 19).replace('T', ' '),
-                    duration: Math.floor(tummyTimerSeconds / 60),
+                    end_time: toLocalStr(endTime).slice(0, 19).replace('T', ' '),
+                    duration: minutes,
                     note: ''
                 })
             }).then(res => {
                 if (res.success) {
-                    showToast('趴睡训练记录已保存');
+                    showToast(`趴睡训练已记录 ${minutes} 分钟`);
                     loadTummytimeRecords();
                 }
             });

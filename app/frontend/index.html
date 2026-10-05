@@ -409,9 +409,20 @@
                     <button class="skin-btn" data-skin="normal">😊 正常</button>
                     <button class="skin-btn" data-skin="slight_red">😐 轻微发红</button>
                     <button class="skin-btn" data-skin="rash">😟 红臀</button>
+                    <button class="skin-btn" data-skin="severe_rash">😢 重度红臀</button>
+                </div>
+                <p class="skin-hint" id="skinHint">标注会记在<strong>最近一次</strong>换尿布上，不会新增记录</p>
+                <div class="care-tabs" id="diaperRangeTabs">
+                    <button class="tab-btn active" data-range="1">今日</button>
+                    <button class="tab-btn" data-range="3">近3天</button>
+                    <button class="tab-btn" data-range="7">近7天</button>
+                    <button class="tab-btn" data-range="0">全部</button>
                 </div>
                 <div class="care-list" id="diaperList">
                     <p class="empty-tip">暂无换尿布记录<br><small>点击快捷按钮快速记录</small></p>
+                </div>
+                <div class="load-more-wrap" id="diaperLoadMoreWrap" style="display:none">
+                    <button class="btn btn-outline btn-sm" id="diaperLoadMoreBtn">加载更多</button>
                 </div>
             </section>
 
@@ -1991,6 +2002,12 @@
     <p class="qr-zoom-tip">点击任意处关闭</p>
 </div>
 
+<!-- 日记内联图片放大：深底全屏直接展示照片（照片不需要二维码那种白底静区） -->
+<div class="modal-overlay qr-zoom-overlay" id="diaryImgZoomModal">
+    <img id="diaryImgZoomImage" src="" alt="图片放大">
+    <p class="qr-zoom-tip">点击任意处关闭</p>
+</div>
+
 <!-- 发育飞跃期页面 -->
 <section class="page" id="page-leap">
     <div class="leap-header">
@@ -2308,16 +2325,12 @@
         </div>
     </div>
 
-    <!-- 分类筛选 -->
-    <div class="activity-categories-extended">
+    <!-- 分类筛选：除「全部」外由 /api/activities/categories 动态渲染。
+         刻意不在 HTML 里硬编码分类 —— 之前硬编码的结果是
+         后端有的分类（nature/creative/music）没有按钮 ⇒ 用户永远筛不到，
+         前端有的按钮（art）后端没数据 ⇒ 点了必然空白。 -->
+    <div class="activity-categories-extended" id="activityCatBar">
         <button class="activity-cat-ext-btn active" data-cat="all">全部</button>
-        <button class="activity-cat-ext-btn" data-cat="physical">🏃 体能</button>
-        <button class="activity-cat-ext-btn" data-cat="motor">✋ 精细动作</button>
-        <button class="activity-cat-ext-btn" data-cat="cognitive">🧠 认知</button>
-        <button class="activity-cat-ext-btn" data-cat="social">👥 社交</button>
-        <button class="activity-cat-ext-btn" data-cat="language">💬 语言</button>
-        <button class="activity-cat-ext-btn" data-cat="art">🎨 艺术</button>
-        <button class="activity-cat-ext-btn" data-cat="sensory">👂 感官</button>
     </div>
     <div class="activity-list" id="activityList">
         <p class="empty-tip">加载中...</p>
@@ -2409,14 +2422,15 @@
         </div>
     </div>
     <div class="tummytime-info-card">
-        <div class="tummytime-info-title">趴睡训练好处</div>
-        <p>趴睡训练（Tummy Time）有助于增强宝宝颈部、背部和肩部肌肉，促进大运动发育，预防扁头综合征。建议从出生后开始，每天多次短时间练习。</p>
+        <div class="tummytime-info-title">怎么记录</div>
+        <p>这里记录宝宝清醒时的趴卧时间。点「开始训练」计时，结束后自动存一条；也可以用「手动记录」补录之前练过的。</p>
         <div class="tummytime-tips">
-            <div class="tummytime-tip"><span class="tip-icon">✓</span>在宝宝清醒且不太饿时练习</div>
-            <div class="tummytime-tip"><span class="tip-icon">✓</span>从每天2-3次，每次1-2分钟开始</div>
-            <div class="tummytime-tip"><span class="tip-icon">✓</span>逐渐增加时间和次数</div>
-            <div class="tummytime-tip"><span class="tip-icon">✓</span>全程看护，宝宝烦躁时停止</div>
+            <div class="tummytime-tip"><span class="tip-icon">✓</span>选宝宝清醒、不太饿的时候练</div>
+            <div class="tummytime-tip"><span class="tip-icon">✓</span>时长和次数按宝宝的耐受来，累了就停</div>
+            <div class="tummytime-tip"><span class="tip-icon">✓</span>务必全程看护，不要离开</div>
+            <div class="tummytime-tip"><span class="tip-icon">✓</span>宝宝哭闹或烦躁时立即结束</div>
         </div>
+        <p class="tummytime-info-note">以上仅为记录方式与看护提示，不构成医疗建议。宝宝的发育节奏因人而异，有疑问请咨询儿童保健科医生。</p>
     </div>
     <!-- 训练目标卡片 -->
     <div class="tummytime-goal-card" id="tummytimeGoalCard">
@@ -2897,8 +2911,8 @@
             <div class="modal-body">
                 <form id="photoForm">
                     <div class="form-group">
-                        <label for="photoFile">选择照片</label>
-                        <input type="file" id="photoFile" accept="image/*" required>
+                        <label for="photoFile">选择照片（可按住 Ctrl 多选，批量上传）</label>
+                        <input type="file" id="photoFile" accept="image/*" multiple required>
                     </div>
                     <div class="form-group">
                         <label for="photoDate">拍摄日期</label>
@@ -2936,7 +2950,11 @@
                 <button class="modal-close" id="closePhotoViewModal">✕</button>
             </div>
             <div class="modal-body photo-view-body">
-                <img id="photoViewImage" src="" alt="照片">
+                <div class="photo-view-stage">
+                    <img id="photoViewImage" src="" alt="照片">
+                    <button type="button" class="photo-nav-btn photo-nav-prev" id="photoNavPrev" title="上一张（←）">‹</button>
+                    <button type="button" class="photo-nav-btn photo-nav-next" id="photoNavNext" title="下一张（→）">›</button>
+                </div>
                 <div class="photo-view-info" id="photoViewInfo"></div>
                 <div class="photo-edit-desc">
                     <label>照片信息</label>
