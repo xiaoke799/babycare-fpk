@@ -683,6 +683,30 @@ def ai_llm_test():
                         '连接成功，但所选模型 %s 不在该账号的可用模型列表里（仍可能可用，'
                         '如自定义/别名模型）。该账号可用：%s' % (model, ', '.join(available[:10]))
                     )
+            # ---- 内置清单是否可能整体过期（2026-10-05 对照 DeepSeek Harness 补）----
+            # 为什么必须单独判：model_ok 只看**用户选中的那一个**模型。
+            # 但真正的事故形态是「厂商把整份清单都换了名」——
+            # 2026-10-05 DeepSeek 退役 deepseek-v4-flash 就是这种：
+            # 用户没动任何设置，default_model 指向一个已不存在的名字，
+            # 于是**每一次真实对话都 404**，而「测试连接」用的路径
+            # （前端明文 key + 另一个端点）照样显示成功。
+            # 判据：厂商清单里**一个内置模型名都对不上** ⇒ 清单整体过期（强信号）。
+            # 部分对不上只提示、不判失败（厂商保留旧别名是常见做法）。
+            builtin = [m for m in (template.get('models') or []) if isinstance(m, str) and m.strip()]
+            if available and builtin:
+                hit = [m for m in builtin if m in available]
+                stale = [m for m in builtin if m not in available]
+                if not hit:
+                    resp_obj['catalog_stale'] = True
+                    resp_obj['stale_models'] = stale[:20]
+                    resp_obj['message'] = (
+                        '连接成功，但内置模型清单可能已过期：本应用内置的 %d 个模型名'
+                        '在厂商当前清单里一个都找不到。该厂商现在可用：%s。'
+                        '请到 ai_engine.PROVIDER_TEMPLATES 更新该厂商的 models。'
+                        % (len(builtin), ', '.join(available[:10]))
+                    )
+                elif stale:
+                    resp_obj['stale_models'] = stale[:20]
             _reset_breaker_silently()          # 测通了：旧失败不该再拦着对话
             return jsonify(resp_obj)
         else:

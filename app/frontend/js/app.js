@@ -8179,15 +8179,24 @@ function testLLMConnection() {
             // 后端顺手查了「该账号能用哪些模型」：所选模型不在列表里要显眼提示，
             // 否则用户会以为配好了（推荐项与下拉框漂移时正是这种场景）。
             const modelWarn = res.model_ok === false;
+            // 🔴 catalog_stale = **整份内置清单可能都过期了**（2026-10-05 补）。
+            // 这比 modelWarn 更严重：用户没动任何设置，是应用出厂就指错了名字，
+            // 结果是每次真实对话都 404、最后被熔断全部回落规则引擎，
+            // 而「测试连接」这里一直显示成功 —— 用户完全看不出问题在哪。
+            // 所以要给**独立且更醒目**的样式，不能混进 modelWarn 里。
+            const catalogStale = res.catalog_stale === true;
             if (tip) {
                 tip.textContent = res.message || '连接成功';
-                tip.style.color = modelWarn ? 'var(--warning-color, #f0ad4e)'
-                                            : 'var(--success-color)';
+                tip.style.color = catalogStale ? 'var(--danger-color, #dc3545)'
+                                    : modelWarn ? 'var(--warning-color, #f0ad4e)'
+                                                : 'var(--success-color)';
             }
             if (testResult) {
-                testResult.className = 'llm-test-result ' + (modelWarn ? 'warning' : 'success');
-                testResultIcon.textContent = modelWarn ? '⚠' : '✓';
-                testResultText.textContent = modelWarn ? '模型可能不可用' : '连接成功';
+                testResult.className = 'llm-test-result '
+                    + (catalogStale ? 'error' : (modelWarn ? 'warning' : 'success'));
+                testResultIcon.textContent = catalogStale ? '✕' : (modelWarn ? '⚠' : '✓');
+                testResultText.textContent = catalogStale ? '模型清单可能已过期'
+                                       : (modelWarn ? '模型可能不可用' : '连接成功');
                 let detail = res.message || '';
                 const avail = res.available_models || res.models;
                 if (avail && avail.length > 0) {
@@ -8195,6 +8204,10 @@ function testLLMConnection() {
                     if (avail.length > 5) detail += ` 等${avail.length}个`;
                 }
                 if (res.reply) detail += ` | 回复: ${res.reply}`;
+                // 清单过期时把失效的名字也摆出来 —— 用户据此能自己判断该换哪个
+                if (catalogStale && res.stale_models && res.stale_models.length) {
+                    detail += ` | 本应用内置但厂商已无: ${res.stale_models.slice(0, 4).join(', ')}`;
+                }
                 testResultDetail.textContent = detail;
             }
         } else {
