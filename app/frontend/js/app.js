@@ -878,8 +878,13 @@ function initMascot() {
                 data.tool_events.forEach(ev => appendToolEventCard(ev));
             }
             appendBotMsg(data.answer || '抱歉，我暂时回答不了这个问题，换个方式问问？', data.llm_model || '');
-            // 大模型没生效时把原因亮出来——之前静默回退规则引擎，用户以为"接入了但 AI 装傻"
-            if (data.llm_model === '规则引擎' && data.fallback_reason) {
+            // 大模型没生效时把原因亮出来——之前静默回退规则引擎，用户以为"接入了但 AI 装傻"。
+            // ⚠ 判据用 llm_used，不要拿模型名字符串猜：以前只判 llm_model === '规则引擎'，
+            //    而「配置看着没问题、调用却失败（key 坏 / 外网不通 / 已熔断）」时后端标的是
+            //    模型名 ⇒ 这套提示在最常见的失败场景下永远不出现。
+            const _usedLLM = data.llm_used === true
+                || (data.llm_used === undefined && !!data.llm_model && data.llm_model !== '规则引擎');
+            if (!_usedLLM && data.fallback_reason) {
                 appendFallbackNotice(data.fallback_reason);
             }
             setTimeout(() => setMascotState(null), 2000);
@@ -7230,15 +7235,22 @@ const LLM_KEY_LINKS = {
     lmstudio: 'https://lmstudio.ai/'
 };
 
+// 「推荐」模型（只影响界面提示与绿色 chip，不影响可选范围）。
+// ⚠ 这里的每一项都必须是**后端 PROVIDER_TEMPLATES[provider].models 里真实存在的**模型，
+//    否则用户照着"推荐"去下拉框里找，根本找不到那个模型（2026-10-05 实测漂移：
+//    deepseek 推荐 deepseek-chat、openai 推荐 gpt-4o-mini、doubao 推荐 …-250615、
+//    lmstudio 推荐 llama-3.1-8b-instruct —— 这 4 个都已经不在下拉框里了）。
+//    留空数组是允许的：界面会回落到后端的 default_model（推荐即默认，不会自相矛盾）。
+//    门禁：.workbuddy/scripts/check_llm_model_lists.py 会逐项比对，防止再漂。
 const LLM_MODELS_FEATURED = {
-    deepseek: ['deepseek-chat'],
+    deepseek: [],                              // 回落 deepseek-v4-flash
     kimi: ['moonshot-v1-8k'],
     qwen: ['qwen-turbo', 'qwen-plus'],
     glm: ['glm-4-flash'],
-    openai: ['gpt-4o-mini'],
-    doubao: ['doubao-seed-1-8-250615'],
+    openai: [],                                // 回落 gpt-5.4-mini
+    doubao: [],                                // 回落 doubao-1.5-pro-32k
     ollama: ['qwen2.5:7b', 'qwen3:8b'],
-    lmstudio: ['qwen2.5-7b-instruct', 'llama-3.1-8b-instruct']
+    lmstudio: ['qwen2.5-7b-instruct']
 };
 
 // ==================== 推送通知设置 ====================
@@ -7758,7 +7770,6 @@ function onProviderChange(providerId) {
 
     // 更新文本模型下拉
     modelSelect.innerHTML = '';
-    const featured = LLM_MODELS_FEATURED[providerId] || [];
     for (const model of provider.models) {
         const opt = document.createElement('option');
         opt.value = model;
@@ -7767,6 +7778,18 @@ function onProviderChange(providerId) {
     }
     if (provider.default_model) {
         modelSelect.value = provider.default_model;
+    }
+
+    // 推荐项必须**真的在下拉框里**才能推荐。
+    // 模型名单前后端各维护一份（前端 LLM_MODELS_FEATURED / 后端 PROVIDER_TEMPLATES），
+    // 厂商更新模型时容易只改一边。2026-10-05 实测漂移：deepseek 推荐 deepseek-chat、
+    // openai 推荐 gpt-4o-mini、doubao 推荐 …-250615、lmstudio 推荐 llama-3.1-8b-instruct，
+    // 这 4 个在下拉框里都不存在 —— 用户照着"推荐"去找，根本找不到那个模型。
+    // 过滤后一个都不剩时，回落到后端给的默认模型（推荐即默认，不会再自相矛盾）。
+    const featured = (LLM_MODELS_FEATURED[providerId] || [])
+        .filter(m => (provider.models || []).includes(m));
+    if (featured.length === 0 && provider.default_model) {
+        featured.push(provider.default_model);
     }
 
     // 更新模型标签（推荐标记）
@@ -8153,18 +8176,23 @@ function testLLMConnection() {
         body: JSON.stringify(config)
     }).then(res => {
         if (res.success) {
+            // 后端顺手查了「该账号能用哪些模型」：所选模型不在列表里要显眼提示，
+            // 否则用户会以为配好了（推荐项与下拉框漂移时正是这种场景）。
+            const modelWarn = res.model_ok === false;
             if (tip) {
                 tip.textContent = res.message || '连接成功';
-                tip.style.color = 'var(--success-color)';
+                tip.style.color = modelWarn ? 'var(--warning-color, #f0ad4e)'
+                                            : 'var(--success-color)';
             }
             if (testResult) {
-                testResult.className = 'llm-test-result success';
-                testResultIcon.textContent = '✓';
-                testResultText.textContent = '连接成功';
+                testResult.className = 'llm-test-result ' + (modelWarn ? 'warning' : 'success');
+                testResultIcon.textContent = modelWarn ? '⚠' : '✓';
+                testResultText.textContent = modelWarn ? '模型可能不可用' : '连接成功';
                 let detail = res.message || '';
-                if (res.models && res.models.length > 0) {
-                    detail += ` | 可用模型: ${res.models.slice(0, 5).join(', ')}`;
-                    if (res.models.length > 5) detail += ` 等${res.models.length}个`;
+                const avail = res.available_models || res.models;
+                if (avail && avail.length > 0) {
+                    detail += ` | 可用模型: ${avail.slice(0, 5).join(', ')}`;
+                    if (avail.length > 5) detail += ` 等${avail.length}个`;
                 }
                 if (res.reply) detail += ` | 回复: ${res.reply}`;
                 testResultDetail.textContent = detail;

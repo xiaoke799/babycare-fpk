@@ -1577,12 +1577,46 @@ def call_llm(question, baby_context=None, history=None, model_override=None):
         provider = LLM['provider']
 
         if provider == 'ollama':
-            return _call_ollama(messages, model_override)
+            ok, ans = _call_ollama(messages, model_override)
         else:
-            return _call_openai_compat(messages, model_override)
+            ok, ans = _call_openai_compat(messages, model_override)
+        if ok and ans:
+            _set_last_llm_error('')       # 成功就清掉，别让旧错误一直挂着误导人
+        elif not _LAST_LLM_ERROR:
+            _set_last_llm_error('厂商没有返回可用内容（可能是模型名不对或额度不足）')
+        return ok, ans
     except Exception as exc:
         logger.warning('LLM 调用失败: %s: %s', type(exc).__name__, str(exc)[:200])
+        _set_last_llm_error('%s: %s' % (type(exc).__name__, exc))
     return False, None
+
+
+# 最近一次大模型调用的失败原因。用途：把「为什么没用大模型」如实告诉用户 ——
+# 以前失败只写日志，界面上只回一句笼统的"调用失败"，401/模型不存在/超时
+# 这三种完全不同的处境长得一模一样，用户没法自己排查。
+_LAST_LLM_ERROR = ''
+
+
+def _sanitize_llm_error(msg) -> str:
+    """脱敏 + 压成一行：厂商回显里若带上了凭据，绝不能进界面。"""
+    text = str(msg or '').replace('\n', ' ').replace('\r', ' ').strip()
+    try:
+        secret = decrypt_api_key(LLM.get('api_key') or '')
+    except Exception:
+        secret = ''
+    if secret and secret in text:
+        text = text.replace(secret, '***')
+    return text[:160]
+
+
+def _set_last_llm_error(msg) -> None:
+    global _LAST_LLM_ERROR
+    _LAST_LLM_ERROR = _sanitize_llm_error(msg)
+
+
+def get_last_llm_error() -> str:
+    """最近一次大模型调用失败的真实原因（成功时为空串）。"""
+    return _LAST_LLM_ERROR
 
 
 def _call_ollama(messages, model_override=None):

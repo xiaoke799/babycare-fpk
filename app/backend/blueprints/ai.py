@@ -38,16 +38,56 @@ def _save_llm_config(cfg):
 
 
 def _ensure_llm_applied():
-    """确保当前 worker 进程的内存 LLM 配置与持久化配置一致（每次 AI 请求前调用）"""
+    """确保当前 worker 进程的内存 LLM 配置与持久化配置一致（每次 AI 请求前调用）
+
+    ⚠ 两个坑（2026-10-05 实测复现；用户症状是「配置好了、测试连接也成功，
+    但小萌一直用规则引擎回答」）：
+
+      1) 磁盘上存的 api_key 是**密文**，而 configure_llm 会对 api_key 再加密一次。
+         把磁盘值直接喂回去 = 「密文当明文又加密一遍」⇒ decrypt 回来得到的是
+         **上一次的密文本身** ⇒ 真实对话带着坏 key 打厂商接口必然 401
+         （连续 5 次后还会熔断，整段时间全走规则引擎）。
+         而设置页「测试连接」用的是前端刚输入的**明文**，所以照样显示"连接成功" ——
+         这正是症状的来源：测试过、但对话永远不生效。
+      2) custom_models 在磁盘上是 {provider: [models]} 的 dict，而 configure_llm 的
+         自定义模型分支只认 list ⇒ 重启后自定义模型静默消失（下拉框里没了）。
+
+    修法：api_key 一律**还原成明文**再比较、再下发；custom_models 单独补回。
+    """
     try:
-        from ai_engine import LLM, configure_llm
+        from ai_engine import LLM, configure_llm, decrypt_api_key
         cfg = _load_llm_config()
         if not cfg:
             return
+
+        disk_key = cfg.get('api_key') or ''
+        disk_plain = decrypt_api_key(disk_key) if disk_key else ''
+        mem_key = LLM.get('api_key') or ''
+        mem_plain = decrypt_api_key(mem_key) if mem_key else ''
+        disk_custom = cfg.get('custom_models')
+        if not isinstance(disk_custom, dict):
+            disk_custom = {}
+
+        def _apply():
+            new_cfg = dict(cfg)
+            new_cfg['api_key'] = disk_plain          # 明文进去，由 configure_llm 负责加密
+            configure_llm(new_cfg)
+            # configure_llm 认不了 dict 形态的自定义模型，这里单独补
+            if disk_custom and LLM.get('custom_models') != disk_custom:
+                LLM['custom_models'] = dict(disk_custom)
+
+        # api_key 按明文比对（比密文没意义：每次加密的 IV 都不同，永远"不相等"）
+        if mem_plain != disk_plain:
+            _apply()
+            return
+        if disk_custom and LLM.get('custom_models') != disk_custom:
+            _apply()
+            return
         # 轻量指纹比较，不一致才重新应用
-        for key in ('provider', 'model', 'api_url', 'api_key', 'consent_cloud', 'temperature', 'max_tokens', 'timeout', 'system_prompt', 'vision_enabled', 'vision_model'):
+        for key in ('provider', 'model', 'api_url', 'consent_cloud', 'temperature',
+                    'max_tokens', 'timeout', 'system_prompt', 'vision_enabled', 'vision_model'):
             if LLM.get(key) != cfg.get(key):
-                configure_llm(cfg)
+                _apply()
                 return
     except Exception as e:
         logger.warning("_ensure_llm_applied 失败: %s", e)
@@ -133,6 +173,7 @@ def ai_chat():
             answer = None
             tool_events: list = []
             fallback_reason = ''
+            llm_answered = False     # 这次回答是否**真的**来自大模型（回退时必须是 False）
 
             provider_now = (LLM.get('provider') or '').strip()
             is_local_provider = provider_now in ('ollama', 'lmstudio')
@@ -144,11 +185,20 @@ def ai_chat():
                     breaker_state = (get_ai_client_stats().get('circuit_breaker') or {}).get('state', '')
                 except Exception:
                     pass
+                # 用**解密后**的 key 判断有没有配，别拿密文当"已配置"
+                try:
+                    from ai_engine import decrypt_api_key, get_last_llm_error
+                    key_ok = bool(decrypt_api_key(LLM.get('api_key') or ''))
+                    last_err = get_last_llm_error()
+                except Exception:
+                    key_ok = bool(LLM.get('api_key'))
+                    last_err = ''
                 return _llm_fail_reason(
                     provider_now,
                     bool(LLM.get('consent_cloud')),
-                    bool(LLM.get('api_key')),
+                    key_ok,
                     breaker_state,
+                    last_err,
                 )
 
             # 可用性判定与 ai_client._call_llm_with_retry 的拦截条件保持一致：
@@ -216,12 +266,14 @@ def ai_chat():
                     logging.getLogger(__name__).error("LLM调用异常: %s", e)
                     ok = False
                     answer = None
+                llm_answered = bool(ok and answer)
+                if not llm_answered:
+                    answer = None
 
-            # LLM 失败则回退规则引擎
-            if not answer:
-                # 规则引擎模式下若用户意图是写入，主动提示需要 LLM
+            # 没拿到大模型回答就回退规则引擎 —— 并且**一定**把原因带上
+            if not llm_answered:
                 answer = chat_response(question, db, baby_id)
-                if llm_enabled and not fallback_reason:
+                if not fallback_reason:
                     fallback_reason = _reason_now()
 
             # 保存 AI 回复
@@ -230,11 +282,14 @@ def ai_chat():
             except Exception:
                 pass
 
-            # 回答来源：对话内选择的模型 > 全局配置模型 > 规则引擎
-            if llm_enabled and answer and model_sel:
-                used_model = model_sel
-            elif llm_enabled:
-                used_model = LLM.get('model') or PROVIDER_TEMPLATES.get(LLM.get('provider', ''), {}).get('default_model', '规则引擎')
+            # 回答来源：**只有真的拿到大模型回答才标模型名**。
+            # 以前只在 llm_enabled 上判断，于是"配置没问题但调用失败（key 坏/网络不通/
+            # 熔断）"时，规则引擎的回答会被标成 deepseek-v4-flash —— 用户看到的就是
+            # "配好了、AI 却在装傻"，而且前端据此判断要不要显示失败原因，
+            # 结果那套提示在**最常见**的失败场景下永远不出现。
+            if llm_answered:
+                used_model = (model_sel or LLM.get('model')
+                              or PROVIDER_TEMPLATES.get(LLM.get('provider', ''), {}).get('default_model', '规则引擎'))
             else:
                 used_model = '规则引擎'
 
@@ -242,6 +297,7 @@ def ai_chat():
                 'success': True,
                 'answer': answer,
                 'llm_enabled': llm_enabled,
+                'llm_used': llm_answered,      # 显式字段：前端别靠模型名字符串猜
                 'llm_model': used_model,
                 'fallback_reason': fallback_reason,
                 'tool_events': tool_events,
@@ -255,7 +311,9 @@ def ai_chat():
             'success': True,
             'answer': answer,
             'llm_enabled': False,
+            'llm_used': False,
             'llm_model': '规则引擎',
+            'fallback_reason': '未选择宝宝，大模型需要宝宝数据作为上下文，本次由本地规则引擎回答',
             'tool_events': [],
             'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         })
@@ -272,7 +330,9 @@ def ai_chat():
             'success': True,
             'answer': fallback,
             'llm_enabled': False,
+            'llm_used': False,
             'llm_model': '规则引擎',
+            'fallback_reason': '对话处理异常，已用本地规则引擎兜底',
             'tool_events': [],
             'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         })
@@ -286,12 +346,15 @@ def _safe_max_tool_rounds(v) -> int:
     return max(1, min(n, 10))
 
 
-def _llm_fail_reason(provider_now, consent_cloud, api_key_set, breaker_state=''):
+def _llm_fail_reason(provider_now, consent_cloud, api_key_set, breaker_state='', last_error=''):
     """推断「这次为什么没走大模型」，随响应带回前端展示。
 
     此前 LLM 失败会静默回退规则引擎：用户配了厂商却没勾「数据外发同意」
     （或密钥错/网络不通/熔断）时，界面毫无提示，看起来就像"接入了但 AI 装傻"。
     纯参数函数，方便离线单测。
+
+    last_error：最近一次调用的真实报错（来自 get_last_llm_error()）。
+    401 / 模型不存在 / 超时 是完全不同的处境，只回一句"调用失败"用户没法排查。
     """
     provider_now = (provider_now or '').strip()
     if not provider_now:
@@ -303,7 +366,9 @@ def _llm_fail_reason(provider_now, consent_cloud, api_key_set, breaker_state='')
         return 'API Key 未配置，请到 设置 → AI 大模型 填写'
     if breaker_state == 'open':
         return '连续调用失败已熔断，约 2 分钟后自动恢复，可先检查网络与密钥'
-    return '调用失败（检查 API Key、模型名或 NAS 外网连通性）'
+    base = '调用失败（检查 API Key、模型名或 NAS 外网连通性）'
+    tail = (last_error or '').strip()
+    return base + ('；最近一次错误：' + tail if tail else '')
 
 
 # ==================== LLM 状态与配置 API ====================
@@ -342,6 +407,72 @@ def ai_llm_providers():
         import logging
         logging.getLogger(__name__).error("ai_llm_providers error: %s", e)
         return jsonify({'success': False, 'message': '加载提供商列表失败'}), 500
+
+
+def _reset_breaker_silently():
+    """把熔断器清零（失败静默）。
+
+    用户改完配置 / 测试通了之后，上一次的连续失败不该再拦着他 ——
+    否则"改好了还要再等 2 分钟才生效"，用户只会以为改动没用。
+    """
+    try:
+        from ai_client import reset_circuit_breaker
+        reset_circuit_breaker()
+    except Exception:
+        pass
+
+
+def _clear_ai_cache_silently():
+    """清掉回答缓存（失败静默）。
+
+    配置一变（换厂商 / 换模型 / 换 Key），旧缓存必须作废：缓存键只带
+    provider+model，TTL 又是 1 小时 ⇒ 不清理的话，换完厂商后同样的提问
+    还会拿到**上一个厂商**的回答，看起来像"改了没生效"。
+    （clear_ai_cache 一直没人调过，2026-10-05 补上。）
+    """
+    try:
+        from ai_client import clear_ai_cache
+        clear_ai_cache()
+    except Exception:
+        pass
+
+
+def _list_remote_models(api_url, headers, timeout_val):
+    """尽力取厂商的可用模型列表（OpenAI 兼容的 /models）。
+
+    取不到一律返回 []：这是**加分项**，不能因为厂商没实现 /models 就把测试判失败。
+    安全：只从已经过 _is_safe_url 校验的 api_url 推同源地址，推导结果再校验一次。
+    """
+    import json as _json2
+    import urllib.request as _ur
+
+    u = (api_url or '').rstrip('/')
+    for suffix in ('/chat/completions', '/completions'):
+        if u.endswith(suffix):
+            u = u[:-len(suffix)]
+            break
+    if not u:
+        return []
+    models_url = u + '/models'
+    if not _is_safe_url(models_url):
+        return []
+    try:
+        req = _ur.Request(models_url, headers=headers)
+        with _ur.urlopen(req, timeout=min(int(timeout_val or 10), 10)) as resp:
+            data = _json2.loads(resp.read().decode('utf-8'))
+    except Exception:
+        return []
+    if isinstance(data, dict) and isinstance(data.get('data'), list):        # OpenAI 兼容
+        return [str(m.get('id')) for m in data['data'] if isinstance(m, dict) and m.get('id')]
+    if isinstance(data, dict) and isinstance(data.get('models'), list):      # 少数厂商用 models
+        out = []
+        for m in data['models']:
+            if isinstance(m, dict):
+                name = m.get('name') or m.get('id')
+                if name:
+                    out.append(str(name))
+        return out
+    return []
 
 
 def _is_safe_url(url):
@@ -444,6 +575,7 @@ def ai_llm_test():
                     models = [m.get('name', '') for m in result['models']]
                 elif 'data' in result:
                     models = [m.get('id', '') for m in result['data']]
+                _reset_breaker_silently()      # 测通了：旧失败不该再拦着
                 return jsonify({
                     'success': True,
                     'message': f'连接成功！发现 {len(models)} 个模型',
@@ -453,6 +585,15 @@ def ai_llm_test():
             return jsonify({'success': False, 'message': f'连接失败: {str(e)}'})
 
     # 云端服务 - 发送测试请求
+    if not api_key:
+        # 输入框在"已配置"时是空的 ⇒ 用**库里存的那份**来测。
+        # 否则会出现"明明配好了，点测试却提示请填写 API Key"，
+        # 逼用户为了测试再把 Key 翻出来粘一遍（还可能粘错）。
+        try:
+            from ai_engine import LLM as _LLM_now, decrypt_api_key
+            api_key = decrypt_api_key(_LLM_now.get('api_key') or '')
+        except Exception:
+            api_key = ''
     if not api_key:
         return jsonify({'success': False, 'message': '请填写 API Key'})
 
@@ -476,22 +617,46 @@ def ai_llm_test():
         extra_headers = template.get('extra_headers', {})
         headers.update(extra_headers)
 
+        # 顺手问一下「这个账号到底能用哪些模型」——失败不影响主流程。
+        # 用途：① 选了不存在/没开通的模型时，错误信息能直接给出可用清单；
+        #       ② 成功时也能校验所选模型是否真的在列表里（推荐项漂移的兜底）。
+        available = _list_remote_models(api_url, headers, timeout_val)
+
         req = urllib.request.Request(
             api_url,
             data=_json.dumps(payload).encode('utf-8'),
             headers=headers,
         )
-        with urllib.request.urlopen(req, timeout=timeout_val) as resp:
-            result = _json.loads(resp.read().decode('utf-8'))
-            if 'choices' in result and result['choices']:
-                reply = result['choices'][0].get('message', {}).get('content', 'Connected')
-                return jsonify({
-                    'success': True,
-                    'message': '连接成功！',
-                    'reply': reply[:100],
-                })
-            else:
-                return jsonify({'success': False, 'message': '响应格式异常'})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout_val) as resp:
+                result = _json.loads(resp.read().decode('utf-8'))
+        except urllib.error.HTTPError as e:
+            body = e.read().decode('utf-8', errors='replace')[:200] if hasattr(e, 'read') else ''
+            msg = f'HTTP {e.code}: {body}'
+            if available:
+                msg += '｜该账号可用模型：' + ', '.join(available[:12])
+            return jsonify({'success': False, 'message': msg,
+                            'available_models': available[:50]})
+
+        if 'choices' in result and result['choices']:
+            reply = result['choices'][0].get('message', {}).get('content', 'Connected')
+            resp_obj = {
+                'success': True,
+                'message': '连接成功！',
+                'reply': reply[:100],
+            }
+            if available:
+                resp_obj['available_models'] = available[:50]
+                resp_obj['model_ok'] = (not model) or (model in available)
+                if model and model not in available:
+                    resp_obj['message'] = (
+                        '连接成功，但所选模型 %s 不在该账号的可用模型列表里（仍可能可用，'
+                        '如自定义/别名模型）。该账号可用：%s' % (model, ', '.join(available[:10]))
+                    )
+            _reset_breaker_silently()          # 测通了：旧失败不该再拦着对话
+            return jsonify(resp_obj)
+        else:
+            return jsonify({'success': False, 'message': '响应格式异常'})
     except urllib.error.HTTPError as e:
         body = e.read().decode('utf-8', errors='replace')[:200] if hasattr(e, 'read') else ''
         return jsonify({'success': False, 'message': f'HTTP {e.code}: {body}'})
@@ -577,6 +742,20 @@ def ai_llm_configure():
     if api_key is not None and len(str(api_key)) > 200:
         return jsonify({'success': False, 'message': 'API Key 无效'}), 400
 
+    # ⚠ 输入框在"已配置"时是空的（只显示占位提示「已配置 API Key（输入新值以替换）」），
+    # 前端照样会把空串发过来（saveLLMConfig 恒定带 api_key 字段）。
+    # 若把空串当成"清空"，用户改个温度再点保存，已存的 Key 就被抹掉了 ——
+    # 之后一切调用 401、静默回退规则引擎，而界面看着"配置还在"。
+    # 规则：留空 = 不修改；只有显式关闭 LLM（provider 为空）或**换了厂商**时才清掉，
+    # 后者是因为把 A 厂商的 Key 拿去打 B 厂商接口必然 401，不如逼用户重填。
+    if not str(api_key or '').strip():
+        from ai_engine import LLM as _LLM_now
+        provider_changed = (provider or '') != (_LLM_now.get('provider') or '')
+        if provider and not provider_changed:
+            data.pop('api_key', None)          # 保留已存 Key，本次不动它
+        else:
+            data['api_key'] = ''               # 关闭 / 换厂商：清掉旧凭据
+
     # 处理自定义模型列表
     custom_models = data.get('custom_models', [])
     if isinstance(custom_models, list):
@@ -595,6 +774,9 @@ def ai_llm_configure():
     data['consent_cloud'] = consent_cloud
     config = configure_llm(data)
     _save_llm_config(config)
+    # 配置变了 ⇒ 熔断器与回答缓存都要作废，否则"改完像没生效"
+    _reset_breaker_silently()
+    _clear_ai_cache_silently()
 
     return jsonify({
         'success': True,
