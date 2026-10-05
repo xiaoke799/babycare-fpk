@@ -19930,6 +19930,11 @@ function bindConsentGate() {
 
     agreeBtn.addEventListener('click', async () => {
         if (!box.checked) {
+    // ⚠ 设置页「隐私与协议」卡片的 href / 版本号也要等这份信息回来才填得上。
+    // 以前只在 DOMContentLoaded + setTimeout(0) 里调一次 bindLegalSettings，
+    // 那时这个请求还没回来 ⇒ 链接恒为 "#"、版本恒为 "—"，
+    // 就算卡片位置摆对了，点《用户协议》也只是打开一个空页。
+    bindLegalSettings();
             if (tip) {
                 tip.textContent = '请先勾选上方确认项（须由监护人同意）';
                 tip.classList.add('error');
@@ -19994,13 +19999,14 @@ function bindLegalSettings() {
         withdraw.dataset.bound = '1';
         withdraw.addEventListener('click', withdrawConsent);
     }
-    // 协议 URL 由后端生成（自带网关前缀），这里不硬编码路径
-    if (_consentInfo) {
-        if (terms) terms.href = _consentInfo.terms_url || '#';
-        if (privacy) privacy.href = _consentInfo.privacy_url || '#';
-        if (termsVer) termsVer.textContent = 'v' + (_consentInfo.terms_version || '—');
-        if (privacyVer) privacyVer.textContent = _consentInfo.privacy_version || '—';
-    }
+    // 协议 URL 由后端生成（自带网关前缀），这里不硬编码路径。
+    // 但后端没起来时（/api/consent/required 失败）也不能留一个死的 "#"：
+    // 退化成「网关前缀 + /legal/xxx.html」，与后端 url_for 的结果同形。
+    const info = _consentInfo || {};
+    if (terms) terms.href = info.terms_url || (App.apiBase + '/legal/terms.html');
+    if (privacy) privacy.href = info.privacy_url || (App.apiBase + '/legal/privacy.html');
+    if (termsVer) termsVer.textContent = info.terms_version ? ('v' + info.terms_version) : '查看';
+    if (privacyVer) privacyVer.textContent = info.privacy_version || '查看';
 }
 
 document.addEventListener('DOMContentLoaded', () => {

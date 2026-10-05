@@ -1906,6 +1906,41 @@
                 </div>
                 <p class="settings-tip" id="notifyTip"></p>
             </div>
+
+        <!-- 隐私与协议（合规要件）：本应用处理不满十四周岁未成年人的信息，须监护人同意。
+             ⚠ 这张卡曾经被写在 html 结束标签**之后**，浏览器容错把它并回 body 但没并进
+             任何 .page ⇒ 设置页里根本没有这个入口，用户找不到《用户协议》。
+             门禁 verify_nav_layout.py 现在会锁「它在 #page-settings 里」。 -->
+        <div class="settings-card">
+            <div class="settings-card-head">
+                <span class="settings-card-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+                </span>
+                <div class="settings-card-head-text">
+                    <div class="settings-card-title">隐私与协议</div>
+                    <div class="settings-card-desc">本应用处理不满十四周岁未成年人的信息，须由监护人阅读并同意。</div>
+                </div>
+            </div>
+            <a class="feedback-row" id="settingsLegalLink" href="#" target="_blank" rel="noopener">
+                <span class="feedback-main">
+                    <span class="feedback-label">《用户协议》</span>
+                    <span class="feedback-value" id="settingsTermsVer">—</span>
+                </span>
+                <span class="feedback-go">›</span>
+            </a>
+            <a class="feedback-row" id="settingsPrivacyLink" href="#" target="_blank" rel="noopener">
+                <span class="feedback-main">
+                    <span class="feedback-label">《隐私政策》</span>
+                    <span class="feedback-value" id="settingsPrivacyVer">—</span>
+                </span>
+                <span class="feedback-go">›</span>
+            </a>
+            <div class="settings-row">
+                <span class="settings-row-label">撤回同意</span>
+                <button class="btn btn-outline btn-sm" id="withdrawConsentBtn">撤回</button>
+            </div>
+            <p class="settings-tip">撤回后将停用 AI 数据外发功能，下次启动需重新确认。</p>
+        </div>
     </div>
 </section>
 
@@ -3779,35 +3814,6 @@
 </div>
 
 </body>
-</html>        <div class="settings-card">
-            <div class="settings-card-head">
-                <span class="settings-card-head-icon">
-                    <svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-doc"/></svg>
-                </span>
-                <div class="settings-card-head-text">
-                    <div class="settings-card-title">隐私与协议</div>
-                    <div class="settings-card-desc">本应用处理不满十四周岁未成年人的信息，须由监护人阅读并同意。</div>
-                </div>
-            </div>
-            <a class="feedback-row" id="settingsLegalLink" href="#" target="_blank" rel="noopener">
-                <span class="feedback-main">
-                    <span class="feedback-label">《用户协议》</span>
-                    <span class="feedback-value" id="settingsTermsVer">—</span>
-                </span>
-                <span class="feedback-go">›</span>
-            </a>
-            <a class="feedback-row" id="settingsPrivacyLink" href="#" target="_blank" rel="noopener">
-                <span class="feedback-main">
-                    <span class="feedback-label">《隐私政策》</span>
-                    <span class="feedback-value" id="settingsPrivacyVer">—</span>
-                </span>
-                <span class="feedback-go">›</span>
-            </a>
-            <div class="settings-row">
-                <span class="settings-row-label">撤回同意</span>
-                <button class="btn btn-outline btn-sm" id="withdrawConsentBtn">撤回</button>
-            </div>
-            <p class="settings-tip">撤回后将停用 AI 数据外发功能，下次启动需重新确认。</p>
-        </div>
+</html>
 
 

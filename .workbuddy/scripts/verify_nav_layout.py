@@ -325,6 +325,49 @@ chk("拆开的两半互相指路（录↔看）",
     and "growth-chart" in page_links_of("growth")
     and "growth" in page_links_of("growth-chart"))
 
+# ==================== 十三、合规入口：协议卡片必须真的在设置页里 ====================
+# 背景（2026-10-05 实踩，代价是合规要件当场失效而所有门禁全绿）：
+# 「隐私与协议」这张卡片被写在了 `</html>` **之后**。浏览器容错会把它并回 <body>，
+# 但**不会并进任何 .page** ⇒ 设置页里根本没有这个入口，用户找不到《用户协议》。
+# 当时没有任何门禁能发现它：check_dom_ids 只看 id 在不在（在）、
+# verify_nav_layout 只查导航落点、真机渲染只覆盖换尿布/趴睡/出牙。
+# 同一次还有两个连带问题，一起锁住：
+#   · 卡片头用的 `.settings-card-head-icon` 在 CSS 里**根本没有定义** ⇒ 图标裸奔；
+#   · `bindLegalSettings()` 只在 DOMContentLoaded + setTimeout(0) 里调一次，
+#     那时 /api/consent/required 还没回来 ⇒ href 恒为 "#"、版本号恒为 "—"。
+# ⚠ 先剥注释再判，并且取**最后一个** </html>：注释里写一句「结束标签之后」
+# 就能把朴素实现带偏（本次实测：我自己的注释里出现过 `</html>` 字样，
+# 断言拿第一个当分界，于是把正常内容全报成了「游离在文档外」的假红）。
+_html_nc = re.sub(r"<!--.*?-->", "", html, flags=re.S)
+_idx = _html_nc.rfind("</html>")
+_after_html = _html_nc[_idx + len("</html>"):] if _idx >= 0 else _html_nc
+_stray = re.findall(r"<[a-zA-Z][^>]*>", _after_html)
+chk("</html> 之后没有元素标签（写在那里等于游离在 .page 之外，页面里根本看不到）%s"
+    % ("" if not _stray else "，发现：" + " ".join(_stray[:3])), not _stray)
+
+_m = re.search(r'<section class="page" id="page-settings">(.*?)</section>', html, re.S)
+_settings_html = _m.group(1) if _m else ""
+for _id in ("settingsLegalLink", "settingsPrivacyLink", "withdrawConsentBtn"):
+    chk("设置页里有 #%s（合规入口要能被用户找到）" % _id,
+        ('id="%s"' % _id) in _settings_html)
+chk("协议入口只在设置页出现一次（重复 id 会让绑定只生效一半）",
+    html.count('id="settingsLegalLink"') == 1 and html.count('id="withdrawConsentBtn"') == 1)
+chk("设置页文案里有「隐私与协议」卡片标题", "隐私与协议" in _settings_html)
+
+# 卡片头图标类必须在 CSS 里有定义（凭空造类名 = 图标裸奔且没人会发现）
+_icon_classes = set(re.findall(r'<span class="(settings-card-[a-z\-]*icon[a-z\-]*)"', html))
+_icon_missing = sorted(c for c in _icon_classes if ("." + c) not in css)
+chk("卡片头图标类在 CSS 里有定义%s"
+    % ("" if not _icon_missing else "，未定义：" + "、".join(_icon_missing)), not _icon_missing)
+
+# 协议链接与版本号必须在拿到 /api/consent/required 之后回填
+_init = js[js.index("async function initConsentGate"):]
+_init = _init[:_init.index("\n}\n")]
+chk("initConsentGate 拿到协商信息后调 bindLegalSettings()（否则链接恒为 #、版本恒为 —）",
+    "_consentInfo = res.data" in _init and "bindLegalSettings()" in _init)
+chk("bindLegalSettings 有兜底 URL（后端没起来也不能留一个死的 #）",
+    "App.apiBase + '/legal/terms.html'" in js and "App.apiBase + '/legal/privacy.html'" in js)
+
 print()
 print("通过" if ok else "存在失败项")
 sys.exit(0 if ok else 1)
