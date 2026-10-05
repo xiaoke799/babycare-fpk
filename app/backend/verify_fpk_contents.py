@@ -18,11 +18,13 @@
 
 检查三类：
   1. 包内文件的**内容**与工作区源文件一致（逐字节比对，比看日期可靠）
-  2. 关键改动点的特征字符串确实在包里（防止「文件对了但内容被覆盖」）
+  2. 关键改动点的特征字符串确实在包里（防止「文件对了但内容被覆盖」）；
+     以及反向串（NOT_MARKS）—— 已废掉的写法**不该**出现在包里
   3. 包内后端 .py 全部能 py_compile 通过
 """
 import io
 import os
+import re
 import sys
 import tarfile
 import hashlib
@@ -81,6 +83,23 @@ MARKS = [
     ("二维码图片文件在包里", "frontend/images/qr-wechat.png", "PNG"),
     ("支付宝二维码节点在包里", "frontend/index.html", 'id="aboutAlipayQr"'),
     ("支付宝二维码图片文件在包里", "frontend/images/qr-alipay.png", "PNG"),
+    # ---- 出牙页数据层修复（2026-10-05）----
+    ("出牙页已改接 /teething（不再调不存在的 /teeth）",
+     "frontend/js/app.js", "function loadTeethRecords"),
+    ("出牙删除走 /api/teething/<id>", "frontend/js/app.js", "api(`/api/teething/${id}`"),
+    ("出牙记录表已补 tooth_code（迁移 v7）", "backend/migrations.py", "_migration_v7"),
+    ("出牙写入端已校验 tooth_code 白名单",
+     "backend/blueprints/development.py", "VALID_TOOTH_CODES"),
+]
+
+# 反向特征串：(描述, 包内文件, **不得**匹配的正则)
+# 光有正向特征不足以证明「旧写法没被漏改回来」——出牙页那次的根因就是
+# 前端还留着 /api/babies/<id>/teeth 这个后端已删除的接口，整页静默失效。
+NOT_MARKS = [
+    ("出牙页不再调不存在的 /teeth 接口",
+     "frontend/js/app.js", r"/api/babies/\$\{[^}]*\}/teeth[/`\"')]"),
+    ("出牙那套死实现（依赖 #teethingList）没被打回包里",
+     "frontend/js/app.js", r"function\s+(loadTeethingRecords|initTeethingPage|deleteTooth)\s*\("),
 ]
 
 
@@ -167,6 +186,20 @@ def main():
             if path not in cache:
                 cache[path] = open(path, "r", encoding="utf-8", errors="replace").read()
             check(desc, needle in cache[path], {"文件": inside, "找的串": needle})
+
+        # ---- 2b. 反向特征串：这些串**不该**出现在包里 ----
+        for desc, inside, pattern in NOT_MARKS:
+            path = packed.get(inside)
+            if path is None:
+                cands = [k for k in packed if k.endswith(os.path.basename(inside))]
+                path = packed.get(cands[0]) if cands else None
+            if path is None:
+                check(desc, False, "包里找不到 %s" % inside)
+                continue
+            if path not in cache:
+                cache[path] = open(path, "r", encoding="utf-8", errors="replace").read()
+            hit = re.search(pattern, cache[path])
+            check(desc, hit is None, {"文件": inside, "不该出现的": hit.group(0) if hit else None})
 
         # ---- 3. 包内后端 .py 全部编译通过 ----
         bad = []
