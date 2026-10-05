@@ -1528,6 +1528,113 @@ def _effective_timeout():
     return timeout if timeout > 0 else 15
 
 
+# ============================================================
+# 配置运行时收口（2026-10-05，对照 DeepSeek Harness 的 resolveAdapterOptions）
+#
+# 为什么要"再判一次"：dsh 的注释说得很直白 ——
+#   "Programmatic construction may bypass Schemastery normalization,
+#    so every default and bound is re-judged here."
+#   也就是说**通过了校验 ≠ 到了使用那一刻仍然合法**。
+#
+# 我们的情况更糟：configure_llm() 是被前端 POST 一个裸 dict 调用的，
+# 没有任何 schema；而它内部 `for k, v in config.items(): if k in LLM`
+# 只是照单收下，**值一个都不校验**。实测能存进去的东西：
+#   temperature="abc"  → 原样进 payload（第 1792 行）→ 厂商 400 → 熔断 → 全走规则引擎
+#   max_tokens=-5      → 负数发给厂商
+#   timeout="x"        → _effective_timeout 静默回落 15s，用户不知道自己填了垃圾
+#   model="随便写的"    → 落库后每次调用都 404（与 2026-10-05 那次同型）
+# 这类问题的共同点：**界面显示"配置已更新"，实际已经坏了**。
+#
+# 收口策略刻意**不拒绝请求**（拒绝会把用户挡在门外，且旧配置已落库无法回退），
+# 而是**归一到安全值 + 留下 trace**，让问题在日志里可见、在界面上可解释。
+# ============================================================
+
+# 各字段的合法区间：[最小, 最大]；None 表示该字段不设上界
+_LLM_INT_RANGES = {
+    'timeout': (1, 600),        # 上限 600s：NAS 到公网再绕代理，30s 常不够
+    'max_tokens': (0, 1_000_000),  # 0 = 用厂商默认
+}
+_LLM_FLOAT_RANGES = {
+    'temperature': (0.0, 2.0),  # 多数厂商接受 0~2，个别到 1.5；超界厂商会 400
+}
+
+
+def _coerce_llm_config_value(key, value):
+    """把单个配置值归一到安全范围。返回 (归一后的值, 是否被改过, 说明)。
+
+    ⚠ 归一而不是报错：见上方注释「收口策略」。
+    ⚠ `bool` 必须先排除：Python 里 True == 1，`int(True)` 会得到 1，
+       于是 `vision_enabled` 之类若误传进来会被当成数字。
+    """
+    if key in _LLM_INT_RANGES:
+        lo, hi = _LLM_INT_RANGES[key]
+        default = 0 if key == 'max_tokens' else 30
+        if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+            return default, True, '%s 类型非法(%s)，已回落 %s' % (key, type(value).__name__, default)
+        try:
+            n = int(float(value))          # 容忍 "30" / 30.0 / "30.7"
+        except (TypeError, ValueError):
+            return default, True, '%s 不是数字(%r)，已回落 %s' % (key, value, default)
+        if n < lo or n > hi:
+            n = max(lo, min(hi, n))
+            return n, True, '%s=%s 超出允许范围 [%s, %s]，已钳到 %s' % (
+                key, value, lo, hi, n)
+        return n, False, ''
+
+    if key in _LLM_FLOAT_RANGES:
+        lo, hi = _LLM_FLOAT_RANGES[key]
+        default = 0.7
+        if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+            return default, True, '%s 类型非法(%s)，已回落 %s' % (key, type(value).__name__, default)
+        try:
+            f = float(value)
+        except (TypeError, ValueError):
+            return default, True, '%s 不是数字(%r)，已回落 %s' % (key, value, default)
+        if f != f or f in (float('inf'), float('-inf')):
+            return default, True, '%s 是 NaN/Inf，已回落 %s' % (key, default)
+        if f < lo or f > hi:
+            f = max(lo, min(hi, f))
+            return f, True, '%s=%s 超出允许范围 [%s, %s]，已钳到 %s' % (key, value, lo, hi, f)
+        return f, False, ''
+
+    return value, False, ''
+
+
+def _resolve_model_choice(provider, wanted, kind='models'):
+    """校验用户选的模型是否真在该厂商的清单里。
+
+    返回 (最终模型名, 是否被改过, 说明)。
+    ⚠ 查的是**合并后的清单**（内置 + 用户在 custom_models 里自填的），
+      否则用户自填的模型会被误判成非法 —— 那等于把功能关了。
+    ⚠ 厂商清单本身可能整体过期（2026-10-05 的 deepseek 事件），
+      所以"不在清单里"只回落、不报错；真正的过期由 catalog_stale 负责报。
+    """
+    tpl = PROVIDER_TEMPLATES.get(provider) or {}
+    builtin = list(tpl.get(kind) or [])
+    if provider == 'custom':
+        # 自定义厂商的清单完全由用户填，模板里是空的，不做存在性校验
+        return (wanted or ''), False, ''
+    if not builtin:
+        # ⚠ 厂商**没有**这个 kind 的清单（如 deepseek 的 vision_models 为空）。
+        #   若还带着一个非空的 wanted，那就是「开了视觉功能却选了不存在的模型」——
+        #   与其让它一路走到请求里失败，不如这里直接关掉视觉并说清楚。
+        #   （dsh 的对应做法叫"未收录的能力一律按没有处理"。）
+        if kind == 'vision_models' and wanted:
+            return '', True, '%s 没有可选的视觉模型（清单为空），已关闭 vision_model' % provider
+        return (wanted or ''), False, ''
+    if not wanted:
+        dflt = tpl.get('default_model' if kind == 'models' else 'default_vision_model', '')
+        return dflt, False, ''
+    if wanted in builtin:
+        return wanted, False, ''
+    # 不在清单里：回落默认模型，并把这件事说出来
+    dflt = tpl.get('default_model' if kind == 'models' else 'default_vision_model', '') or ''
+    if not dflt:
+        return wanted, False, ''      # 连默认模型都没有（custom）⇒ 保持原样
+    return dflt, True, '%s=%s 不在 %s 的模型清单里，已回落默认模型 %s' % (
+        kind[:-1] if kind.endswith('s') else kind, wanted, provider, dflt)
+
+
 SYSTEM_PROMPT = """你是「育儿宝」的 AI 育儿顾问，服务对象是用这个应用记录宝宝日常的家长，擅长婴幼儿生长发育、喂养、睡眠、护理与常见问题应对。
 
 【必须遵守】
@@ -1953,8 +2060,17 @@ def get_llm_status():
 
 
 def configure_llm(config):
-    """更新 LLM 配置（自动加密 API Key）"""
+    """更新 LLM 配置（自动加密 API Key）
+
+    ⚠ 所有值都在这里做**运行时收口**（见 _coerce_llm_config_value 的说明）：
+      前端 POST 过来的是裸 dict、没有任何 schema，实测能存进
+      temperature="abc" / max_tokens=-5 / timeout="x" / model="乱写的"，
+      它们会一路进到发给厂商的 payload 里变成 400/404，
+      而界面显示的是"配置已更新"。这里拦在落库前。
+    """
     global LLM
+    coerced = []          # 收口说明，逐条落日志（静默归一用户是看不见的）
+
     with _llm_lock:
         # 处理自定义模型列表 - 按提供商持久化
         if 'custom_models' in config and 'provider' in config:
@@ -1972,8 +2088,34 @@ def configure_llm(config):
                 # API Key 需要加密存储
                 if k == 'api_key' and v:
                     LLM[k] = encrypt_api_key(v)
-                else:
-                    LLM[k] = v
+                    continue
+                # 🔴 数值型收口：越界/脏类型归一到安全值（2026-10-05）
+                v, changed, why = _coerce_llm_config_value(k, v)
+                if changed:
+                    coerced.append(why)
+                LLM[k] = v
+
+        # ---- 模型名存在性收口：不在该厂商清单里就回落默认模型 ----
+        # ⚠ 必须在 provider 已落库**之后**做：要用刚写进去的 provider 去查清单。
+        cur_provider = LLM.get('provider') or ''
+        if cur_provider and cur_provider in PROVIDER_TEMPLATES:
+            if 'model' in config:
+                m, changed, why = _resolve_model_choice(cur_provider, config.get('model') or '', 'models')
+                if changed:
+                    LLM['model'] = m
+                    coerced.append(why)
+            if 'vision_model' in config:
+                vm, changed, why = _resolve_model_choice(
+                    cur_provider, config.get('vision_model') or '', 'vision_models')
+                if changed:
+                    LLM['vision_model'] = vm
+                    coerced.append(why)
+            # 🔴 开了视觉却没有任何可用视觉模型 ⇒ 必然失败，直接把开关关掉。
+            #   否则界面显示"已启用视觉"，每次带图的问答都在请求层报错。
+            if LLM.get('vision_enabled') and not (LLM.get('vision_model') or ''):
+                LLM['vision_enabled'] = False
+                coerced.append('vision_enabled 为真但没有可用视觉模型，已自动关闭视觉功能')
+
         # 如果设置了 base_url，自动更新 api_url（如果用户没有自定义 api_url）
         if 'base_url' in config and config.get('base_url'):
             base_url = config['base_url'].rstrip('/')
@@ -1986,7 +2128,18 @@ def configure_llm(config):
                     LLM['api_url'] = f'{base_url}/api/chat'
                 elif provider in ('openai', 'deepseek', 'kimi', 'qwen', 'glm', 'doubao', 'lmstudio', 'custom'):
                     LLM['api_url'] = f'{base_url}/v1/chat/completions'
-        return LLM
+
+    # 收口说明一律走 trace：用户界面上看到的是"配置已更新"，
+    # 真正被改过的细节只在这里能查到（grep '配置收口'）。
+    if coerced:
+        for why in coerced:
+            logger.warning('LLM 配置收口: %s', why)
+        try:
+            from ai_engine import llm_trace
+            llm_trace(_new_trace_id(), '⛔', '配置收口 %d 项：%s' % (len(coerced), '；'.join(coerced)))
+        except Exception:
+            pass
+    return LLM
 
 
 def get_provider_templates():

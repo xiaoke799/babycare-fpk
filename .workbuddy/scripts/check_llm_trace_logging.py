@@ -22,6 +22,7 @@
 退出码：0 = 完好；1 = 有静默点被改回。
 """
 import io
+import json
 import os
 import re
 import sys
@@ -336,6 +337,153 @@ srv.shutdown()
         any(("status=404" in ln and "does not exist" in ln) for ln in l2),
         "\n".join(l2)[:400])
     chk("工具分支：日志不含明文密钥", "sk-gate-tool-7777" not in log2, "凭据泄漏进日志了！")
+
+    # ================================================================
+    # ⑧ 配置运行时收口（2026-10-05，对照 dsh resolveAdapterOptions）
+    #
+    # 背景：configure_llm() 被前端 POST 的**裸 dict** 调用，没有任何 schema，
+    # 内部 `for k, v in config.items(): if k in LLM` 只是照单收下。
+    # 实测能落库并一路进到发给厂商的 payload 里的东西：
+    #   temperature="abc" / max_tokens=-5 / timeout="x" / model="乱写的"
+    # 而界面一律显示"配置已更新"—— 与 404 那次同型：配置存了，但坏了没人知道。
+    #
+    # 判据：静态看收口函数与调用点都在；动态拿脏值真打一遍 configure_llm，
+    # 断言**落库的是安全值**（不是"接口没报错"——那恒为真，是假绿）。
+    # ================================================================
+    engine_raw = src(ENGINE)
+    engine_nc = strip_comments(engine_raw)
+
+    chk("配置收口：存在 _coerce_llm_config_value 归一函数",
+        "def _coerce_llm_config_value(" in engine_nc, "函数不见了")
+    chk("配置收口：存在 _resolve_model_choice 模型存在性校验",
+        "def _resolve_model_choice(" in engine_nc, "函数不见了")
+    chk("配置收口：数值字段有显式区间表",
+        "_LLM_INT_RANGES" in engine_nc and "_LLM_FLOAT_RANGES" in engine_nc,
+        "区间表不见了 ⇒ 上界可能被改成无限制")
+    # ⚠ 下面三条判**原始文本**、不走 strip_comments：
+    #   这几行行尾带中文注释（'timeout': (1, 600),   # 上限 600s：…），
+    #   strip_comments 会把整行剥掉 ⇒ 用 nc 判会**恒红**，那是假红不是真问题。
+    #   （教训与 MEMORY 那条一致：断言要匹配"真实的代码形态"，
+    #     而不是假设源码长得比自己写的整洁。）
+    chk("配置收口：timeout 上界被钉住（600s）",
+        "'timeout': (1, 600)" in engine_raw, "timeout 上界被改了")
+    chk("配置收口：temperature 上界被钉住（2.0）",
+        "'temperature': (0.0, 2.0)" in engine_raw, "temperature 区间被改了")
+    chk("配置收口：bool 被显式排除（Python 里 True==1）",
+        "isinstance(value, bool)" in engine_nc, "bool 会被当成数字收口")
+    chk("配置收口：NaN/Inf 被挡住（否则 NaN 会被发给厂商）",
+        "NaN/Inf" in engine_raw or "isfinite" in engine_nc, "NaN 漏过去了")
+    chk("配置收口：configure_llm 调用了数值归一",
+        "_coerce_llm_config_value(k, v)" in engine_nc,
+        "configure_llm 没调用归一函数 ⇒ 脏值仍会原样落库")
+    chk("配置收口：configure_llm 调用了模型存在性校验",
+        "_resolve_model_choice(" in engine_nc, "模型名存在性校验没接上")
+    chk("配置收口：改过的项要留日志（否则用户只看到'配置已更新'）",
+        "LLM 配置收口" in engine_raw and "logger.warning" in engine_nc,
+        "收口没有日志 ⇒ 又变成静默归一")
+
+    # ---- ⑧b 动态：拿脏值真打 configure_llm，断言落库值 ----
+    probe3 = r'''
+import io, json, os, sys, tempfile, types
+fc = types.ModuleType('fcntl')
+for n in ('LOCK_EX','LOCK_SH','LOCK_NB','LOCK_UN'): setattr(fc, n, 0)
+fc.flock = lambda *a, **k: None
+fc.lockf = lambda *a, **k: None
+sys.modules['fcntl'] = fc
+T = tempfile.mkdtemp()
+os.environ.update(BABYCARE_DATA_DIR=T, BABYCARE_DB_PATH=os.path.join(T,'b.db'),
+                  BABYCARE_LOG_DIR=os.path.join(T,'logs'), BABYCARE_DEV_AUTH='1')
+sys.path.insert(0, %r)
+import ai_engine as E
+out = {}
+
+# A 越界 / 负数
+E.configure_llm({'provider':'deepseek','model':'deepseek-flash',
+                 'temperature':99, 'max_tokens':-5, 'timeout':99999})
+out['A'] = {k: E.LLM.get(k) for k in ('temperature','max_tokens','timeout')}
+
+# B 脏类型
+E.configure_llm({'provider':'deepseek','model':'deepseek-flash',
+                 'temperature':'abc', 'timeout':'x'})
+out['B'] = {k: E.LLM.get(k) for k in ('temperature','timeout')}
+
+# C 模型名不存在 -> 回落默认
+E.configure_llm({'provider':'deepseek','model':'no-such-model-xyz'})
+out['C'] = E.LLM.get('model')
+
+# D 开了视觉但该厂商没有视觉模型 -> 自动关掉
+E.configure_llm({'provider':'deepseek','model':'deepseek-flash',
+                 'vision_enabled':True, 'vision_model':'fake-vision-x'})
+out['D'] = {k: E.LLM.get(k) for k in ('vision_enabled','vision_model')}
+
+# E 合法值必须**原样保留**（收口不能越权改正常配置）
+E.configure_llm({'provider':'deepseek','model':'deepseek-v4-pro',
+                 'temperature':0.35, 'max_tokens':2048, 'timeout':45})
+out['E'] = {k: E.LLM.get(k) for k in ('temperature','max_tokens','timeout','model')}
+
+# F 用户自填模型必须被接受（收口不能把功能关了）
+E.LLM['custom_models'] = {}
+E.configure_llm({'provider':'deepseek','model':'deepseek-flash',
+                 'custom_models':['my-own-model-x']})
+''' % BACKEND
+
+    probe3 += (
+        "out['F'] = E.get_provider_templates()['deepseek']['models']\n"
+        "print('GATEJSON' + json.dumps(out, ensure_ascii=False, default=str))\n"
+    )
+    env = dict(os.environ)
+    env.update({"BABYCARE_DEV_AUTH": "1", "PYTHONIOENCODING": "utf-8"})
+    p3 = subprocess.run([sys.executable, "-c", probe3], capture_output=True, text=True,
+                        encoding="utf-8", errors="replace", env=env, timeout=200)
+    o3 = p3.stdout or ""
+    res3 = {}
+    if "GATEJSON" in o3:
+        # ⚠ 不能用 split("\n",1)[0] 取 JSON：探针 stdout 后面常还粘着别的输出
+        #   （logging 的 WARNING 会走 stderr，但某些库会写 stdout），
+        #   切第一行会把 JSON 拦腰截断 ⇒ 明明跑通了却判"探针没跑通"（假红）。
+        #   用 raw_decode：它按 JSON 自身的结束位置吃掉，尾巴爱带多少带多少。
+        tail = o3.split("GATEJSON", 1)[1].lstrip()
+        dec = json.JSONDecoder()
+        try:
+            res3, _end = dec.raw_decode(tail)
+        except Exception as _e:
+            res3 = {}
+            chk("配置收口：动态探针输出可解析", False,
+                "JSON 解析失败(%s)；输出=%r" % (_e, tail[:300]))
+    if res3 and "配置收口：动态探针输出可解析" not in [n for n in FAILED]:
+        chk("配置收口：动态探针输出可解析", True)
+    if not res3:
+        chk("配置收口：动态探针能跑通", False, "输出=%r / 错误=%r" % (o3[-300:], (p3.stderr or "")[-300:]))
+    else:
+        chk("配置收口：动态探针能跑通", True)
+        a = res3.get("A", {})
+        chk("配置收口：temperature 越界被钳到上界",
+            isinstance(a.get("temperature"), (int, float)) and a["temperature"] <= 2.0,
+            "落库=%r" % (a.get("temperature"),))
+        chk("配置收口：max_tokens 负数被归零",
+            a.get("max_tokens") == 0, "落库=%r" % (a.get("max_tokens"),))
+        chk("配置收口：timeout 越界被钳到 600",
+            a.get("timeout") == 600, "落库=%r" % (a.get("timeout"),))
+        b = res3.get("B", {})
+        chk("配置收口：temperature='abc' 回落成数字",
+            isinstance(b.get("temperature"), (int, float)), "落库=%r" % (b.get("temperature"),))
+        chk("配置收口：timeout='x' 回落成数字",
+            isinstance(b.get("timeout"), int) and not isinstance(b.get("timeout"), bool),
+            "落库=%r" % (b.get("timeout"),))
+        chk("配置收口：非法模型名回落成默认模型",
+            res3.get("C") == "deepseek-flash", "落库=%r" % (res3.get("C"),))
+        d = res3.get("D", {})
+        chk("配置收口：厂商无视觉模型时自动关掉 vision_enabled",
+            d.get("vision_enabled") is False and not (d.get("vision_model") or ""),
+            "落库=%r" % (d,))
+        e = res3.get("E", {})
+        chk("配置收口：合法值**原样保留**（收口不许越权改正常配置）",
+            e.get("temperature") == 0.35 and e.get("max_tokens") == 2048
+            and e.get("timeout") == 45 and e.get("model") == "deepseek-v4-pro",
+            "落库=%r" % (e,))
+        f = res3.get("F") or []
+        chk("配置收口：用户自填模型仍出现在清单里（收口没把功能关掉）",
+            "my-own-model-x" in f, "清单=%r" % (f,))
 
     print()
     print("=" * 62)
