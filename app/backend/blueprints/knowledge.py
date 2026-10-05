@@ -413,25 +413,94 @@ def delete_recipe(recipe_id):
 
 @bp.route('/api/activities', methods=['GET'])
 def get_activities():
-    """获取活动游戏推荐列表"""
+    """获取活动游戏推荐列表
+
+    参数：
+      category    按分类筛
+      age_months  按月龄区间筛（min <= m <= max）
+      sort        age（默认，按起始月龄升序）| popular（按玩过的次数）
+      limit       最多返回几条，钳到 200
+
+    ⚠ sort/limit 是真支持的，别在前端写不认的参数 ——
+    不认的 query 参数会被静默忽略，表现为「接口 200 但顺序没变/条数没少」，
+    很容易被当成前端 bug 去查。
+    """
     category = request.args.get('category', '')
+    age_months = request.args.get('age_months', type=int)
+    sort = (request.args.get('sort') or 'age').strip()
+
+    db = get_db()
+    params: list = []
+
+    # 传了 baby_id 时，"玩过几次"只统计**这个宝宝**的历史。
+    # 若按全表统计，多宝宝家庭里「热门活动」会被兄弟姐妹的完成记录带偏
+    # —— 一个从没玩过活动的新宝宝，看到的是另一个宝宝的喜好，这就是跨宝宝串数据。
+    baby_id = request.args.get('baby_id', type=int)
+
+    if sort == 'popular':
+        # 相关子查询而非 JOIN：不用 GROUP BY，
+        # 也不会因为日志表里同一个 activity 有多行而放大结果。
+        if baby_id:
+            sql = ('SELECT a.*, (SELECT COUNT(*) FROM activity_logs l'
+                   ' WHERE l.activity_id = a.id AND l.baby_id = ?) AS played_count'
+                   ' FROM baby_activities a WHERE 1=1')
+            params.append(baby_id)
+        else:
+            sql = ('SELECT a.*, (SELECT COUNT(*) FROM activity_logs l'
+                   ' WHERE l.activity_id = a.id) AS played_count'
+                   ' FROM baby_activities a WHERE 1=1')
+        p = 'a.'
+        if category:
+            sql += ' AND a.category = ?'
+            params.append(category)
+        if age_months is not None:
+            sql += ' AND a.min_age_months <= ? AND a.max_age_months >= ?'
+            params.extend([age_months, age_months])
+        sql += ' ORDER BY played_count DESC, a.min_age_months, a.title'
+    else:
+        sql = 'SELECT * FROM baby_activities WHERE 1=1'
+        if category:
+            sql += ' AND category = ?'
+            params.append(category)
+        if age_months is not None:
+            sql += ' AND min_age_months <= ? AND max_age_months >= ?'
+            params.extend([age_months, age_months])
+        sql += ' ORDER BY min_age_months, title'
+
+    limit = request.args.get('limit', type=int)
+    if limit is not None and limit > 0:
+        sql += ' LIMIT ?'
+        params.append(min(limit, 200))
+
+    rows = db.execute(sql, params).fetchall()
+    return jsonify({'success': True, 'data': rows_to_list(rows)})
+
+
+@bp.route('/api/activities/categories', methods=['GET'])
+def get_activity_categories():
+    """活动分类列表（含每类实际条数）
+
+    之前前端把分类按钮**硬编码**在index.html 里，于是：
+    后端有的分类前端没按钮 → 用户永远筛不到（实测漏掉 nature/creative/music 共 5 条）；
+    前端有的按钮后端没数据 → 点了必然空白（实测 art 一个都没有）。
+    两边都要靠这个接口对齐，以后加活动不用再动前端。
+    """
     age_months = request.args.get('age_months', type=int)
 
     db = get_db()
-    query = 'SELECT * FROM baby_activities WHERE 1=1'
+    query = 'SELECT category, COUNT(*) AS n FROM baby_activities WHERE 1=1'
     params = []
-
-    if category:
-        query += ' AND category = ?'
-        params.append(category)
-
     if age_months is not None:
         query += ' AND min_age_months <= ? AND max_age_months >= ?'
         params.extend([age_months, age_months])
-
-    query += ' ORDER BY min_age_months, title'
+    query += (" AND category IS NOT NULL AND category <> ''"
+              " GROUP BY category ORDER BY n DESC, category")
     rows = db.execute(query, params).fetchall()
-    return jsonify({'success': True, 'data': rows_to_list(rows)})
+
+    return jsonify({
+        'success': True,
+        'data': [{'key': r['category'], 'count': r['n']} for r in rows],
+    })
 
 
 @bp.route('/api/activities/<int:activity_id>', methods=['GET'])
@@ -505,9 +574,24 @@ def add_activity_favorite():
 
 @bp.route('/api/activities/favorite', methods=['DELETE'])
 def remove_activity_favorite():
-    """取消活动收藏"""
-    baby_id = request.args.get('baby_id', type=int)
-    activity_id = request.args.get('activity_id', type=int)
+    """取消活动收藏（收藏按宝宝存，必须指明 baby_id）
+
+    参数既可走 query string，也可走 JSON body —— 两者都收。
+    历史坑：前端 POST 收藏走 body、DELETE 取消收藏却什么都没带（body:undefined），
+    而后端只读 request.args ⇒ 400「缺少必要参数」，症状是「能收藏、永远取消不掉」。
+    前端已改为 DELETE 带 query；这里同时容忍 body，避免别的调用方再踩同一条。
+    """
+    data = json_body()
+
+    def _as_int(v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+
+    # query 优先，body 兜底；统一转 int，避免字符串 id 落进 SQL 比较
+    baby_id = request.args.get('baby_id', type=int) or _as_int(data.get('baby_id'))
+    activity_id = request.args.get('activity_id', type=int) or _as_int(data.get('activity_id'))
 
     if not baby_id or not activity_id:
         return jsonify({'success': False, 'message': '缺少必要参数'}), 400

@@ -127,27 +127,44 @@ def check_quality():
             ok(f"正文长度均 ≥ {minlen} 字")
 
     # 4) 活动月龄区间与覆盖
+    #
+    # ⚠ 上限 2026-10-03从 36 放宽到 60。
+    # 原来全部活动 max_age_months ≤ 36，而引导体系（guidance_data）覆盖 0-42 月
+    # ⇒ 宝宝满3 岁后活动页整页空白、推荐接口回 0 条。
+    # 3 岁+ 的活动性质变了（不再练爬站，而是规则意识 / 表达 / 自理），
+    # 所以是**新写一批**，不是把旧条目的上限往后延。
+    # 本门禁负责守住「区间合法 + 每个月都有活动」，上限值本身只是个约定。
+    ACTIVITY_MAX_MONTHS = 60
     acts = load("baby_activities.json")
     bad_range = [a.get("title") for a in acts
-                 if not (0 <= int(a.get("min_age_months", 0)) <= int(a.get("max_age_months", 0)) <= 36)]
+                 if not (0 <= int(a.get("min_age_months", 0))
+                         <= int(a.get("max_age_months", 0)) <= ACTIVITY_MAX_MONTHS)]
     if bad_range:
-        fail(f"活动月龄区间非法：{bad_range[:5]}")
+        fail(f"活动月龄区间非法（0 ≤ min ≤ max ≤ {ACTIVITY_MAX_MONTHS}）：{bad_range[:5]}")
     else:
-        ok("活动月龄区间合法（0 ≤ min ≤ max ≤ 36）")
+        ok(f"活动月龄区间合法（0 ≤ min ≤ max ≤ {ACTIVITY_MAX_MONTHS}）")
 
-    cover = [0] * 37
+    cover = [0] * (ACTIVITY_MAX_MONTHS + 1)
     for a in acts:
         for m in range(int(a.get("min_age_months", 0)), int(a.get("max_age_months", 0)) + 1):
-            if 0 <= m <= 36:
+            if 0 <= m <= ACTIVITY_MAX_MONTHS:
                 cover[m] += 1
-    gap = [m for m in range(0, 37) if cover[m] == 0]
-    thin = [m for m in range(0, 37) if 0 < cover[m] < 3]
+    gap = [m for m in range(0, ACTIVITY_MAX_MONTHS + 1) if cover[m] == 0]
+    thin = [m for m in range(0, ACTIVITY_MAX_MONTHS + 1) if 0 < cover[m] < 3]
     if gap:
         fail(f"这些月龄没有任何活动可做：{gap}")
     elif thin:
         fail(f"这些月龄可选活动不足 3 个：{thin}")
     else:
-        ok("0-36 月龄每个月都有 ≥3 个活动")
+        ok(f"0-{ACTIVITY_MAX_MONTHS} 月龄每个月都有 ≥3 个活动")
+
+    # 3 岁+ 不能是「只有 0-36 月的条目被顺手延上限」凑数 ——
+    # 那样给到的是不再适合的年龄。只看 max_age_months 最大的那批是不是真新内容。
+    over36 = [a for a in acts if int(a.get("max_age_months", 0)) > 36]
+    if not over36:
+        fail("没有覆盖 3 岁以上（max_age_months > 36）的活动")
+    else:
+        ok(f"3 岁以上活动 {len(over36)} 条（{over36[0].get('title')} 等）")
 
     # 5) 月龄指导与 guidance_data 的分档要对得上（两处口径不一致会出现
     #    「本月要点」写着婴儿晚期、发育特点却按婴儿早期给）

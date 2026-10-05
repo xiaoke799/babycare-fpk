@@ -8770,6 +8770,34 @@ body {
     font-size: 12px;
     cursor: pointer;
     transition: all 0.2s ease;
+    /* 分类是动态渲染的，名字长度不一（"全部"/"艺术创作"/"精细动作"）。
+       居中 + 不换行，避免计数被挤到第二行去。 */
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* 分类后面的条数：小一号、淡色。不用 span 撑位，直接 inline 跟着文字即可。 */
+.activity-cat-ext-btn .cat-count {
+    font-size: 10px;
+    opacity: 0.65;
+    font-variant-numeric: tabular-nums;
+}
+
+/* 月龄超出活动库时的空态：一行说明 + 一句补充 + 一组兜底推荐卡片 */
+.activity-empty-sub {
+    font-size: 12px;
+    color: var(--text-light);
+    margin-top: 4px;
+}
+
+#activityListFallback {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 12px;
+    text-align: left;
 }
 
 .activity-cat-ext-btn.active {
@@ -10598,6 +10626,14 @@ body {
     display: flex;
     justify-content: center;
     gap: 12px;
+}
+
+/* 提示卡末尾的免责声明：刻意弱化，别跟正文抢注意力 */
+.tummytime-info-note {
+    margin: 10px 0 0;
+    font-size: 11px;
+    color: var(--text-light);
+    line-height: 1.6;
 }
 
 .tummytime-stats {

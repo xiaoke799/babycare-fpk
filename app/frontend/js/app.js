@@ -15700,8 +15700,10 @@ function renderActivityList(activities, ageMonths) {
                 '<div class="empty-text activity-empty-sub">育儿的陪伴不分年龄段，' +
                 '下面这些仍然适合这个阶段</div>' +
                 '<div class="activity-list" id="activityListFallback"></div></div>';
-            // 放宽月龄再取一批，至少别给 3 岁用户一片空白
-            api('/api/activities?limit=6&sort=popular').then(res => {
+            // 放宽月龄再取一批，至少别给 3 岁用户一片空白。
+            // 必须带 baby_id：否则「热门」是按全库完成次数排的，
+            // 多宝宝家庭里这个宝宝会看到兄弟姐妹的喜好（跨宝宝串数据）。
+            api(`/api/activities?limit=6&sort=popular&baby_id=${App.currentBaby}`).then(res => {
                 const box = document.getElementById('activityListFallback');
                 if (!box) return;
                 const rows = (res && res.data) || [];
@@ -15833,7 +15835,6 @@ function toggleActivityFavorite(activityId) {
     const btn = document.getElementById('activityFavoriteBtn');
     const isFavorited = btn && btn.classList.contains('favorited');
 
-    const url = '/api/activities/favorite';
     const method = isFavorited ? 'DELETE' : 'POST';
     const data = { baby_id: App.currentBaby, activity_id: activityId };
 
@@ -15841,6 +15842,14 @@ function toggleActivityFavorite(activityId) {
     // method 字符串会被对象展开成 {0:'P',1:'O',2:'S',3:'T'}，method 和 body 双双丢失、
     // 请求退化成 GET；而 /api/activities/favorite 只注册了 POST/DELETE
     // → 每次都是 405，收藏功能从来没成功过（前端只提示"操作失败"）。
+    //
+    // ⚠️ 第二个坑（取消收藏）：收藏走 POST + body，**取消收藏后端是从 query 取参的**
+    // （remove_activity_favorite 读 request.args）。原先 DELETE 也发 body:undefined，
+    // 一个参数都没带 ⇒ 后端 400「缺少必要参数」，于是「能收藏、永远取消不掉」。
+    // 收藏是按宝宝存的（favorites 带 baby_id），取消时也必须指明是哪个宝宝。
+    const qs = `?baby_id=${encodeURIComponent(App.currentBaby)}&activity_id=${encodeURIComponent(activityId)}`;
+    const url = '/api/activities/favorite' + (isFavorited ? qs : '');
+
     api(url, {
         method: method,
         body: isFavorited ? undefined : JSON.stringify(data),
