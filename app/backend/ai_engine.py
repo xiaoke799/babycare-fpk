@@ -18,6 +18,7 @@ from base64 import b64decode, b64encode
 from functools import lru_cache
 
 import growth_utils
+import utils as _utils
 import vaccine_utils
 
 logger = logging.getLogger(__name__)
@@ -1842,7 +1843,7 @@ def _call_ollama(messages, model_override=None, trace_id=None):
         llm_trace(trace_id, '⑤', 'POST %s model=%s timeout=%ss'
                   % (url[:120], payload.get('model'), _effective_timeout()))
     try:
-        with urllib.request.urlopen(req, timeout=_effective_timeout()) as resp:
+        with _utils.urlopen_bound(req, timeout=_effective_timeout()) as resp:
             result = json.loads(resp.read().decode('utf-8'))
     except urllib.error.HTTPError as he:
         body = ''
@@ -1923,7 +1924,7 @@ def _call_openai_compat(messages, model_override=None, trace_id=None):
         llm_trace(trace_id, '⑤', 'POST %s model=%s max_tokens=%s timeout=%ss'
                   % (url[:120], model, payload.get('max_tokens'), _effective_timeout()))
     try:
-        with urllib.request.urlopen(req, timeout=_effective_timeout()) as resp:
+        with _utils.urlopen_bound(req, timeout=_effective_timeout()) as resp:
             result = json.loads(resp.read().decode('utf-8'))
     except urllib.error.HTTPError as he:
         # 这是最常见、也最该被看清的一类：401(密钥) / 404(地址或模型) / 429(限流) / 5xx(厂商侧)
@@ -2206,7 +2207,7 @@ def get_ollama_models(api_url=None):
         base_url = url.rsplit('/api/chat', 1)[0]
         tags_url = base_url + '/api/tags'
         req = urllib.request.Request(tags_url)
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with _utils.urlopen_bound(req, timeout=5) as resp:
             data = json.loads(resp.read().decode('utf-8'))
             models = [m.get('name', '') for m in data.get('models', []) if m.get('name')]
             return True, models
@@ -2234,7 +2235,7 @@ def get_lmstudio_models(api_url=None):
         base_url = url.rsplit('/v1/chat/completions', 1)[0]
         models_url = base_url + '/v1/models'
         req = urllib.request.Request(models_url)
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with _utils.urlopen_bound(req, timeout=5) as resp:
             data = json.loads(resp.read().decode('utf-8'))
             models = [m.get('id', '') for m in data.get('data', []) if m.get('id')]
             return True, models

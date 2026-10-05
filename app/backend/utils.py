@@ -7,10 +7,99 @@
 """
 
 import datetime
+import os
+import re
 import sqlite3
+import urllib.parse
+import urllib.request
+from functools import lru_cache
 from flask import g, request, jsonify
 
 from constants import DB_PATH
+
+# ==================== LLM 出网：本机地址必须直连 ====================
+# ⚠ 2026-10-05 实测（.workbuddy/tmp/px2.py 可复现）：
+#   `urllib.request.urlopen()` 的默认 opener 会走 `getproxies()`，也就是
+#   **HTTP_PROXY / http_proxy 环境变量**。Linux NAS（飞牛）上这道环境变量
+#   很常见，而 NO_PROXY 往往是空的 —— 于是「连 127.0.0.1 都被代理拦成 502」。
+#   后果直击本项目：Ollama / LM Studio / 自定义本地网关本来就只能配
+#   localhost（ai_engine 里两处模型发现都硬白名单 `localhost|127.0.0.1|::1`），
+#   机器一设代理就**全部调不通**，症状是「配置看着没问题，就是一直走规则引擎」。
+#   实测对照：裸 urlopen 打 127.0.0.1 → 请求到本机；显式注入 ProxyHandler 后
+#   → 请求被送去代理、本机收到 0 个。
+#   修法规则：目标机是**回环/私有网段/NO_PROXY 声明过**的 ⇒ 直连；
+#   **外部厂商照旧走系统代理**（不破坏原本靠代理才能出网的用户）。
+
+_LOCAL_HOST_NAMES = frozenset((
+    'localhost', '::1', '0:0:0:0:0:0:0:1', '0.0.0.0', '[::1]',
+))
+
+_IPV4_RE = re.compile(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$')
+
+
+def is_local_host(host):
+    """host 是不是「不该走代理」的地址（回环 / 私有网段 / NO_PROXY 声名）。
+
+    ⚠ 只判**地址归属**，不判 scheme、不判端口 —— 让人一眼能看出它管什么。
+    """
+    if not host:
+        return False
+    host = host.strip().strip('[]').strip('"').lower()
+    if host in _LOCAL_HOST_NAMES:
+        return True
+    # 127.0.0.0/8 整个段都是回环，别只认一个 127.0.0.1
+    if host.startswith('127.'):
+        return True
+    m = _IPV4_RE.match(host)
+    if m:
+        parts = [int(x) for x in m.groups()]
+        if any(p > 255 for p in parts):
+            return False          # 不是合法 IPv4，交给后面的规则判断
+        a, b = parts[0], parts[1]
+        if a == 10 or (a == 192 and b == 168) or (a == 172 and 16 <= b <= 31):
+            return True
+        return False
+    # NO_PROXY 里显式声明的（可能是 .example.com 这种后缀）
+    declared = os.environ.get('no_proxy') or os.environ.get('NO_PROXY') or ''
+    for item in declared.split(','):
+        item = item.strip().strip('.').lower()
+        if not item:
+            continue
+        if host == item or host.endswith('.' + item) or host == item + '.':
+            return True
+    return False
+
+
+@lru_cache(maxsize=1)
+def _opener_direct():
+    """空代理表 = 任何地址都直连。"""
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+@lru_cache(maxsize=1)
+def _opener_default():
+    """默认 opener（读 getproxies），等价于原来裸 `urlopen()` 的行为。"""
+    return urllib.request.build_opener()
+
+
+def urlopen_bound(req, timeout=None):
+    """LLM 专用出网入口：`urlopen` 但**本机地址不走代理**。
+
+    用法和 `urllib.request.urlopen(req, timeout=...)` 一致，唯一区别是
+    目标 host 落在回环/私有网段时换用空代理表的 opener。
+
+    ⚠ 三分：① 回环/私有网段 ⇒ 直连（否则本地 provider 在设了代理的机器上废掉）；
+       ② 外部厂商 ⇒ 系统默认（原来靠代理出网的用户不受影响）；
+       ③ 拿不到 host（畸形 URL）⇒ 退回默认，别把请求 cutdown 掉 —— 宁可
+          走代理失败报错，也别静默换路径让人查不到原因。
+    """
+    try:
+        host = urllib.parse.urlparse(req.full_url).hostname or ''
+    except Exception:
+        host = ''
+    if host and is_local_host(host):
+        return _opener_direct().open(req, timeout=timeout)
+    return _opener_default().open(req, timeout=timeout)
 
 
 def get_db():

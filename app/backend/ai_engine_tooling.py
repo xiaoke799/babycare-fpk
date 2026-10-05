@@ -24,6 +24,8 @@ import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
+import utils
+
 logger = logging.getLogger(__name__)
 
 
@@ -220,7 +222,7 @@ def _round_ollama(messages, tools, model_override, trace_id=None):
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=_effective_timeout()) as resp:
+        with utils.urlopen_bound(req, timeout=_effective_timeout()) as resp:
             result = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = ''
@@ -309,7 +311,7 @@ def _round_openai_compat(messages, tools, model_override, trace_id=None):
               % (url[:120], model, _effective_timeout(), len(messages)))
     try:
         req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
-        with urllib.request.urlopen(req, timeout=_effective_timeout()) as resp:
+        with utils.urlopen_bound(req, timeout=_effective_timeout()) as resp:
             result = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         # ⚠ 关键：把状态码与响应体贴出来。404 最常见的两种成因——
