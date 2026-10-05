@@ -5541,7 +5541,7 @@ function renderMonthGuide(d) {
         <div class="mg-card">
             <div class="mg-card-head"><h4>疫苗</h4></div>
             <p class="mg-desc">还没有生成接种计划。生成后这里会提示到期和逾期的疫苗。</p>
-            <button class="btn btn-sm btn-secondary" onclick="switchPage('health')">去健康档案</button>
+            <button class="btn btn-sm btn-secondary" onclick="switchPage('vaccines')">去疫苗页生成</button>
         </div>`);
     } else {
         parts.push(`
