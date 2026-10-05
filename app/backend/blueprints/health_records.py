@@ -566,6 +566,16 @@ def health_record_update(record_id):
     if not isinstance(data, dict):
         return jsonify({'success': False, 'message': '无效数据'}), 400
 
+    # 记录不存在就别往下走：此前 UPDATE 命中 0 行也返回 200「记录已更新」，
+    # 前端以为改成功了、一刷新还是原样 —— 跟 DELETE 那边同一类假成功。
+    # 顺带把记录的 baby_id 取出来：下面是重写 indicators 用的，必须认「记录自己属于谁」，
+    # 不能认请求体里那个 baby_id（客户端不传就是 None，指标会从此在按 baby_id 过滤的
+    # 指标列表里查不到；传别的宝宝的 id 更是把指标挂到别人名下）。
+    row = db.execute('SELECT baby_id FROM health_records WHERE id = ?', (record_id,)).fetchone()
+    if not row:
+        return jsonify({'success': False, 'message': '记录不存在'}), 404
+    rec_baby_id = row['baby_id']
+
     # 改体检同样要过闸：此前 PUT 分支完全裸奔，把「2026-13-40」也能原样 UPDATE 进去，
     # 而且 record_date 改成空串会直接踩 NOT NULL 报 500。
     errs = []
@@ -598,7 +608,9 @@ def health_record_update(record_id):
     values.append(record_id)
     db.execute(f'UPDATE health_records SET {", ".join(fields)} WHERE id = ?', values)
 
-    # 如果提供了 indicators，先删除旧的再插入新的
+    # 如果提供了 indicators，先删除旧的再插入新的。
+    # 删除与重插必须在一个事务里：中途出错要整体回滚，否则旧指标已经被删、新指标没插上，
+    # 等于「改一下指标反而把原有指标弄丢了」。
     if 'indicators' in data:
         # 改指标同样校验，否则「指标值填abc」会在这里被 float() 顶出一个 500
         ind_records = []
@@ -613,22 +625,29 @@ def health_record_update(record_id):
             if not ok_enum:
                 return jsonify({'success': False, 'message':
                                 f"{ind['indicator_name']}：{ind_status_err}"}), 400
-            ind_records.append(ind)
-        db.execute('DELETE FROM health_indicators WHERE record_id = ?', (record_id,))
-        for ind in ind_records:
-            db.execute(
-                """INSERT INTO health_indicators
-                   (record_id, baby_id, indicator_name, indicator_code, value, unit,
-                    reference_low, reference_high, reference_text, result_status, record_date, note)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (record_id, data.get('baby_id'), ind['indicator_name'],
-                 ind.get('indicator_code', ''), _validate_number(ind.get('value'))[0],
-                 ind.get('unit', ''), ind.get('reference_low'),
-                 ind.get('reference_high'), ind.get('reference_text', ''),
-                 ind.get('result_status') or 'normal',
-                 data.get('record_date', datetime.date.today().strftime('%Y-%m-%d')),
-                 ind.get('note', ''))
-            )
+            ind_records.append((ind, ind_val))
+        try:
+            db.execute('DELETE FROM health_indicators WHERE record_id = ?', (record_id,))
+            for ind, ind_val in ind_records:
+                db.execute(
+                    """INSERT INTO health_indicators
+                       (record_id, baby_id, indicator_name, indicator_code, value, unit,
+                        reference_low, reference_high, reference_text, result_status, record_date, note)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (record_id, rec_baby_id, ind['indicator_name'],
+                     ind.get('indicator_code', ''), ind_val,
+                     ind.get('unit', ''), ind.get('reference_low'),
+                     ind.get('reference_high'), ind.get('reference_text', ''),
+                     ind.get('result_status') or 'normal',
+                     data.get('record_date', datetime.date.today().strftime('%Y-%m-%d')),
+                     ind.get('note', ''))
+                )
+        except Exception as e:
+            db.rollback()
+            import logging
+            logging.getLogger(__name__).error(
+                "health_record_update indicators error: %s", e, exc_info=True)
+            return jsonify({'success': False, 'message': '更新指标失败'}), 500
 
     db.commit()
     return jsonify({'success': True, 'message': '记录已更新'})
@@ -771,7 +790,10 @@ def health_reminder_update(reminder_id):
         return jsonify({'success': False, 'message': '无更新字段'}), 400
 
     values.append(reminder_id)
-    db.execute(f'UPDATE health_reminders SET {", ".join(fields)} WHERE id = ?', values)
+    cur = db.execute(f'UPDATE health_reminders SET {", ".join(fields)} WHERE id = ?', values)
+    if cur.rowcount == 0:
+        db.rollback()
+        return jsonify({'success': False, 'message': '提醒不存在'}), 404
     db.commit()
     return jsonify({'success': True, 'message': '提醒已更新'})
 
@@ -869,7 +891,10 @@ def milestone_update(milestone_id):
         return jsonify({'success': False, 'message': '无更新字段'}), 400
 
     values.append(milestone_id)
-    db.execute(f'UPDATE milestone_details SET {", ".join(fields)} WHERE id = ?', values)
+    cur = db.execute(f'UPDATE milestone_details SET {", ".join(fields)} WHERE id = ?', values)
+    if cur.rowcount == 0:
+        db.rollback()
+        return jsonify({'success': False, 'message': '里程碑不存在'}), 404
     db.commit()
     return jsonify({'success': True, 'message': '里程碑已更新'})
 
@@ -1053,7 +1078,10 @@ def screening_update(screening_id):
         return jsonify({'success': False, 'message': '无更新字段'}), 400
 
     values.append(screening_id)
-    db.execute(f'UPDATE screenings SET {", ".join(fields)} WHERE id = ?', values)
+    cur = db.execute(f'UPDATE screenings SET {", ".join(fields)} WHERE id = ?', values)
+    if cur.rowcount == 0:
+        db.rollback()
+        return jsonify({'success': False, 'message': '筛查记录不存在'}), 404
     db.commit()
     return jsonify({'success': True, 'message': '筛查记录已更新'})
 
@@ -1154,7 +1182,10 @@ def allergy_update(allergy_id):
         return jsonify({'success': False, 'message': '无更新字段'}), 400
 
     values.append(allergy_id)
-    db.execute(f'UPDATE allergy_history SET {", ".join(fields)} WHERE id = ?', values)
+    cur = db.execute(f'UPDATE allergy_history SET {", ".join(fields)} WHERE id = ?', values)
+    if cur.rowcount == 0:
+        db.rollback()
+        return jsonify({'success': False, 'message': '过敏记录不存在'}), 404
     db.commit()
     return jsonify({'success': True, 'message': '过敏记录已更新'})
 
@@ -1247,7 +1278,10 @@ def feeding_summary_update(summary_id):
         return jsonify({'success': False, 'message': '无更新字段'}), 400
 
     values.append(summary_id)
-    db.execute(f'UPDATE feeding_summary SET {", ".join(fields)} WHERE id = ?', values)
+    cur = db.execute(f'UPDATE feeding_summary SET {", ".join(fields)} WHERE id = ?', values)
+    if cur.rowcount == 0:
+        db.rollback()
+        return jsonify({'success': False, 'message': '喂养摘要不存在'}), 404
     db.commit()
     return jsonify({'success': True, 'message': '喂养摘要已更新'})
 
