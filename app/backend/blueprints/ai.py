@@ -37,6 +37,42 @@ def _save_llm_config(cfg):
         pass
 
 
+def _disk_needs_coercion(cfg):
+    """磁盘上的配置是否**含会被收口改掉的脏值**。
+
+    2026-10-05：老版本 configure_llm 落库时值不校验，磁盘上可能躺着
+    temperature='abc' / max_tokens=-5 / timeout=99999，甚至 model 指向
+    厂商已退役的名字。这类值必须在回灌时顺手修好并**落盘**，否则：
+      ① 每次重启、每个 worker 都要重收一遍；
+      ② 用户在设置页读到的还是当初填的垃圾。
+
+    判据刻意做成**纯函数、不碰内存**（调用点在灌配置之前）：
+      对每个受管字段拿磁盘值过一遍收口函数，看结果是否与原值不同。
+    ⚠ 不比对 `api_key`（它要按明文/密文比，语义不同，见调用处注释）。
+    ⚠ 不把「值相等但类型不同」（如 1 vs 1.0）算成脏 —— 那不是问题。
+    """
+    try:
+        from ai_engine import _coerce_llm_config_value, _resolve_model_choice
+    except Exception:
+        return False
+    for key in ('temperature', 'max_tokens', 'timeout'):
+        if key not in cfg:
+            continue
+        v, changed, _why = _coerce_llm_config_value(key, cfg.get(key))
+        if changed:
+            return True
+    # 模型名存在性：老库可能存着已退役的模型名
+    provider = cfg.get('provider') or ''
+    if provider:
+        m, ch_m, _ = _resolve_model_choice(provider, cfg.get('model') or '', 'models')
+        if ch_m:
+            return True
+        vm, ch_v, _ = _resolve_model_choice(provider, cfg.get('vision_model') or '', 'vision_models')
+        if ch_v:
+            return True
+    return False
+
+
 def _ensure_llm_applied():
     """确保当前 worker 进程的内存 LLM 配置与持久化配置一致（每次 AI 请求前调用）
 
@@ -68,7 +104,21 @@ def _ensure_llm_applied():
         if not isinstance(disk_custom, dict):
             disk_custom = {}
 
-        def _apply():
+        def _apply(persist=False):
+            """把磁盘配置灌进本 worker。
+
+            ⚠ persist=True 时会把**收口后**的配置写回磁盘（2026-10-05）：
+              老版本落库时值是**不校验**的（temperature 可能是 'abc'、
+              max_tokens 可能是 -5、timeout 可能 99999），并且厂商把模型退役后
+              default_model 也可能指向一个已不存在的名字。
+              configure_llm 会把内存里那些值收口成安全值，但**磁盘不跟**：
+                ① 每次重启、每个 worker 都要重新收口一遍（纯浪费）；
+                ② 用户在设置页读到的还是他当初填的垃圾，改不了。
+              所以回灌后必须落盘，让修正**只发生一次**。
+              ⚠ api_key 一律用内存里那份**密文**回写（LLM['api_key'] 已被
+                configure_llm 加密过）—— 把明文写盘会立刻变成下一次启动的
+                「密文当明文再加密」事故。
+            """
             new_cfg = dict(cfg)
             new_cfg['api_key'] = disk_plain          # 明文进去，由 configure_llm 负责加密
             configure_llm(new_cfg)
@@ -83,6 +133,28 @@ def _ensure_llm_applied():
                              len(decrypt_api_key(LLM.get('api_key') or ''))))
             except Exception:
                 pass
+            if persist:
+                # 落盘时把 api_key 换回**密文**（见上方说明）
+                to_save = dict(LLM)
+                to_save['api_key'] = LLM.get('api_key') or ''
+                if to_save != cfg:
+                    try:
+                        _save_llm_config(to_save)
+                        logger.info('LLM 配置已回写磁盘（收口后的安全值，原始值是脏的）')
+                    except Exception as e:
+                        logger.warning('LLM 配置回写磁盘失败（不影响本次生效）: %s', e)
+
+        # 🔴 轻量指纹不一致时，**要分清是「该同步」还是「被收口修正过」**：
+        #   磁盘上可能存着老版本无校验落库的脏值（temperature='abc'、timeout=99999、
+        #   max_tokens=-5，或指向已退役模型的 model）。回灌后内存里是收口后的安全值，
+        #   与磁盘不一致 —— 但这不是「需要同步」，而是「磁盘该被修正」。
+        #   不落盘的后果：① 每次重启每个 worker 都重收一遍（纯浪费）；
+        #                ② 用户在设置页读到的还是当初填的垃圾，改不掉。
+        #   ⚠ 只在**确实被收口改过**时才落盘，正常重启不写（避免无谓的写库）。
+        _dirty = _disk_needs_coercion(cfg)
+        if _dirty:
+            _apply(persist=True)
+            return
 
         # api_key 按明文比对（比密文没意义：每次加密的 IV 都不同，永远"不相等"）
         if mem_plain != disk_plain:

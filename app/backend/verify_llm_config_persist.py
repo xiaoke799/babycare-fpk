@@ -23,6 +23,14 @@
      （用本地不可达地址造失败，**不依赖外网**）
   E. 无宝宝 id 分支也要带原因
   F. 前端不靠模型名字符串判断是否回退（必须认 llm_used）
+  G. **老库脏值在重启回灌时被修正并落盘**（2026-10-05 第三轮补）
+     老版本落库时值不校验 ⇒ 磁盘上可能躺着 temperature='abc'、timeout=99999、
+     max_tokens=-5，甚至指向已退役模型的 model。configure_llm 的收口只管内存，
+     于是回灌后「内存干净、磁盘仍脏」⇒ 每次重启每个 worker 重收一遍，
+     且用户在设置页读到的还是当初填的垃圾。
+     判据：磁盘干净时**不**落盘（不无谓写库）；脏时落盘**恰好一次**且写回安全值；
+     修好后**不重复**落盘（幂等）；回写的 Key 必须仍是**密文**。
+     ⚠ 回写时若把明文 Key 写盘，就直接制造了本门禁 A/B 两条要防的那个事故。
 """
 import io
 import json
@@ -267,6 +275,131 @@ chk("前端用 llm_used 判断是否回退（不再靠模型名字符串猜）",
 chk("后端响应里带了 llm_used 字段",
     "llm_used" in io.open(os.path.join(BACKEND, "blueprints", "ai.py"),
                           "r", encoding="utf-8").read())
+
+# ---------- G：老库脏值在重启回灌时被修正并**落盘**（2026-10-05）----------
+# 上一轮加了 configure_llm 的运行时收口，但只管内存。老版本落库时值是不校验的
+# （temperature 可能是 'abc'、timeout 99999、model 可能指向已退役的名字），
+# 于是回灌后：内存是干净的、**磁盘还是脏的** ⇒
+#   ① 每次重启每个 worker 都重收一遍（纯浪费）
+#   ② 用户在设置页读到的还是当初填的垃圾，改不掉
+# 修法：回灌时判断"磁盘值是否会被收口改掉"，是则把收口后的值写回磁盘。
+# ⚠ 判据要**跨进程**（同进程测不出来：内存里那一刻已经是对的）。
+g = BOOT + r'''
+import json as _j, os as _os
+
+# ⚠ 必须先 push app_context：_set_app_setting 走 utils.get_db()（flask g），
+#   没有上下文会直接 RuntimeError: Working outside of application context.
+app.app_context().push()
+
+import ai_engine, blueprints.ai as _bai
+from blueprints.ai import _load_llm_config, _ensure_llm_applied
+
+_writes = []
+_orig_set = _bai._set_app_setting
+def _spy(k, v):
+    if k == "llm_config":
+        _writes.append(v)
+    return _orig_set(k, v)
+_bai._set_app_setting = _spy
+
+# --- 场景 1：磁盘干净 + 内存不一致 ⇒ 该同步，但**不该**顺带落盘 ---
+good = {"provider": "deepseek", "api_key": "", "model": "deepseek-flash",
+        "api_url": "https://api.deepseek.com/v1/chat/completions",
+        "temperature": 0.5, "max_tokens": 1024, "timeout": 30,
+        "vision_enabled": False, "vision_model": "", "custom_models": {},
+        "consent_cloud": True}
+_orig_set("llm_config", _j.dumps(good, ensure_ascii=False))
+_writes.clear()
+ai_engine.LLM["api_key"] = ""
+ai_engine.LLM["temperature"] = 0.7
+ai_engine.LLM["model"] = "deepseek-v4-pro"        # 造出不一致，强制走同步分支
+_ensure_llm_applied()
+print("CLEAN_WRITES=" + str(len(_writes)))
+print("CLEAN_SYNCED_MODEL=" + str(ai_engine.LLM.get("model")))
+
+# --- 场景 2：磁盘是脏的 ⇒ 必须落盘**恰好一次**，且写回安全值 ---
+dirty = dict(good); dirty["temperature"] = "abc"; dirty["timeout"] = 99999
+_orig_set("llm_config", _j.dumps(dirty, ensure_ascii=False))
+_writes.clear()
+ai_engine.LLM["api_key"] = ""
+_ensure_llm_applied()
+_d2 = _load_llm_config() or {}
+print("DIRTY_WRITES=" + str(len(_writes)))
+print("DIRTY_DISK_TEMP=" + str(_d2.get("temperature")))
+print("DIRTY_DISK_TIMEOUT=" + str(_d2.get("timeout")))
+
+# --- 场景 3：修好之后再回灌 ⇒ **不重复落盘**（幂等，否则每次请求都写库）---
+_writes.clear()
+_ensure_llm_applied()
+_ensure_llm_applied()
+print("IDEMPOTENT_WRITES=" + str(len(_writes)))
+
+# --- 场景 4：回写时 Key 必须仍是**密文**，绝不能是明文 ---
+#   上一轮修的「密文当明文再加密」事故就是这么来的：写盘时用内存里那份密文。
+#   ⚠ 判据只能钉「**不等于明文**」，**不能**钉「等于 bcob1: 前缀」——
+#     有 cryptography 时走 AESGCM、**没有**前缀；只有 fallback 才用 bcob1:。
+#     写死前缀会让这条判据在有 cryptography 的机器上**恒假** ⇒ 等于没有判据。
+#   ⚠ 场景必须**既脏又有 Key** 才有意义：磁盘干净时压根不触发落盘（_writes 为空），
+#     那时判据会假红。而且 Key 得是**密文形态**（正常落盘就存密文）。
+from ai_engine import encrypt_api_key as _enc
+good["api_key"] = _enc(%r)          # 磁盘上存的是密文（正常形态）
+good["timeout"] = 99999             # ← 制造一个脏值，确保这条路径一定会落盘
+_orig_set("llm_config", _j.dumps(good, ensure_ascii=False))
+_writes.clear()                     # 清掉场景 3 之前累积的写入，只看本场景
+ai_engine.LLM["api_key"] = ""
+_ensure_llm_applied()
+_w4 = _writes[-1] if _writes else "{}"
+_k = _j.loads(_w4).get("api_key") or ""
+print("PERSIST_KEY_PLAINTEXT_LEAK=" + str(_k == %r))
+print("PERSIST_KEY_IS_CIPHER=" + str(bool(_k) and _k != %r))
+# 顺带：回灌后内存里那个 Key 必须能解回原文（否则真重启就用不了）
+print("PERSIST_KEY_ROUNDTRIP=" + str(ai_engine.decrypt_api_key(ai_engine.LLM.get("api_key") or "") == %r))
+''' % (KEY, KEY, KEY, KEY)
+rg = subprocess.run([PY, "-c", g], capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", env=ENV, timeout=240)
+out_g = rg.stdout or ""
+print()
+print("=== G 进程（老库脏值回灌 + 落盘）===")
+print(out_g.strip() or (rg.stderr or "")[-800:])
+w = dict(re.findall(r"^([A-Z_]+)=(.*)$", out_g, re.M))
+
+chk("回灌：磁盘干净时只同步内存、不顺带落盘（不无谓写库）",
+    w.get("CLEAN_WRITES") == "0", {"写入次数": w.get("CLEAN_WRITES")})
+chk("回灌：内存确实被磁盘值纠正（同步本身没坏）",
+    w.get("CLEAN_SYNCED_MODEL") == "deepseek-flash", w.get("CLEAN_SYNCED_MODEL"))
+chk("🔴 回灌：老库脏值被修正并**落盘**（否则每次重启重收、用户改不掉）",
+    w.get("DIRTY_WRITES") == "1" and isinstance(float(w.get("DIRTY_DISK_TEMP") or "x"), float)
+    and w.get("DIRTY_DISK_TIMEOUT") == "600",
+    {"写入次数": w.get("DIRTY_WRITES"), "temp": w.get("DIRTY_DISK_TEMP"),
+     "timeout": w.get("DIRTY_DISK_TIMEOUT")})
+chk("回灌：修好之后不重复落盘（幂等，否则每次 AI 请求都写库）",
+    w.get("IDEMPOTENT_WRITES") == "0", {"写入次数": w.get("IDEMPOTENT_WRITES")})
+# ⚠ 上面这条**测的是结果、不是某一行代码**，所以它有两道独立的防线：
+#   ① `_disk_needs_coercion()` 在回灌入口就返回 False（磁盘已干净 ⇒ 根本不进 persist 分支）
+#   ② `to_save != cfg` 在 persist 分支里再挡一次（收口结果与磁盘一致 ⇒ 不写）
+#   ⇒ **单独打回任何一条，它都不会转红**（2026-10-05 实测：两条分别打回均仍 30/30）。
+#   这不是假绿——任一条防线单独失效时落盘次数仍为 0（冗余覆盖）；
+#   真要它转红必须**同时**打回两条。所以验这条时别以为"打了没红=判据没用"，
+#   也别反过来以为"它绿=落盘逻辑被覆盖了"。真正能单独定位问题的是上面两条：
+#   「老库脏值被修正并落盘」与「磁盘干净时不顺带落盘」。
+chk("🔴 回写磁盘时 Key 不是**明文**（写成明文就制造了下一轮「密文当明文」事故）",
+    w.get("PERSIST_KEY_PLAINTEXT_LEAK") == "False",
+    {"是否泄漏明文": w.get("PERSIST_KEY_PLAINTEXT_LEAK"), "是否为密文形态": w.get("PERSIST_KEY_IS_CIPHER")})
+chk("回写磁盘时 Key 确实是密文形态（非空且不等于明文）",
+    w.get("PERSIST_KEY_IS_CIPHER") == "True", w.get("PERSIST_KEY_IS_CIPHER"))
+chk("回写后内存里的 Key 仍能解回原文（回灌没把凭据搞坏）",
+    w.get("PERSIST_KEY_ROUNDTRIP") == "True", w.get("PERSIST_KEY_ROUNDTRIP"))
+
+# 静态：脏值检测与回写的接线要在
+ai_src = io.open(os.path.join(BACKEND, "blueprints", "ai.py"), "r", encoding="utf-8").read()
+chk("有 _disk_needs_coercion（判断磁盘值是否会被收口改掉）",
+    "def _disk_needs_coercion(" in ai_src, "函数不见了")
+chk("回灌路径真的按它决定要不要落盘（不是写死 persist=True）",
+    "_dirty = _disk_needs_coercion(cfg)" in ai_src and "_apply(persist=True)" in ai_src,
+    "回灌没有接上脏值检测")
+chk("回写时用内存里的**密文**而不是明文（api_key 单独换回来）",
+    "to_save['api_key'] = LLM.get('api_key')" in ai_src,
+    "回写路径没有换回密文 —— 会写出明文 Key")
 
 print()
 print("=" * 62)
