@@ -2506,6 +2506,19 @@ const HOME_RECENT_ICONS = {
     milestone: 'icon-heart'
 };
 
+/**
+ * 列表接口失败时的占位渲染。
+ * 🔴 为什么必须有：早先各列表页写的是 `if (!res.success) return;`，
+ *    接口一挂容器就保持空白（或上一次的旧内容），用户完全看不出出了什么事，
+ *    只会以为"今天没记录"或"数据没刷新"。失败与"没有数据"在界面上必须区分开。
+ * @param {HTMLElement|null} container 列表容器
+ * @param {string} msg 失败原因（说清是哪个列表，便于用户判断要不要重试）
+ */
+function renderListError(container, msg) {
+    if (!container) return;
+    container.innerHTML = '<p class="empty-tip error-tip">' + escapeHtml(msg || '加载失败，请重试') + '</p>';
+}
+
 function renderHomeRecent(records) {
     const list = document.getElementById('homeRecentList');
     if (!list) return;
@@ -3629,7 +3642,12 @@ function loadFeedingPage() {
     params.set('limit', '200');
 
     api(`/api/babies/${App.currentBaby}/feeding?${params.toString()}`).then(res => {
-        if (!res.success) return;
+        // 🔴 失败必须让用户看见：早先这里只有 `if (!res.success) return;`，
+        // 接口一挂列表就保持空白且毫无提示，用户只会以为"今天没记录"。
+        if (!res.success) {
+            renderListError(container, '喂奶记录加载失败，请下拉刷新重试');
+            return;
+        }
         renderFeedingList(res.data || []);
     });
 
@@ -3953,7 +3971,12 @@ function loadSleepPage() {
     params.set('limit', '200');
 
     api(`/api/babies/${App.currentBaby}/sleep?${params.toString()}`).then(res => {
-        if (!res.success) return;
+        // 🔴 同 loadFeedingPage：失败不能静默 return，否则页面停在上一次的旧内容
+        // （或一片空白），用户完全看不出是加载失败。
+        if (!res.success) {
+            renderListError(container, '睡眠记录加载失败，请下拉刷新重试');
+            return;
+        }
         renderSleepList(res.data || []);
     });
 
@@ -10100,7 +10123,12 @@ function loadMilestonesPage() {
     if (!App.currentBaby) return;
     syncMilestoneMode();
     api(`/api/babies/${App.currentBaby}/milestones`).then(res => {
-        if (!res.success) return;
+        // 🔴 失败不能静默 return：渲染函数读的是 App.milestones，
+        // 直接 return 会让它继续渲染上一次的旧成就，看着像"数据没更新"。
+        if (!res.success) {
+            renderListError(document.getElementById('milestoneList'), '成长记录加载失败，请下拉刷新重试');
+            return;
+        }
         App.milestones = res.data;
         renderMilestones();
     });

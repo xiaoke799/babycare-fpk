@@ -1755,6 +1755,16 @@ body {
     padding: 20px;
 }
 
+/* 列表接口失败的占位：与「暂无记录」区分开。
+   失败是异常、要引导重试，「暂无」是正常状态，两者不该长得一样。
+   ⚠ 颜色一律走 CSS 变量，深色模式才跟着自动翻过来（别硬编码色值）。
+   ⚠ 变量名是 --danger-color，不是 --danger——写错时 var() 会静默走fallback，
+      看着"有颜色"实则没跟深色模式联动，这类静默失效最难发现。 */
+.empty-tip.error-tip {
+    color: var(--danger-color);
+    line-height: 1.7;
+}
+
 /* ==================== Toast 提示 ==================== */
 .toast {
     position: fixed;
