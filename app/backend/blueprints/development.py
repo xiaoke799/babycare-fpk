@@ -22,6 +22,14 @@ logger = get_logger("development")
 # ---- 各记录模块的可选值（逐个与前端下拉的 option value 对齐过，别凭空猜）----
 VALID_TEETH_POSITIONS = {"upper", "lower"}
 VALID_TEETH_SIDES = {"left", "right", "center"}
+# 牙位编码 = 前端 TEETH_DATA 的 20 个乳牙 code（FDI 记法：5x 右上 / 6x 左上 / 7x 左下 / 8x 右下）。
+# 必须与 app/frontend/js/app.js 的 TEETH_DATA 保持一致，改一边就得改另一边。
+VALID_TOOTH_CODES = {
+    "51", "52", "53", "54", "55",
+    "61", "62", "63", "64", "65",
+    "71", "72", "73", "74", "75",
+    "81", "82", "83", "84", "85",
+}
 VALID_FOOD_CATEGORIES = {"vegetable", "fruit", "meat", "grain", "dairy", "other"}
 VALID_FOOD_REACTIONS = {"none", "mild", "severe"}
 VALID_FONTANELLE_STATUS = {"open", "closing", "closed"}
@@ -350,6 +358,11 @@ def _validate_teething_payload(data):
     都会原样入库；而 erupt_date 是 DATE 语义（列表按它排序、前端按天分组），
     格式一乱整个时间线就错位。
     """
+    # tooth_code 可选（老记录/手填记录可能没有）；空串经 validate_enum 归一成 None
+    ok, tooth_code, err = validate_enum(data.get("tooth_code"), VALID_TOOTH_CODES, "牙位编码")
+    if not ok:
+        return None, (jsonify({"success": False, "message": err}), 400)
+
     ok, tooth_name, err = validate_text_length(data.get("tooth_name"), NAME_MAX_LENGTH, "牙齿名称")
     if not ok:
         return None, (jsonify({"success": False, "message": err}), 400)
@@ -370,12 +383,17 @@ def _validate_teething_payload(data):
     if not ok:
         return None, (jsonify({"success": False, "message": err}), 400)
 
-    return (tooth_name, erupt_date, position or "", side or "", note or ""), None
+    return (tooth_code or "", tooth_name, erupt_date, position or "", side or "", note or ""), None
 
 
 @bp.route("/api/babies/<int:baby_id>/teething", methods=["POST"])
 def add_teething_record(baby_id):
-    """添加出牙记录"""
+    """添加出牙记录
+
+    出牙页（page-teeth）的牙位图靠 tooth_code 判断哪颗牙已萌出 —— 只存中文牙名
+    无法定位（「中切牙」有 4 颗）。返回体带上新建记录本身，前端可直接拿真实 id
+    更新牙位图，不必像以前那样用 Date.now() 造一个假 id。
+    """
     data = json_body()
     if not data.get("tooth_name") or not data.get("erupt_date"):
         return jsonify({"success": False, "message": "请填写牙齿名称和萌出日期"}), 400
@@ -385,13 +403,16 @@ def add_teething_record(baby_id):
         return err_resp
 
     db = get_db()
-    db.execute(
-        """INSERT INTO teething_records (baby_id, tooth_name, erupt_date, position, side, note)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+    # ⚠ 列清单与 values 元组必须逐位对齐（values = tooth_code, tooth_name, erupt_date, position, side, note）
+    cur = db.execute(
+        """INSERT INTO teething_records (baby_id, tooth_code, tooth_name, erupt_date, position, side, note)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (baby_id,) + tuple(values),
     )
     db.commit()
-    return jsonify({"success": True, "message": "出牙记录已添加"})
+
+    row = db.execute("SELECT * FROM teething_records WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return jsonify({"success": True, "message": "出牙记录已添加", "data": row_to_dict(row)})
 
 
 @bp.route("/api/babies/<int:baby_id>/teething/<int:record_id>", methods=["GET"])
@@ -419,9 +440,10 @@ def update_teething_record(baby_id, record_id):
         return err_resp
 
     db = get_db()
+    # ⚠ 列清单与 values 元组逐位对齐（values = tooth_code, tooth_name, erupt_date, position, side, note）
     cur = db.execute(
         """UPDATE teething_records
-           SET tooth_name = ?, erupt_date = ?, position = ?, side = ?, note = ?
+           SET tooth_code = ?, tooth_name = ?, erupt_date = ?, position = ?, side = ?, note = ?
            WHERE id = ? AND baby_id = ?""",
         tuple(values) + (record_id, baby_id),
     )

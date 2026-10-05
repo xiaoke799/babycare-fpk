@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""换尿布 / 趴睡训练两页的离线渲染验证（Edge 无头 + 剥前缀的假 API）
+"""换尿布 / 趴睡训练 / 出牙记录 三页的离线渲染验证（Edge 无头 + 剥前缀的假 API）
 
-为什么单独一个脚本：这两页的缺陷都属于「**看起来正常、实际是错的**」那一类，
+为什么单独一个脚本：这几页的缺陷都属于「**看起来正常、实际是错的**」那一类，
 静态检查（DOM id 在不在、函数被不被调用）全都发现不了，必须在真浏览器里点一遍：
 
 换尿布：
@@ -17,6 +17,11 @@
      如果还按 Math.floor(秒/60) 记 0，今日时长不会变，缺陷就藏住了。
   6. 离开页面自动暂停计时器。
   7. 提示卡不再出现医学断言（"预防扁头综合征"），且有免责声明。
+
+出牙记录（2026-10-05 补）：
+  8. 点牙位图能真的新增（页面曾调 /api/babies/<id>/teeth，而后端只有 /teething，
+     被当死接口删掉后整页失效：列表空、点击静默无反应、删除假装成功）。
+  9. 删除走 /api/teething/<id> 且删完标记回落。
 
 ⚠️ 假数据的日期按「相对今天」生成：写死绝对日期会随时间腐坏。
 """
@@ -79,6 +84,11 @@ STATE = {
         {"id": 401, "baby_id": 1, "start_time": D_TODAY + " 10:00:00",
          "end_time": D_TODAY + " 10:03:00", "duration_minutes": 3,
          "milestone": "保持1分钟", "note": ""},
+    ],
+    # 出牙记录：预置 1 条（code 61 = 左上中切牙），点牙位图加一颗 → 变 2 条，删掉 → 回 1 条。
+    "teething": [
+        {"id": 501, "baby_id": 1, "tooth_code": "61", "tooth_name": "中切牙",
+         "erupt_date": D_OLD, "position": "", "side": "", "note": ""},
     ],
 }
 
@@ -157,6 +167,12 @@ class Handler(SimpleHTTPRequestHandler):
                     if r["id"] == rid:
                         return self._json({"success": True, "data": dict(r)})
                 return self._json({"success": False, "message": "记录不存在"}, 404)
+            # 出牙记录：出牙页（page-teeth 牙位图）读的就是这条。
+            # ⚠️ 这里必须真的返回 tooth_code —— 页面靠它判断哪颗牙已萌出；
+            #    少了它就等于「一颗都没长」，而断言恰好会红（这正是我们要的）。
+            if re.match(r"^/api/babies/\d+/teething$", path):
+                rows = sorted(STATE["teething"], key=lambda r: r["erupt_date"], reverse=True)
+                return self._json({"success": True, "data": rows})
             if path == "/api/babies/1/dashboard":
                 return self._json({"success": True, "data": {
                     "baby_profile": {"name": "验证宝宝", "age": "1岁3个月"},
@@ -197,7 +213,35 @@ class Handler(SimpleHTTPRequestHandler):
                 "brand": None, "note": "",
             })
             return self._json({"success": True, "message": "已添加"})
+        # 出牙：必须真的入库并把带 id 的记录回给前端 —— 前端拿这个 id 去删。
+        if re.match(r"^/api/babies/\d+/teething$", path):
+            nid = max([r["id"] for r in STATE["teething"]] or [500]) + 1
+            row = {"id": nid, "baby_id": 1,
+                   "tooth_code": body.get("tooth_code", ""),
+                   "tooth_name": body.get("tooth_name", ""),
+                   "erupt_date": body.get("erupt_date", ""),
+                   "position": "", "side": "", "note": body.get("note", "")}
+            STATE["teething"].append(row)
+            return self._json({"success": True, "message": "出牙记录已添加", "data": row})
         return self._json({"success": True})
+
+    def do_DELETE(self):
+        u = urlparse(self.path)
+        path = u.path
+        if path.startswith(APP_PREFIX):
+            path = "/" + path[len(APP_PREFIX):]
+        if path.startswith("/api/"):
+            m = re.match(r"^/api/teething/(\d+)$", path)
+            if m:
+                rid = int(m.group(1))
+                for r in STATE["teething"]:
+                    if r["id"] == rid:
+                        STATE["teething"].remove(r)
+                        return self._json({"success": True, "message": "已删除"})
+                # 复刻真实后端：删不存在的 id 必须 404（假成功会让「删除没生效」测不出来）
+                return self._json({"success": False, "message": "记录不存在"}, 404)
+            return self._json({"success": True})
+        self.send_error(404)
 
     def do_PUT(self):
         u = urlparse(self.path)
@@ -363,6 +407,35 @@ setTimeout(async function(){
     if (tAll) tAll.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
     await wait(400);
     log.push('tummyItemsAll=' + items('#tummytimeList .tummytime-item-card'));
+    // ==================== 出牙记录（牙位图） ====================
+    // 这一页曾经**整页失效**：前端调 /api/babies/1/teeth，后端只有 /teething，
+    // 症状是「列表永远空白 + 点牙位图静默无反应」——所以断言必须落在行为上：
+    // 点一颗牙 → 萌出标记 +1、列表 +1 张卡；再删掉 → 回落。
+    // 若 URL 又变回指向不存在的接口，这两条会当场变红。
+    switchPage('teeth');
+    await wait(1000);
+    log.push('toothTotal=' + items('#page-teeth .tooth-item'));
+    log.push('eruptedBefore=' + items('#page-teeth .tooth-item.erupted'));
+    log.push('teethCardsBefore=' + items('#teethList .teeth-item-card'));
+
+    window.prompt = function(){ return '2026-10-05'; };
+    var t51 = document.querySelector('#teethUpperRight .tooth-item[onclick*="51"]');
+    log.push('tooth51Found=' + (!!t51));
+    if (t51) t51.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
+    await wait(1500);
+    log.push('eruptedAfterAdd=' + items('#page-teeth .tooth-item.erupted'));
+    log.push('teethCardsAfterAdd=' + items('#teethList .teeth-item-card'));
+    log.push('teethAddToast=' + toastText());
+
+    // 删除刚加的那条（列表按萌出日期倒序，第一条就是它）
+    window.confirm = function(){ return true; };
+    var delBtn = document.querySelector('#teethList .teeth-delete');
+    log.push('teethDelBtnFound=' + (!!delBtn));
+    if (delBtn) delBtn.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
+    await wait(1500);
+    log.push('eruptedAfterDel=' + items('#page-teeth .tooth-item.erupted'));
+    log.push('teethCardsAfterDel=' + items('#teethList .teeth-item-card'));
+    log.push('teethDelToast=' + toastText());
   } catch (e) {
     log.push('EXCEPTION=' + e.message);
   }
@@ -551,6 +624,23 @@ window.addEventListener('error', function(e){ window.__errs.push(String(e.messag
               d("r401Found") == "true", d("r401Found"))
         check("编辑不会抹掉原来的 end_time（假后端复刻了「收不到就置空」）",
               d("endTimeAfterEdit") not in ("NULL", "NOT_FOUND", ""), d("endTimeAfterEdit"))
+        # ---- 出牙记录（牙位图）----
+        check("出牙页牙位图渲染出 20 颗乳牙", d("toothTotal") == "20", d("toothTotal"))
+        check("预置出牙记录被高亮（GET /teething 真的走通了）",
+              d("eruptedBefore") == "1" and d("teethCardsBefore") == "1",
+              {"erupted": d("eruptedBefore"), "cards": d("teethCardsBefore")})
+        check("点牙位图新增出牙 → 萌出标记 +1（页面调错接口时这里是 1，不会变成 2）",
+              d("eruptedAfterAdd") == "2",
+              {"before": d("eruptedBefore"), "after": d("eruptedAfterAdd"),
+               "toast": d("teethAddToast")})
+        check("新增后列表真的多一张卡", d("teethCardsAfterAdd") == "2", d("teethCardsAfterAdd"))
+        check("新增有成功提示（以前是静默失败，连 toast 都没有）",
+              "添加" in d("teethAddToast"), d("teethAddToast"))
+        check("删除出牙记录 → 萌出标记回落（DELETE 打到 /api/teething/<id>）",
+              d("eruptedAfterDel") == "1",
+              {"after": d("eruptedAfterDel"), "toast": d("teethDelToast")})
+        check("删除后列表回到 1 张卡", d("teethCardsAfterDel") == "1", d("teethCardsAfterDel"))
+
         check("JS 无运行时报错", d("jsErrors") == "0", d("jsErrors"))
     finally:
         httpd.shutdown()

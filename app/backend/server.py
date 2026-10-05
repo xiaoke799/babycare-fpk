@@ -1045,7 +1045,7 @@ def init_db():
             FOREIGN KEY (baby_id) REFERENCES babies(id) ON DELETE CASCADE
         );
 
-        -- 出牙记录表（出牙记录页，含位置/左右侧）
+        -- 出牙记录表（出牙记录页，含牙位编码/位置/左右侧）
         CREATE TABLE IF NOT EXISTS teething_records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             baby_id INTEGER NOT NULL,
@@ -1055,6 +1055,10 @@ def init_db():
             side TEXT DEFAULT '',
             note TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now', 'localtime')),
+            -- tooth_code 刻意放表尾：老库靠 migrations v7 的 ALTER 追加（只能加在末尾），
+            -- 新库若写在中间，会让新旧库的 SELECT * 列序不一致。
+            -- 取值是 FDI 乳牙编码 51~85，供牙位图按编码定位/高亮。
+            tooth_code TEXT DEFAULT '',
             FOREIGN KEY (baby_id) REFERENCES babies(id) ON DELETE CASCADE
         );
 

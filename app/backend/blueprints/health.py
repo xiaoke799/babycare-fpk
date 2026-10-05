@@ -707,7 +707,12 @@ def get_medication_reminder(baby_id, record_id):
 
 
 # ==================== API: 出牙追踪 ====================
-# 出牙记录已统一到 teething_records 表（见 blueprints/development.py 的
-# /api/babies/<id>/teething，出牙页在用）。这里原本还有一套写 baby_teeth 表的
-# 实现（/api/babies/<id>/teeth 增/查/删），但前端从未接入，属重复实现，已移除；
+# 出牙记录统一到 teething_records 表，接口是 blueprints/development.py 的
+# /api/babies/<id>/teething（出牙页 page-teeth 在用）。
+#
+# ⚠ 这里原本还有一套写 baby_teeth 表的实现（/api/babies/<id>/teeth 增/查/删），
+# 7e2ba58 以「前端从未接入」为由把它删了 —— 这个判断是错的：出牙页当时调的正是
+# /api/babies/<id>/teeth，被删掉的是页面唯一在用的数据层，出牙页从那以后整页失效
+# （列表空、点牙位图静默无反应、删除假装成功）。2026-10-05 已把出牙页改接
+# /teething，并给 teething_records 补了 tooth_code（migrations v7）供牙位图定位。
 # baby_teeth 表本身保留（历史备份/导出里可能包含它，删表会影响旧备份恢复）。

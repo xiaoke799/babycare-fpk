@@ -116,8 +116,10 @@ CASES = [
      {"first_try_date": "date"}),
 
     ("出牙", "/api/babies/{bid}/teething",
-     {"tooth_name": MARK + "上门牙", "erupt_date": TODAY},
-     {"tooth_name": MARK + "上门牙"},
+     # tooth_code 是牙位图定位用的编码（FDI 乳牙 51~85）：出牙页靠它判断哪颗牙已萌出，
+     # 丢了这个字段页面就只会显示「一颗都还没长」。必须回读比对。
+     {"tooth_code": "51", "tooth_name": MARK + "上门牙", "erupt_date": TODAY},
+     {"tooth_code": "51", "tooth_name": MARK + "上门牙"},
      {"erupt_date": "date"}),
 
     ("囟门", "/api/babies/{bid}/fontanelle",

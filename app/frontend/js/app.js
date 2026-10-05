@@ -5993,7 +5993,9 @@ const TIMELINE_TYPE_MAP = {
     pumping: { icon: '吸', class: 'pumping', title: () => '吸奶' },
     solidfood: { icon: '辅', class: 'solidfood', title: (e) => `初尝${e.food_name || '辅食'}` },
     tummy: { icon: '趴', class: 'tummy', title: () => '趴睡训练' },
-    teething: { icon: '牙', class: 'teething', title: (e) => `出牙：${e.tooth_name || '乳牙'}` },
+    // 带牙位编码：中文牙名不唯一（「中切牙」有 4 颗），只有名字看不出是哪一颗
+    teething: { icon: '牙', class: 'teething',
+                title: (e) => `出牙：${e.tooth_name || '乳牙'}${e.tooth_code ? ' (' + e.tooth_code + ')' : ''}` },
     fontanelle: { icon: '囟', class: 'fontanelle', title: () => '囟门检查' },
     leap: { icon: '跃', class: 'leap', title: (e) => `第${e.leap_number || '?'}次飞跃期` },
     temperature: { icon: '温', class: 'temperature', title: () => '体温测量' },
@@ -11473,265 +11475,6 @@ function deleteAsq(id) {
     });
 }
 
-// ==================== 出牙追踪 ====================
-
-function initTeethingPage() {
-    const addToothBtn = document.getElementById('addToothBtn');
-    if (addToothBtn) {
-        addToothBtn.addEventListener('click', showToothModal);
-    }
-    loadTeethingRecords();
-}
-
-function loadTeethingRecords() {
-    if (!App.currentBaby) return;
-    api(`/api/babies/${App.currentBaby}/teething`).then(res => {
-        if (!res.success) return;
-        const container = document.getElementById('teethingList');
-        if (!container) return;
-        if (res.data.length === 0) {
-            container.innerHTML = '<p class="empty-tip">暂无出牙记录</p>';
-        } else {
-            container.innerHTML = res.data.map(r => `
-                <div class="teething-item">
-                    <button class="teething-delete" onclick="editTooth(${r.id})" title="编辑">✎</button>
-                    <button class="teething-delete" onclick="deleteTooth(${r.id})">X</button>
-                    <div class="tooth-icon"></div>
-                    <div class="tooth-info">
-                        <span class="tooth-name">${escapeHtml(r.tooth_name)}</span>
-                        <span class="tooth-pos">${r.position === 'upper' ? '上' : '下'}${r.side === 'left' ? '左' : r.side === 'right' ? '右' : '中'}</span>
-                    </div>
-                    <span class="tooth-date">${escapeHtml(r.erupt_date)}</span>
-                </div>
-            `).join('');
-        }
-        renderTeethDiagram(res.data);
-    });
-}
-
-// 编辑出牙记录（通用弹窗，与 editSleep 同范式）
-function editTooth(id) {
-    if (!App.currentBaby) return;
-    api(`/api/babies/${App.currentBaby}/teething/${id}`).then(res => {
-        if (!res.success) return showToast.error('加载失败');
-        const r = res.data;
-        showModal(`
-            <div class="modal-header"><h3>编辑出牙记录</h3></div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label>牙齿名称</label>
-                    <input type="text" id="editToothName" value="${escapeHtml(r.tooth_name || '')}" required>
-                </div>
-                <div class="form-group-row">
-                    <div class="form-group">
-                        <label>位置</label>
-                        <select id="editToothPosition">
-                            <option value="upper" ${r.position === 'upper' ? 'selected' : ''}>上排</option>
-                            <option value="lower" ${r.position === 'lower' ? 'selected' : ''}>下排</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>侧向</label>
-                        <select id="editToothSide">
-                            <option value="left" ${r.side === 'left' ? 'selected' : ''}>左侧</option>
-                            <option value="center" ${r.side === 'center' ? 'selected' : ''}>中间</option>
-                            <option value="right" ${r.side === 'right' ? 'selected' : ''}>右侧</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>萌出日期</label>
-                    <input type="date" id="editToothDate" value="${(r.erupt_date || '').slice(0, 10)}" required>
-                </div>
-                <div class="form-group">
-                    <label>备注</label>
-                    <input type="text" id="editToothNote" value="${escapeHtml(r.note || '')}" placeholder="可选">
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal()">取消</button>
-                <button class="btn btn-primary" onclick="saveToothEdit(${r.id})">保存</button>
-            </div>
-        `);
-    });
-}
-
-function saveToothEdit(id) {
-    const data = {
-        baby_id: App.currentBaby,
-        tooth_name: document.getElementById('editToothName')?.value || '',
-        erupt_date: document.getElementById('editToothDate')?.value || '',
-        position: document.getElementById('editToothPosition')?.value || '',
-        side: document.getElementById('editToothSide')?.value || '',
-        note: document.getElementById('editToothNote')?.value || ''
-    };
-    api(`/api/babies/${App.currentBaby}/teething/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(data)
-    }).then(res => {
-        if (res.success) {
-            closeModal();
-            showToast.success('已更新');
-            loadTeethingRecords();
-        } else {
-            showToast.error(res.message || '更新失败');
-        }
-    });
-}
-
-function renderTeethDiagram(records) {
-    // 乳牙名称映射
-    const toothNames = {
-        upper: ['右上中切牙', '右上侧切牙', '右上尖牙', '右上第一磨牙', '右上第二磨牙',
-                '左上中切牙', '左上侧切牙', '左上尖牙', '左上第一磨牙', '左上第二磨牙'],
-        lower: ['右下中切牙', '右下侧切牙', '右下尖牙', '右下第一磨牙', '右下第二磨牙',
-                '左下中切牙', '左下侧切牙', '左下尖牙', '左下第一磨牙', '左下第二磨牙']
-    };
-
-    ['upper', 'lower'].forEach(pos => {
-        ['Right', 'Left'].forEach(side => {
-            const container = document.getElementById(pos + side);
-            if (!container) return;
-            const teeth = toothNames[pos].filter((_, i) => {
-                if (side === 'Right') return i < 5;
-                return i >= 5;
-            });
-            container.innerHTML = teeth.map((name, i) => {
-                const erupted = records.some(r => r.tooth_name === name);
-                return `<div class="tooth-cell ${erupted ? 'erupted' : ''}" title="${name}">${erupted ? '' : '○'}</div>`;
-            }).join('');
-        });
-    });
-}
-
-function showToothModal() {
-    if (!App.currentBaby) return;
-    const html = `
-        <form id="toothForm">
-            <div class="form-group">
-                <label>牙齿名称</label>
-                <select id="toothName">
-                    <option value="">选择牙齿</option>
-                    <optgroup label="上排">
-                        <option value="右上中切牙">右上中切牙</option>
-                        <option value="右上侧切牙">右上侧切牙</option>
-                        <option value="右上尖牙">右上尖牙</option>
-                        <option value="右上第一磨牙">右上第一磨牙</option>
-                        <option value="右上第二磨牙">右上第二磨牙</option>
-                        <option value="左上中切牙">左上中切牙</option>
-                        <option value="左上侧切牙">左上侧切牙</option>
-                        <option value="左上尖牙">左上尖牙</option>
-                        <option value="左上第一磨牙">左上第一磨牙</option>
-                        <option value="左上第二磨牙">左上第二磨牙</option>
-                    </optgroup>
-                    <optgroup label="下排">
-                        <option value="右下中切牙">右下中切牙</option>
-                        <option value="右下侧切牙">右下侧切牙</option>
-                        <option value="右下尖牙">右下尖牙</option>
-                        <option value="右下第一磨牙">右下第一磨牙</option>
-                        <option value="右下第二磨牙">右下第二磨牙</option>
-                        <option value="左下中切牙">左下中切牙</option>
-                        <option value="左下侧切牙">左下侧切牙</option>
-                        <option value="左下尖牙">左下尖牙</option>
-                        <option value="左下第一磨牙">左下第一磨牙</option>
-                        <option value="左下第二磨牙">左下第二磨牙</option>
-                    </optgroup>
-                </select>
-            </div>
-            <div class="form-group-row">
-                <div class="form-group">
-                    <label>位置</label>
-                    <select id="toothPosition">
-                        <option value="upper">上排</option>
-                        <option value="lower">下排</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>侧向</label>
-                    <select id="toothSide">
-                        <option value="left">左侧</option>
-                        <option value="center">中间</option>
-                        <option value="right">右侧</option>
-                    </select>
-                </div>
-            </div>
-            <div class="form-group">
-                <label>萌出日期</label>
-                <input type="date" id="toothDate" required>
-            </div>
-            <div class="form-group">
-                <label>备注</label>
-                <input type="text" id="toothNote" placeholder="可选">
-            </div>
-            <div class="form-actions">
-                <button type="button" class="btn btn-cancel" id="cancelToothForm">取消</button>
-                <button type="submit" class="btn btn-primary">保存</button>
-            </div>
-        </form>
-    `;
-    document.getElementById('toothModalBody').innerHTML = html;
-    showModal('toothModal');
-
-    // 设置默认日期
-    const today = new Date();
-    const toothDateEl = document.getElementById('toothDate');
-    if (toothDateEl) toothDateEl.value = getToday();
-
-    // 牙齿名称变化时自动更新位置和侧向
-    document.getElementById('toothName')?.addEventListener('change', function() {
-        const name = this.value;
-        const toothPosition = document.getElementById('toothPosition');
-        const toothSide = document.getElementById('toothSide');
-        if (name.startsWith('右上') || name.startsWith('左上')) {
-            if (toothPosition) toothPosition.value = 'upper';
-        } else {
-            if (toothPosition) toothPosition.value = 'lower';
-        }
-        if (name.includes('右')) {
-            if (toothSide) toothSide.value = 'right';
-        } else if (name.includes('左')) {
-            if (toothSide) toothSide.value = 'left';
-        } else {
-            if (toothSide) toothSide.value = 'center';
-        }
-    });
-
-    document.getElementById('cancelToothForm')?.addEventListener('click', () => hideModal('toothModal'));
-    document.getElementById('toothForm')?.addEventListener('submit', function(e) {
-        e.preventDefault();
-        const data = {
-            baby_id: App.currentBaby,
-            tooth_name: document.getElementById('toothName')?.value || '',
-            erupt_date: document.getElementById('toothDate')?.value || '',
-            position: document.getElementById('toothPosition')?.value || '',
-            side: document.getElementById('toothSide')?.value || '',
-            note: document.getElementById('toothNote')?.value || ''
-        };
-        api(`/api/babies/${App.currentBaby}/teething`, {
-            method: 'POST',
-            body: JSON.stringify(data)
-        }).then(res => {
-            if (res.success) {
-                hideModal('toothModal');
-                showToast('出牙记录已添加');
-                loadTeethingRecords();
-            } else {
-                showToast.error(res.message || '添加失败');
-            }
-        });
-    });
-}
-
-function deleteTooth(id) {
-    if (!confirm('确定删除这条出牙记录？')) return;
-    api(`/api/teething/${id}`, { method: 'DELETE' }).then(res => {
-        if (res.success) {
-            showToast.success('已删除');
-            loadTeethingRecords();
-        }
-    });
-}
-
 // ==================== 体检记录 ====================
 
 function initCheckupPage() {
@@ -12949,7 +12692,6 @@ function mainInit() {
     // initTummyTime 已并入 initTummytimePage（旧驼峰版是空哨兵函数，已删）
     safeCall(initAllergyTest, 'initAllergyTest');
     safeCall(initAsqPage, 'initAsqPage');
-    safeCall(initTeethingPage, 'initTeethingPage');
     safeCall(initCheckupPage, 'initCheckupPage');
     safeCall(initSolidFoodPage, 'initSolidFoodPage');
     safeCall(initLeapPage, 'initLeapPage');
@@ -16138,6 +15880,12 @@ function closeActivityModal() {
 }
 
 // ==================== 出牙追踪 ====================
+// 🔒 接口只能是 /api/babies/<id>/teething（teething_records 表）。
+// 这里原来调的是 /api/babies/<id>/teeth —— 那是写 baby_teeth 表的另一套接口，
+// 09-16 被当「死接口」删掉后，本页从那时起整页失效且全是静默失败：
+// 列表永远空白、点牙位图没有反应、删除只是本地数组少一条。
+// 新增出牙相关调用前，先确认后端 url_map 里真的有这条路由。
+// 门禁：.workbuddy/scripts/check_frontend_api_exists.py
 
 function initTeethPage() {
     document.getElementById('addTeethBtn')?.addEventListener('click', showAddTeethModal);
@@ -16163,34 +15911,37 @@ function renderTeethChart() {
 function toggleTooth(code, name) {
     const existing = (App.teethRecords || []).find(r => r.tooth_code === code);
     if (existing) {
-        if (confirm(`确定要删除 ${name}(${code}) 的出牙记录吗？`)) {
-            api(`/api/babies/${App.currentBaby}/teeth/${existing.id}`, { method: 'DELETE' }).then(() => {
-                App.teethRecords = App.teethRecords.filter(r => r.id !== existing.id);
-                renderTeethChart();
-                renderTeethList();
-            });
-        }
+        if (!confirm(`确定要删除 ${name}(${code}) 的出牙记录吗？`)) return;
+        api(`/api/teething/${existing.id}`, { method: 'DELETE' }).then(res => {
+            if (res.success) {
+                showToast.success('已删除');
+                loadTeethRecords();
+            } else {
+                showToast.error(res.message || '删除失败');
+            }
+        });
     } else {
         const today = getToday();
         const date = prompt(`输入 ${name}(${code}) 的出牙日期`, today);
-        if (date) {
-            api(`/api/babies/${App.currentBaby}/teeth`, {
-                method: 'POST',
-                body: JSON.stringify({
-                    tooth_code: code,
-                    tooth_name: name,
-                    erupt_date: date,
-                    note: ''
-                })
-            }).then(res => {
-                if (res.success) {
-                    App.teethRecords = App.teethRecords || [];
-                    App.teethRecords.push({ id: Date.now(), tooth_code: code, tooth_name: name, erupt_date: date });
-                    renderTeethChart();
-                    renderTeethList();
-                }
-            });
-        }
+        if (!date) return;
+        api(`/api/babies/${App.currentBaby}/teething`, {
+            method: 'POST',
+            body: JSON.stringify({
+                tooth_code: code,
+                tooth_name: name,
+                erupt_date: date,
+                note: ''
+            })
+        }).then(res => {
+            if (res.success) {
+                showToast.success('出牙记录已添加');
+                // 回读列表拿真实 id：以前本地 push 一个 Date.now() 当 id，
+                // 再点删除就会拿这个假 id 去打接口（必然删不掉）。
+                loadTeethRecords();
+            } else {
+                showToast.error(res.message || '添加失败');
+            }
+        });
     }
 }
 
@@ -16200,11 +15951,14 @@ function showAddTeethModal() {
 
 function loadTeethRecords() {
     if (!App.currentBaby) return;
-    api(`/api/babies/${App.currentBaby}/teeth`).then(res => {
+    api(`/api/babies/${App.currentBaby}/teething`).then(res => {
         if (res.success) {
-            App.teethRecords = res.data;
+            App.teethRecords = res.data || [];
             renderTeethChart();
             renderTeethList();
+        } else {
+            // 不能再静默：之前这里吞掉失败，页面看起来只是「还没长牙」
+            showToast.error(res.message || '出牙记录加载失败');
         }
     });
 }
@@ -16229,7 +15983,7 @@ function renderTeethList() {
         <div class="teeth-item-card">
             <div class="teeth-item-icon">${typeIcons[tType] || ''}</div>
             <div class="teeth-item-info">
-                <div class="teeth-item-title">${escapeHtml(r.tooth_name)} (${escapeHtml(r.tooth_code)})</div>
+                <div class="teeth-item-title">${escapeHtml(r.tooth_name || '乳牙')} (${escapeHtml(r.tooth_code || '')})</div>
                 <div class="teeth-item-date">出牙日期: ${escapeHtml(r.erupt_date)}</div>
             </div>
             <button class="teeth-delete" onclick="deleteTeethRecord(${r.id})">X</button>
@@ -16239,11 +15993,12 @@ function renderTeethList() {
 
 function deleteTeethRecord(id) {
     if (!confirm('确定要删除这条出牙记录吗？')) return;
-    api(`/api/babies/${App.currentBaby}/teeth/${id}`, { method: 'DELETE' }).then(res => {
+    api(`/api/teething/${id}`, { method: 'DELETE' }).then(res => {
         if (res.success) {
-            App.teethRecords = App.teethRecords.filter(r => r.id !== id);
-            renderTeethChart();
-            renderTeethList();
+            showToast.success('已删除');
+            loadTeethRecords();
+        } else {
+            showToast.error(res.message || '删除失败');
         }
     });
 }

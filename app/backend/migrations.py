@@ -419,3 +419,23 @@ def _migration_v6(conn: sqlite3.Connection):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_error_logs_level ON error_logs(level)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_error_logs_module ON error_logs(module)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_error_logs_path ON error_logs(path)")
+
+
+@migration(7, "出牙记录表补 tooth_code：出牙页与 teething_records 统一数据源")
+def _migration_v7(conn: sqlite3.Connection):
+    """
+    出牙记录页（page-teeth）的牙位图需要按牙位编码（FDI 乳牙 51~85）定位每颗牙，
+    而 teething_records 原本只有 tooth_name —— 中文牙名不唯一（「中切牙」有 4 颗，
+    「第一乳磨牙」有 4 颗），仅凭名字无法判断点的是哪一颗。
+
+    背景：出牙页此前调的是 /api/babies/<id>/teeth（写 baby_teeth 表），该路由在
+    7e2ba58 被当作「前端从未接入的死接口」移除，实际移除的是**页面唯一在用的数据层**
+    ⇒ 出牙页从那时起整页失效（列表空、点牙位图静默无反应、删除假装成功）。
+    现统一到已存在的 /api/babies/<id>/teething（teething_records），这里补 tooth_code。
+
+    baby_teeth 表本身保留不删（历史备份/导出里可能有它，删表会影响旧备份恢复）。
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(teething_records)").fetchall()}
+    if "tooth_code" not in cols:
+        conn.execute("ALTER TABLE teething_records ADD COLUMN tooth_code TEXT DEFAULT ''")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_teething_baby ON teething_records(baby_id, erupt_date)")
