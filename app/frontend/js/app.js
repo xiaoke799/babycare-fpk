@@ -15687,28 +15687,38 @@ function renderActivityList(activities, ageMonths) {
     if (!container) return;
 
     if (!activities || activities.length === 0) {
-        // 区分两种空：① 月龄超出活动库范围（3 岁起）② 选中的分类本筛没东西。
-        // 混成一句「暂无匹配的活动」，3 岁用户会以为是 bug。
-        const overRange = ageMonths != null && ageMonths > 36;
-        if (overRange) {
+        // 区分两种空：① 月龄超出活动库范围 ② 选中的分类本筛没东西。
+        // 混成一句「暂无匹配的活动」，用户会以为是 bug。
+        if (ageMonths != null) {
             const half = Math.floor(ageMonths / 12);
             const extra = ageMonths % 12;
             const ageText = extra ? half + ' 岁 ' + extra + ' 个月' : half + ' 岁';
             container.innerHTML =
-                '<div class="empty-state"><div class="empty-text">活动库目前覆盖 0-36 个月，' +
-                `还没有适合 ${ageText} 的内容</div>` +
-                '<div class="empty-text activity-empty-sub">育儿的陪伴不分年龄段，' +
-                '下面这些仍然适合这个阶段</div>' +
+                `<div class="empty-state"><div class="empty-text">` +
+                `活动库暂时没有适合 ${ageText} 的内容</div>` +
+                '<div class="empty-text activity-empty-sub">先看看月龄最接近的几个，' +
+                '陪玩的质量比月龄更重要</div>' +
                 '<div class="activity-list" id="activityListFallback"></div></div>';
-            // 放宽月龄再取一批，至少别给 3 岁用户一片空白。
-            // 必须带 baby_id：否则「热门」是按全库完成次数排的，
-            // 多宝宝家庭里这个宝宝会看到兄弟姐妹的喜好（跨宝宝串数据）。
-            api(`/api/activities?limit=6&sort=popular&baby_id=${App.currentBaby}`).then(res => {
+            // fallback=1 由**后端**挑「月龄距离最近」的一批。
+            // ⚠ 别改成不传 age_months 或 sort=popular：那是按月龄升序取前 N 条，
+            // 3 岁用户会拿到 0-3 月的「黑白卡追视」—— 看着有内容，其实完全不合适。
+            const url = `/api/activities?fallback=1&limit=6&age_months=${encodeURIComponent(ageMonths)}` +
+                `&baby_id=${encodeURIComponent(App.currentBaby)}`;
+            api(url).then(res => {
                 const box = document.getElementById('activityListFallback');
                 if (!box) return;
                 const rows = (res && res.data) || [];
                 if (!rows.length) { box.innerHTML = ''; return; }
-                box.innerHTML = rows.map(a => activityCardHtml(a)).join('');
+                box.innerHTML = rows.map(a => {
+                    // 差多少月龄要如实显示，别让用户以为是精确匹配
+                    const gap = a.age_gap;
+                    const tag = gap > 0
+                        ? `<span class="activity-age-gap">${escapeHtml(activityAgeRangeText(a))}</span>`
+                        : '';
+                    return activityCardHtml(a).replace(
+                        '<div class="activity-meta">',
+                        `<div class="activity-meta">${tag}`);
+                }).join('');
             }).catch(() => {});
             return;
         }
@@ -15719,6 +15729,14 @@ function renderActivityList(activities, ageMonths) {
     }
 
     container.innerHTML = activities.map(a => activityCardHtml(a)).join('');
+}
+
+// 「12-36 个月」→ 「适合 1-3 岁」；超长区间（月龄差 >18）只显示上限
+function activityAgeRangeText(a) {
+    const lo = Number(a.min_age_months) || 0;
+    const hi = Number(a.max_age_months) || 0;
+    if (hi - lo > 18) return `${Math.floor(lo / 12)} 岁以上`;
+    return `${Math.floor(lo / 12)}-${Math.floor(hi / 12)} 岁`;
 }
 
 function activityCardHtml(a) {
