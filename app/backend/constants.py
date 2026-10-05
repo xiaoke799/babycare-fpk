@@ -19,9 +19,45 @@ WHO_DB_PATH = os.environ.get("BABYCARE_WHO_DB_PATH", os.path.join(BASE_DIR, "who
 
 # ==================== 应用信息 ====================
 
-# 与包根 manifest 的 version 字段保持一致（设置页「系统诊断」里展示）。
-# 发布新版本时两处一起改。
-APP_VERSION = os.environ.get("BABYCARE_APP_VERSION", "0.0.1")
+def _read_manifest_version():
+    """从包根 manifest 读 version —— **唯一真值来源**。
+
+    ⚠ 别再写死一个版本字符串：以前这里硬编码 "0.0.1"、manifest 写 "0.0.2"，
+    注释说"发布新版本时两处一起改"，结果两处立刻走岔 —— 设置页「系统诊断」里
+    无论装的是哪个版本都恒显示「育儿宝 v0.0.1」，用户按版本号排查问题会被带偏。
+    现在改成运行时读 manifest：官方件与源码树都读得到，不再有第二份事实。
+    读不到（权限/路径异常）才退回空串，并且**不假装是某个真实版本号**。
+
+    两种布局都要覆盖（从 backend/ 往上找，最多 3 层）：
+      · 源码树：<root>/manifest          （backend 在 <root>/app/backend）
+      · 已安装：<app>/manifest            （backend 与 app.tgz 解出来的目录同级）
+    """
+    start = os.path.dirname(BASE_DIR)
+    candidates = []
+    cur = start
+    for _ in range(3):
+        candidates.append(os.path.join(cur, "manifest"))
+        candidates.append(os.path.join(cur, "app", "manifest"))
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+    for candidate in candidates:
+        try:
+            with open(candidate, "r", encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line.startswith("version="):
+                        v = line.split("=", 1)[1].strip()
+                        if v:
+                            return v
+        except OSError:
+            continue
+    return ""
+
+
+# 环境变量优先（CI 可注入）；否则读 manifest；都拿不到就是空串
+APP_VERSION = os.environ.get("BABYCARE_APP_VERSION") or _read_manifest_version()
 APP_NAME = "育儿宝"
 
 # ==================== 数据库配置 ====================
