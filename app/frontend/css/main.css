@@ -8792,6 +8792,16 @@ body {
     margin-top: 4px;
 }
 
+/* 兜底卡片上标出「适合几岁」——让用户知道这不是精确匹配，
+   而是月龄最接近的几个。 */
+.activity-age-gap {
+    font-size: 10px;
+    color: var(--text-light);
+    background: var(--bg-color);
+    border-radius: 4px;
+    padding: 1px 5px;
+}
+
 #activityListFallback {
     display: flex;
     flex-direction: column;
