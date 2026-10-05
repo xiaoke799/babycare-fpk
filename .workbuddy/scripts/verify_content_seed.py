@@ -26,6 +26,7 @@ B. 增量装载（真起库跑）
 """
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -182,7 +183,20 @@ def check_incremental_seed():
     print("=" * 74)
 
     import server
+    import seed_data
     from seed_data import load_all_seeds
+
+    # ⚠ 增量装载这一段原来直接改写仓库里被 git 跟踪的 seeds/knowledge_articles.json，
+    # 跑完再用 finally 把它还原。内容确实还原了，但有两个副作用：
+    #   ① 每次跑完 git status 都多一个「已修改」，让人误以为有没提交的工作；
+    #   ② 万一进程被杀（超时 / 强退），finally 不执行，那条测试用的占位文章
+    #      就留在源文件里 —— 会跟着打包进 .fpk 发给用户。
+    # 所以改成：把 seeds 整份拷到临时目录，让 seed_data 读临时副本，源文件一字节不动。
+    seeds_tmp = tempfile.mkdtemp(prefix="babycare_seeds_")
+    for _fn in os.listdir(SEEDS):
+        if _fn.endswith(".json"):
+            shutil.copy2(os.path.join(SEEDS, _fn), os.path.join(seeds_tmp, _fn))
+    seed_data.SEEDS_DIR = seeds_tmp
 
     # init_db() 只建表；种子是启动流程里单独一步（server._do_init），这里照做
     server.init_db()
@@ -218,37 +232,34 @@ def check_incremental_seed():
     con.commit()
 
     # ② 新增内容 ⇒ 老库要能补上（模拟「以后又写了新文章」）
-    src = os.path.join(SEEDS, "knowledge_articles.json")
-    original = open(src, encoding="utf-8").read()
-    data = json.loads(original)
+    # 写的是临时副本（seed_data.SEEDS_DIR 已指向 seeds_tmp），源文件不动
+    src = os.path.join(seeds_tmp, "knowledge_articles.json")
+    data = json.loads(open(src, encoding="utf-8").read())
     marker_title = "ZZ增量装载测试条目"
     data.append({"category": "测试", "title": marker_title,
                  "age_range": "0-3岁", "content": "这是一条用于验证增量装载的临时条目。" * 5})
-    try:
-        with open(src, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        base = count("knowledge_articles")
-        load_all_seeds()
-        after = count("knowledge_articles")
-        if marker_title not in titles("knowledge_articles"):
-            fail("新增的内容没有补进已有库（老用户看不到新内容）")
-        elif after != base + 1:
-            fail(f"增量装载数量不对：{base} → {after}（应只 +1）")
-        else:
-            ok(f"新增 1 条内容能补进已有库（{base} → {after}）")
+    with open(src, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    base = count("knowledge_articles")
+    load_all_seeds()
+    after = count("knowledge_articles")
+    if marker_title not in titles("knowledge_articles"):
+        fail("新增的内容没有补进已有库（老用户看不到新内容）")
+    elif after != base + 1:
+        fail(f"增量装载数量不对：{base} → {after}（应只 +1）")
+    else:
+        ok(f"新增 1 条内容能补进已有库（{base} → {after}）")
 
-        # ③ 重复跑不产生重复
-        load_all_seeds()
-        again = count("knowledge_articles")
-        if again != after:
-            fail(f"重复装载产生了重复行：{after} → {again}")
-        else:
-            ok("重复装载幂等，不产生重复行")
-    finally:
-        with open(src, "w", encoding="utf-8") as f:
-            f.write(original)
-        con.execute("DELETE FROM knowledge_articles WHERE title = ?", (marker_title,))
-        con.commit()
+    # ③ 重复跑不产生重复
+    load_all_seeds()
+    again = count("knowledge_articles")
+    if again != after:
+        fail(f"重复装载产生了重复行：{after} → {again}")
+    else:
+        ok("重复装载幂等，不产生重复行")
+
+    con.execute("DELETE FROM knowledge_articles WHERE title = ?", (marker_title,))
+    con.commit()
     con.close()
 
 
