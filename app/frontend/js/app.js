@@ -878,6 +878,10 @@ function initMascot() {
                 data.tool_events.forEach(ev => appendToolEventCard(ev));
             }
             appendBotMsg(data.answer || '抱歉，我暂时回答不了这个问题，换个方式问问？', data.llm_model || '');
+            // 大模型没生效时把原因亮出来——之前静默回退规则引擎，用户以为"接入了但 AI 装傻"
+            if (data.llm_model === '规则引擎' && data.fallback_reason) {
+                appendFallbackNotice(data.fallback_reason);
+            }
             setTimeout(() => setMascotState(null), 2000);
         })
         .catch(() => {
@@ -917,6 +921,16 @@ function initMascot() {
     }
 
     // 渲染 AI 工具调用事件卡片（在小萌对话中显示 AI 执行了哪些操作）
+    // 大模型未生效的说明条：淡黄底小字，告诉用户这次为什么是规则引擎在答、去哪修
+    function appendFallbackNotice(reason) {
+        const wrap = document.createElement('div');
+        wrap.className = 'chat-msg bot chat-fallback-note';
+        wrap.innerHTML = '<b>大模型本次没有生效</b>（' + escapeHtml(String(reason || '未知原因')) +
+            '），所以由本地规则引擎回答。可到<b> 设置 → AI 大模型</b> 检查厂商、API Key 与'
+            + '「同意数据发送至云端」后重试。';
+        chatBody.appendChild(wrap);
+        chatBody.scrollTop = chatBody.scrollHeight;
+    }
     const _TOOL_LABELS = {
         query_baby_info: '查询宝宝信息',
         query_records: '查询记录',
@@ -19916,6 +19930,11 @@ async function initConsentGate() {
     }
     if (!res || !res.success) return;
     _consentInfo = res.data || {};
+    // ⚠ 设置页「隐私与协议」卡片的 href / 版本号也要等这份信息回来才填得上。
+    // 以前只在 DOMContentLoaded + setTimeout(0) 里调一次 bindLegalSettings，
+    // 那时这个请求还没回来 ⇒ 链接恒为 "#"、版本恒为 "—"，
+    // 就算卡片位置摆对了，点《用户协议》也只是打开一个空页。
+    bindLegalSettings();
     if (_consentInfo.need_consent) showConsentGate(_consentInfo);
 }
 
@@ -19930,11 +19949,6 @@ function bindConsentGate() {
 
     agreeBtn.addEventListener('click', async () => {
         if (!box.checked) {
-    // ⚠ 设置页「隐私与协议」卡片的 href / 版本号也要等这份信息回来才填得上。
-    // 以前只在 DOMContentLoaded + setTimeout(0) 里调一次 bindLegalSettings，
-    // 那时这个请求还没回来 ⇒ 链接恒为 "#"、版本恒为 "—"，
-    // 就算卡片位置摆对了，点《用户协议》也只是打开一个空页。
-    bindLegalSettings();
             if (tip) {
                 tip.textContent = '请先勾选上方确认项（须由监护人同意）';
                 tip.classList.add('error');

@@ -132,7 +132,32 @@ def ai_chat():
 
             answer = None
             tool_events: list = []
-            llm_enabled = LLM.get('provider') != '' and not force_rule
+            fallback_reason = ''
+
+            provider_now = (LLM.get('provider') or '').strip()
+            is_local_provider = provider_now in ('ollama', 'lmstudio')
+
+            def _reason_now():
+                breaker_state = ''
+                try:
+                    from ai_client import get_ai_client_stats
+                    breaker_state = (get_ai_client_stats().get('circuit_breaker') or {}).get('state', '')
+                except Exception:
+                    pass
+                return _llm_fail_reason(
+                    provider_now,
+                    bool(LLM.get('consent_cloud')),
+                    bool(LLM.get('api_key')),
+                    breaker_state,
+                )
+
+            # 可用性判定与 ai_client._call_llm_with_retry 的拦截条件保持一致：
+            # 云端厂商未同意数据外发时必然被静默拦截，提前视为不可用并给出明确原因，
+            # 免得白烧两次重试 + 熔断计数。
+            llm_enabled = bool(provider_now) and not force_rule \
+                and (is_local_provider or LLM.get('consent_cloud'))
+            if not llm_enabled and not force_rule:
+                fallback_reason = _reason_now()
 
             if llm_enabled:
                 from ai_client import call_llm_with_resilience
@@ -196,6 +221,8 @@ def ai_chat():
             if not answer:
                 # 规则引擎模式下若用户意图是写入，主动提示需要 LLM
                 answer = chat_response(question, db, baby_id)
+                if llm_enabled and not fallback_reason:
+                    fallback_reason = _reason_now()
 
             # 保存 AI 回复
             try:
@@ -216,6 +243,7 @@ def ai_chat():
                 'answer': answer,
                 'llm_enabled': llm_enabled,
                 'llm_model': used_model,
+                'fallback_reason': fallback_reason,
                 'tool_events': tool_events,
                 'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             })
@@ -256,6 +284,26 @@ def _safe_max_tool_rounds(v) -> int:
     except (TypeError, ValueError):
         return 5
     return max(1, min(n, 10))
+
+
+def _llm_fail_reason(provider_now, consent_cloud, api_key_set, breaker_state=''):
+    """推断「这次为什么没走大模型」，随响应带回前端展示。
+
+    此前 LLM 失败会静默回退规则引擎：用户配了厂商却没勾「数据外发同意」
+    （或密钥错/网络不通/熔断）时，界面毫无提示，看起来就像"接入了但 AI 装傻"。
+    纯参数函数，方便离线单测。
+    """
+    provider_now = (provider_now or '').strip()
+    if not provider_now:
+        return '未配置大模型，请到 设置 → AI 大模型 选择厂商并填入 API Key'
+    is_local = provider_now in ('ollama', 'lmstudio')
+    if not is_local and not consent_cloud:
+        return '云端厂商需先在 设置 → AI 大模型 勾选「同意数据发送至云端」'
+    if not is_local and not api_key_set:
+        return 'API Key 未配置，请到 设置 → AI 大模型 填写'
+    if breaker_state == 'open':
+        return '连续调用失败已熔断，约 2 分钟后自动恢复，可先检查网络与密钥'
+    return '调用失败（检查 API Key、模型名或 NAS 外网连通性）'
 
 
 # ==================== LLM 状态与配置 API ====================

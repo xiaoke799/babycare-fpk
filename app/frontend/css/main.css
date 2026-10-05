@@ -14757,3 +14757,19 @@ input:checked + .toggle-slider:before {
 }
 .photo-nav-prev { left: 10px; }
 .photo-nav-next { right: 10px; }
+
+/* 小萌聊天：大模型未生效的说明条（淡黄底，指路设置页） */
+.chat-fallback-note {
+    max-width: 88%;
+    background: #FFF7E8;
+    border: 1px solid rgba(245, 185, 113, 0.45);
+    border-left: 3px solid var(--warning-color);
+    border-radius: 12px;
+    padding: 8px 12px;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+}
+.chat-fallback-note b {
+    color: var(--text-primary);
+}
