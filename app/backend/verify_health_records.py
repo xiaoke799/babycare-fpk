@@ -302,6 +302,74 @@ def main():
           all(k in (n.get("scopes") or []) for k in ("体检", "筛查", "过敏")),
           str(n.get("scopes")))
 
+    print("\n=== G2. 前后端字段必须对得上（防静默空渲染）===")
+    import blueprints.health_records as _hr_mod
+    HEALTH_NOTICE_KEYS = set(_hr_mod.HEALTH_NOTICE.keys())
+    import re as _re
+    js_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "frontend", "js", "app.js")
+    try:
+        js_src = open(js_path, encoding="utf-8").read()
+    except OSError:
+        js_src = ""
+    # 只扫 loadHealthNotice 函数体：`xxx.className` 这类无关代码里的 n.xxx 会误伤
+    body = ""
+    m = _re.search(r"function loadHealthNotice\(\)\s*\{(.*?)\n\}", js_src, _re.S)
+    if m:
+        body = m.group(1)
+    used = set(_re.findall(r"\bn\.([a-z_]+)", body))
+    provided = set(HEALTH_NOTICE_KEYS)
+    missing = sorted(used - provided)
+    check("前端用到的提示字段后端都给了", not missing, f"缺 {missing}")
+    check("前端确实在渲染提示字段", bool(used), "没匹配到任何 n.xxx，用例可能失效")
+
+    print("\n=== G3. PUT 收口：不存在的 id 必须 404，指标归属认记录自己 ===")
+    # ① 改不存在的主记录。此前 UPDATE 命中 0 行也返回 200「记录已更新」——
+    #    前端以为改成功、刷新还是原样，和 DELETE 那边同一类假成功。
+    r = client.put("/api/health/records/detail/999999999", json={"title": "改不存在的"})
+    check("改不存在的体检记录 → 404", r.status_code == 404, f"实际 {r.status_code}")
+    for path, payload, label in (
+        ("/api/health/reminders/detail/999999999", {"title": "x"}, "提醒"),
+        ("/api/health/milestones/detail/999999999", {"milestone_name": "x"}, "里程碑"),
+        ("/api/health/screenings/detail/999999999", {"result_summary": "x"}, "筛查"),
+        ("/api/health/allergies/detail/999999999", {"allergen_name": "x"}, "过敏"),
+        ("/api/health/feeding_summary/detail/999999999", {"concerns": "x"}, "喂养摘要"),
+    ):
+        rr = client.put(path, json=payload)
+        check(f"改不存在的{label} → 404", rr.status_code == 404, f"实际 {rr.status_code}")
+
+    # ② 指标归属：指标原来用请求体里的 baby_id 重写，客户端不传就是 NULL，
+    #    而指标列表是按 baby_id 过滤的 ⇒ 改一次指标，指标就从列表里凭空消失。
+    #    现在必须认「记录自己属于哪个宝宝」。
+    r = client.post(f"/api/health/records/{baby}", json={
+        "record_date": today, "title": "指标归属用例",
+        "indicators": [{"indicator_name": "血红蛋白", "value": 120, "unit": "g/L",
+                        "result_status": "normal"}],
+    })
+    rid = (r.get_json() or {}).get("id")
+    check("建带指标的体检记录成功", r.status_code in (200, 201) and bool(rid),
+          f"实际 {r.status_code} {r.get_json()}")
+    if rid:
+        rr = client.put(f"/api/health/records/detail/{rid}", json={
+            "note": "改过指标",
+            "indicators": [{"indicator_name": "血红蛋白", "value": 118, "unit": "g/L",
+                            "result_status": "normal"}],
+        })
+        check("PUT 重写指标成功", rr.status_code in (200, 201), f"实际 {rr.status_code}")
+        rows = rows_since("health_indicators", 0)
+        mine = [x for x in rows if x["record_id"] == rid]
+        check("重写后指标还在", len(mine) == 1, f"实际 {len(mine)} 行")
+        check("指标 baby_id 取自记录本身（不是请求体）",
+              bool(mine) and mine[0]["baby_id"] == baby,
+              f"实际 {mine[0]['baby_id'] if mine else None} 期望 {baby}")
+        # 指标列表按 baby_id 过滤 —— 归属错了这里就会 0 条
+        rl = client.get(f"/api/health/indicators/{baby}")
+        listed = (rl.get_json() or {}).get("data") or []
+        check("改完指标后仍出现在指标列表里",
+              any(x.get("indicator_name") == "血红蛋白" for x in listed),
+              f"实际 {len(listed)} 条")
+
     print("\n=== H. 负向对照：把守卫撤掉，脚本必须转红 ===")
     # 这里不真改代码（会污染工作区），而是校验「脏值能落库」时上面的用例确实会 FAIL：
     # 若脏数据本来就被拒，说明校验没生效，用例失去意义。
