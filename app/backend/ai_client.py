@@ -316,6 +316,7 @@ def call_llm_with_resilience(
                 model_override=model,
                 execute_tool_fn=execute_tool_fn,
                 max_rounds=max_tool_rounds,
+                trace_id=trace_id,
             )
             if ok and answer:
                 _circuit_breaker.record_success()

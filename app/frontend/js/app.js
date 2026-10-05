@@ -7243,7 +7243,7 @@ const LLM_KEY_LINKS = {
 //    留空数组是允许的：界面会回落到后端的 default_model（推荐即默认，不会自相矛盾）。
 //    门禁：.workbuddy/scripts/check_llm_model_lists.py 会逐项比对，防止再漂。
 const LLM_MODELS_FEATURED = {
-    deepseek: [],                              // 回落 deepseek-v4-flash
+    deepseek: [],                              // 回落 deepseek-flash（规范名；旧 deepseek-v4-flash 已于 2026-09-10 退役）
     kimi: ['moonshot-v1-8k'],
     qwen: ['qwen-turbo', 'qwen-plus'],
     glm: ['glm-4-flash'],

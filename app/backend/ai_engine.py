@@ -1383,8 +1383,13 @@ PROVIDER_TEMPLATES = {
         'group': 'china',
         'base_url': 'https://api.deepseek.com/v1',
         'api_url': 'https://api.deepseek.com/v1/chat/completions',
-        'models': ['deepseek-v4-pro', 'deepseek-v4-flash'],
-        'default_model': 'deepseek-v4-flash',
+        # ⚠ 2026-10-05 修正：`deepseek-v4-flash` 已于 2026-09-10 被 DeepSeek 退役，
+        # 现在只是**临时兼容别名**（官方会把它路由到 V4.1-Flash，且不承诺下线日期；
+        # 有服务商文档写明该别名到 2026-10-10 即返回 invalid-model）。
+        # 现行规范名是 `deepseek-flash`（= V4.1-Flash）。旧名放最后一位仅作兼容，
+        # 不作为默认 —— 默认必须是**规范名**，否则新用户一装就撞 404。
+        'models': ['deepseek-flash', 'deepseek-v4-pro', 'deepseek-v4-flash'],
+        'default_model': 'deepseek-flash',
         'vision_models': [],
         'default_vision_model': '',
         'max_output_tokens': 16384,
