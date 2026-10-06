@@ -346,7 +346,12 @@ setTimeout(async function(){
       });
     } catch (e) { log.push('clipStubErr=' + e.message); }
 
-    var rows4 = document.querySelectorAll('#page-about .feedback-row');
+    // 只数「反馈渠道」这张卡里的行。
+    // ⚠ 原来用 `#page-about .feedback-row` 全选择器 —— 「成长卡片」那张卡
+    // 也复用了 .feedback-row 做入口行（本轮新增），计数变4 而这条断言
+    // 判的是==3，于是把新入口当成「反馈渠道多了一行」的缺陷。
+    // 口径要跟着内容走：给反馈卡片加了 #feedbackCard，就按它取。
+    var rows4 = document.querySelectorAll('#feedbackCard .feedback-row');
     log.push('feedbackRows=' + rows4.length);
     if (rows4.length) {
       rows4[0].dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
