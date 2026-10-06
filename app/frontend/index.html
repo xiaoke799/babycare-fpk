@@ -135,6 +135,10 @@
                             <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chart"/></svg></span>
                             <span class="home-quick-label">成长</span>
                         </button>
+                        <button class="home-quick-btn" id="batchRecordBtn" type="button">
+                            <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-list"/></svg></span>
+                            <span class="home-quick-label">批量</span>
+                        </button>
                     </div>
 
                     <!-- 身体数据：显示最新一次测量值（不是「今日」数据，单独一块） -->
@@ -1999,6 +2003,28 @@
         </a>
 
         <p class="settings-card-note">点任意一行会复制对应信息并提示；在浏览器里打开时也会同时跳转。加入 QQ 群需在手机或电脑上安装 QQ。</p>
+    </div>
+
+    <!-- 成长卡片：把宝宝的月龄/身高/体重等做成一张可分享的图片。
+         入口以前是死代码（弹窗和生成函数都写好了但没有按钮），D8 判据查出后补上。 -->
+    <div class="settings-card">
+        <div class="settings-card-head">
+            <span class="settings-card-icon">
+                <svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-clipboard"/></svg>
+            </span>
+            <div class="settings-card-head-text">
+                <div class="settings-card-title">成长卡片</div>
+                <div class="settings-card-desc">把宝宝的月龄、身高、体重等数据生成一张图片，保存或分享给家人。</div>
+            </div>
+        </div>
+        <button class="feedback-row" id="shareCardBtn" type="button" style="width:100%;text-align:left;cursor:pointer;background:none;border:none;font:inherit;">
+            <span class="feedback-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-baby"/></svg></span>
+            <span class="feedback-main">
+                <span class="feedback-label">生成分享卡片</span>
+                <span class="feedback-value">宝宝月龄 · 身高体重 · 记录概览</span>
+            </span>
+            <span class="feedback-go">›</span>
+        </button>
     </div>
 
     <!-- 关于页支持卡片：图片地址由页尾脚本按网关前缀拼（同小萌头像），

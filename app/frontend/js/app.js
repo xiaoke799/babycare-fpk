@@ -9891,10 +9891,9 @@ function loadVaccineStats() {
 // ==================== 分享卡片 ====================
 
 function initShareCard() {
-    // 分享卡片的入口按钮 shareCardBtn 在 index.html 里并不存在（功能没落地，
-    // 弹窗写好了但没放进页面）。不做这个判断的话第一行就抛 TypeError，
-    // 后面「关闭 / 刷新 / 下载」三个按钮的绑定会跟着一起失效。
-    if (!document.getElementById('shareCardBtn')) return;
+    // 入口按钮 shareCardBtn：以前只写在代码里、index.html 里没有，
+    // 成长卡片功能整套（生成/刷新/下载）都点了没反应。
+    // 同样是 D8 判据查出来后补的。
     document.getElementById('shareCardBtn').addEventListener('click', () => {
         if (!App.currentBaby) {
             showToast.warning('请先添加宝宝');
@@ -10752,9 +10751,9 @@ let batchRecordType = 'feeding';
 let batchRecords = [];
 
 function initBatchRecord() {
-    // 批量记录的入口按钮 batchRecordBtn 在 index.html 里不存在（弹窗写了但没入口）。
-    // 不判断的话第一行抛错，后面关闭/取消/类型切换的绑定全部失效。
-    if (!document.getElementById('batchRecordBtn')) return;
+    // 入口按钮 batchRecordBtn：以前只写在代码里、index.html 里没有，
+    // 整套批量记录功能（弹窗/切类型/提交）都因此点了没反应。
+    // D8 判据（verify_event_bindings.py）按「谁都不创建的元素」查出来后补的。
     document.getElementById('batchRecordBtn').addEventListener('click', openBatchModal);
     document.getElementById('closeBatchRecordModal').addEventListener('click', () => hideModal('batchRecordModal'));
     document.getElementById('cancelBatchForm').addEventListener('click', () => hideModal('batchRecordModal'));
@@ -11146,77 +11145,13 @@ function loadTummyTimePage() {
 }
 
 // ==================== 辅食过敏测试 ====================
-
-function initAllergyTest() {
-    // 本套过敏测试实现（allergyTestModal / allergyTestForm / allergyDate 等）在 index.html 中并不存在，
-    // 实际生效的是 allergyModal + initAllergyPage。无此哨兵判断会在后续绑定抛异常。
-    if (!document.getElementById('allergyTestModal')) return;
-    document.getElementById('addAllergyTestBtn')?.addEventListener('click', () => {
-        document.getElementById('allergyTestForm').reset();
-        document.getElementById('allergyTestId').value = '';
-        document.getElementById('allergyModalTitle').textContent = '添加过敏测试';
-        document.getElementById('allergyDate').value = getToday();
-        document.getElementById('allergyDay').value = 1;
-        document.getElementById('allergyStatus').value = 'testing';
-        showModal('allergyTestModal');
-    });
-    document.getElementById('closeAllergyTestModal')?.addEventListener('click', () => hideModal('allergyTestModal'));
-    document.getElementById('cancelAllergyTestForm')?.addEventListener('click', () => hideModal('allergyTestModal'));
-
-    document.getElementById('allergyTestForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        if (!App.currentBaby) return;
-        const testId = document.getElementById('allergyTestId').value;
-        const data = {
-            food_name: document.getElementById('allergyFood').value,
-            test_date: document.getElementById('allergyDate').value,
-            day_number: parseInt(document.getElementById('allergyDay').value) || 1,
-            has_reaction: document.getElementById('allergyStatus').value === 'failed' ? 1 : 0,
-            reaction_detail: document.getElementById('allergyReaction').value,
-            status: document.getElementById('allergyStatus').value,
-            note: document.getElementById('allergyNote').value
-        };
-        const url = testId ? `/api/allergy-tests/${testId}` : `/api/babies/${App.currentBaby}/allergy-tests`;
-        const method = testId ? 'PUT' : 'POST';
-        api(url, { method, body: JSON.stringify(data) }).then(res => {
-            if (res.success) {
-                showToast(testId ? '已更新' : '添加成功');
-                hideModal('allergyTestModal');
-                loadAllergyPage();
-            } else { showToast.error(res.message || '保存失败'); }
-        });
-    });
-}
-
-function loadAllergyPage() {
-    if (!App.currentBaby) return;
-    api(`/api/babies/${App.currentBaby}/allergy-tests`).then(res => {
-        if (!res.success) return;
-        const tests = res.data;
-        const list = document.getElementById('allergyList');
-        if (!list) return;
-        if (tests.length === 0) { list.innerHTML = '<p class="empty-tip">暂无过敏测试记录</p>'; return; }
-        list.innerHTML = tests.map(t =>
-            `<div class="allergy-card ${t.status}" data-id="${t.id}"><div class="allergy-icon">${t.status === 'passed' ? '' : t.status === 'failed' ? '' : ''}</div><div class="allergy-info"><div class="allergy-food">${escapeHtml(t.food_name)}</div><div class="allergy-meta">第${t.day_number}天 · ${escapeHtml(t.test_date)}${t.reaction_detail ? ' · ' + escapeHtml(t.reaction_detail) : ''}</div></div><span class="allergy-status-badge ${t.status}">${t.status === 'passed' ? '通过' : t.status === 'failed' ? '过敏' : '测试中'}</span><button class="temp-record-delete" onclick="deleteAllergyTest(${t.id}, event)">X</button></div>`
-        ).join('');
-        list.querySelectorAll('.allergy-card').forEach(card => {
-            card.addEventListener('click', (e) => {
-                if (e.target.closest('.temp-record-delete')) return;
-                const test = tests.find(t => t.id == card.dataset.id);
-                if (!test) return;
-                document.getElementById('allergyTestId').value = test.id;
-                document.getElementById('allergyFood').value = test.food_name;
-                document.getElementById('allergyDate').value = test.test_date;
-                document.getElementById('allergyDay').value = test.day_number || 1;
-                document.getElementById('allergyStatus').value = test.status || 'testing';
-                document.getElementById('allergyReaction').value = test.reaction_detail || '';
-                document.getElementById('allergyNote').value = test.note || '';
-                document.getElementById('allergyModalTitle').textContent = '编辑过敏测试';
-                showModal('allergyTestModal');
-            });
-        });
-    });
-}
+// 这一块原有两套并行实现，都是旧的：
+//   initAllergyTest()—— 绑 allergyTestForm/addAllergyTestBtn 等 HTML 里不存在的元素
+//   loadAllergyPage()—— 零调用点，且写进的是「过敏史」容器 #allergyList
+//                        （那个容器归 renderAllergyHistory 用，字段还完全不对）
+// 两处都已删除。生效的是 initAllergyPage() → addAllergyBtn2 → showAddAllergyModal
+// + allergyModal + allergyListTab/allergyList2 + renderAllergyList + deleteAllergyTest。
+// 留着旧套会让「添加过敏测试」有两条路，且旧套一点就抛 TypeError。
 
 // ==================== 24小时节律图 ====================
 
@@ -12899,7 +12834,10 @@ function mainInit() {
     safeCall(initTemperature, 'initTemperature');
     safeCall(initMedication, 'initMedication');
     // initTummyTime 已并入 initTummytimePage（旧驼峰版是空哨兵函数，已删）
-    safeCall(initAllergyTest, 'initAllergyTest');
+    // initAllergyTest 已删：它绑定的是 allergyTestForm/addAllergyTestBtn 等
+    // 在 index.html 里根本不存在的元素，等于同一功能的旧重复实现。
+    // 生效的那套是 initAllergyPage（绑 addAllergyBtn2 → showAddAllergyModal
+    // + allergyModal + allergyListTab）。留着两套会让「添加过敏测试」有两条路。
     safeCall(initAsqPage, 'initAsqPage');
     safeCall(initCheckupPage, 'initCheckupPage');
     safeCall(initSolidFoodPage, 'initSolidFoodPage');

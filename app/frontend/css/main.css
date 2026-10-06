@@ -12884,7 +12884,10 @@ input:checked + .toggle-slider:before {
 /* 快捷记录 */
 .home-quick-actions {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    /* 自适应列数：原来写死 4 列，加第 5 个「批量」按钮后孤零零掉到第二行，
+       看着像渲染残缺。auto-fit + minmax 让 4~6 个都能均分一行；
+       窄屏放不下时 minmax 里的 76px 下限会自然折行，不用另写断点。 */
+    grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
     gap: 10px;
     padding: 16px;
 }
@@ -13646,7 +13649,8 @@ input:checked + .toggle-slider:before {
     #page-dashboard .home-quick-actions {
         margin: 0;
         padding: 0;
-        grid-template-columns: repeat(2, 1fr);
+        /* 桌面端同样用 auto-fit（写死 2 列会让 5 个按钮排成 2+2+1，末位孤行） */
+        grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
         gap: 12px;
     }
 
