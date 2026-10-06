@@ -6735,13 +6735,33 @@ function drawWhoChart(refData, records, metric, sex) {
 
     // 更新百分位信息
     api(`/api/babies/${App.currentBaby}/percentiles`).then(res => {
-        if (res.success && res.data.percentiles && res.data.percentiles[metric]) {
-            const p = res.data.percentiles[metric];
-            const metricLabel = metric === 'weight' ? '体重' : metric === 'height' ? '身高' : metric === 'head_circumference' ? '头围' : 'BMI';
-            const latestVal = res.data.latest ? res.data.latest[metric] : null;
-            document.getElementById('whoChartInfo').innerHTML =
-                `${metricLabel}：最新值 <strong>${latestVal || '--'}</strong>，百分位 <strong style="color:#00b894">${p.percentile || '--'}</strong> | 绿色线为中位数(P50)`;
+        if (!res.success) {
+            const info = document.getElementById('whoChartInfo');
+            if (info) info.innerHTML =
+                '<span style="color:var(--danger-color,#d63031)">百分位数据加载失败，请重试</span>';
+            return;
         }
+        if (!res.data || !res.data.percentiles || !res.data.percentiles[metric]) {
+            const info = document.getElementById('whoChartInfo');
+            if (info) info.innerHTML = '<span style="opacity:.75">暂无该指标的百分位数据</span>';
+            return;
+        }
+        const p = res.data.percentiles[metric];
+        const metricLabel = metric === 'weight' ? '体重' : metric === 'height' ? '身高' : metric === 'head_circumference' ? '头围' : 'BMI';
+        const latestVal = res.data.latest ? res.data.latest[metric] : null;
+        const info = document.getElementById('whoChartInfo');
+        if (!info) return;
+        // ⚠ 后端 _get_who_percentile 返回的是
+        //   { value, classification, z_score, reference }，**没有 percentile 字段**。
+        //   原先写 p.percentile ⇒ 恒 undefined ⇒ 界面百分位永远显示 '--'。
+        const cls = p.classification || '';
+        const zTxt = (p.z_score != null) ? `（估算 z ${Number(p.z_score).toFixed(1)}）` : '';
+        // 异常档位（P3 以下 / P97 以上）标红，正常档沿用主题色
+        const abnormal = cls === '<P3' || cls === '>P97' || cls === 'unknown';
+        const color = abnormal ? 'var(--danger-color,#d63031)' : '#00b894';
+        info.innerHTML =
+            `${metricLabel}：最新值 <strong>${latestVal != null ? latestVal : '--'}</strong>，` +
+            `百分位 <strong style="color:${color}">${cls || '--'}</strong>${zTxt} | 绿色线为中位数(P50)`;
     });
 }
 
