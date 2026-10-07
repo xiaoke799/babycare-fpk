@@ -9910,15 +9910,32 @@ function initShareCard() {
 function generateShareCard() {
     if (!App.currentBaby) return;
 
+    const canvas = document.getElementById('shareCardCanvas');
+    // 失败时先把画布擦干净：弹窗已经打开了，留着上一张卡片会让人以为
+    // "卡片生成好了"，实际那可能是旧数据（甚至是切换宝宝前的数据）。
+    const clearCanvas = () => {
+        if (!canvas) return;
+        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    };
+
     // 获取宝宝信息和仪表盘数据
     const baby = App.babies.find(b => b.id === App.currentBaby);
-    if (!baby) return;
+    if (!baby) {
+        clearCanvas();
+        showToast.error('没找到宝宝信息，请重新选择宝宝');
+        return;
+    }
 
     api(`/api/babies/${App.currentBaby}/dashboard`).then(res => {
-        if (!res.success) return;
-        const data = res.data;
+        if (!res || !res.success) {
+            clearCanvas();
+            // 以前这里直接 return：弹窗开着、画布一片空白，用户分不清
+            // 是接口挂了还是自己没数据，只会以为"这功能坏了但没说为啥"。
+            showToast.error((res && res.message) || '数据加载失败，无法生成卡片');
+            return;
+        }
+        const data = res.data || {};
 
-        const canvas = document.getElementById('shareCardCanvas');
         const ctx = canvas.getContext('2d');
         const W = canvas.width;
         const H = canvas.height;
@@ -10043,6 +10060,12 @@ function generateShareCard() {
         // 日期
         ctx.font = '12px "PingFang SC", "Microsoft YaHei", sans-serif';
         ctx.fillText(getToday(), W / 2, H - 28);
+    }).catch(err => {
+        // 绘制期间任何异常（字段缺失、canvas 拿不到）以前都是静默白屏，
+        // 现在必须说出来，否则用户只会觉得"点了没反应"。
+        clearCanvas();
+        console.error('[shareCard] 生成失败', err);
+        showToast.error('卡片生成失败：' + (err && err.message ? err.message : '未知错误'));
     });
 }
 
@@ -12749,14 +12772,27 @@ function submitBatchRecords() {
         method: 'POST',
         body: JSON.stringify({ records: validRecords })
     }).then(res => {
-        if (res.success) {
-            showToast(res.message);
-            hideModal('batchRecordModal');
-            // 刷新仪表盘
-            loadDashboard();
-        } else {
-            showToast.error(res.message || '保存失败');
+        // 以前只看 res.success：后端把「一条都没进去」也算成成功，
+        // 于是这里弹一句「成功添加 0 条记录」就关弹窗 —— 用户以为存好了，
+        // 实际 errors 里躺着真原因（时间解析失败）而他永远看不到。
+        if (!res || !res.success) {
+            showToast.error((res && res.message) || '保存失败');
+            return;   // 不关弹窗，让用户能改完再试
         }
+        const failed = res.errors || [];
+        if ((res.count || 0) === 0) {
+            showToast.error(res.message || '一条都没保存成功');
+            return;
+        }
+        if (failed.length) {
+            // 部分失败：说清楚成功几条、失败几条，别让它淹没在"成功"里
+            showToast.warning(res.message || `成功 ${res.count} 条，${failed.length} 条失败`);
+        } else {
+            showToast(res.message);
+        }
+        hideModal('batchRecordModal');
+        // 刷新仪表盘
+        loadDashboard();
     });
 }
 

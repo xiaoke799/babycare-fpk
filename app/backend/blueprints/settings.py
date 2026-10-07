@@ -13,6 +13,9 @@ from flask import Blueprint, request, jsonify, current_app
 from utils import get_db, row_to_dict, rows_to_list, json_body
 from logger import get_logger, get_recent_logs, get_log_stats, clear_logs
 from user_context import require_admin
+# 写入端一律过收口函数：前端 datetime-local 给的是不带秒/带 T 的写法，
+# 直接 strptime('%Y-%m-%d %H:%M:%S') 会让批量记录整条静默失败（2026-10-06 实测）
+from validators import validate_datetime, validate_date, parse_datetime
 import safety_code
 # 导出表清单与备份蓝图共用一份（constants.py），避免两处各写一份走岔
 from constants import EXPORT_TABLES, BABY_SCOPED_TABLES as _BABY_SCOPED_TABLES
@@ -468,54 +471,99 @@ def add_batch_records(baby_id):
         record_type = record.get('type')
         try:
             if record_type == 'feeding':
+                ok_s, start, err_s = validate_datetime(record.get('start_time'), '开始时间')
+                if not ok_s:
+                    raise ValueError(err_s)
+                ok_e, end, err_e = validate_datetime(record.get('end_time'), '结束时间')
+                if not ok_e:
+                    raise ValueError(err_e)
                 db.execute(
                     '''INSERT INTO feeding_records (baby_id, start_time, end_time, feeding_type, amount, side, note)
                        VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                    (baby_id, record['start_time'], record.get('end_time'),
+                    (baby_id, start, end,
                      record.get('feeding_type', 'breast'), record.get('amount'),
                      record.get('side'), record.get('note', ''))
                 )
             elif record_type == 'sleep':
-                start = record['start_time']
-                end = record.get('end_time', '')
-                duration = record.get('duration_minutes', 0)
+                ok_s, start, err_s = validate_datetime(record.get('start_time'), '开始时间')
+                if not ok_s:
+                    raise ValueError(err_s)
+                ok_e, end, err_e = validate_datetime(record.get('end_time'), '结束时间')
+                if not ok_e:
+                    raise ValueError(err_e)
+                duration = record.get('duration_minutes') or 0
                 if not duration and end:
-                    t1 = datetime.datetime.strptime(start, '%Y-%m-%d %H:%M:%S')
-                    t2 = datetime.datetime.strptime(end, '%Y-%m-%d %H:%M:%S')
-                    duration = int((t2 - t1).total_seconds() / 60)
+                    # 宽松解析：库里/前端可能是 '... HH:MM' 无秒或带 T 的写法，
+                    # 硬按带秒 strptime 会让每一条 sleep 都进 errors（2026-10-06 实测）
+                    t1 = parse_datetime(start)
+                    t2 = parse_datetime(end)
+                    if t1 and t2:
+                        duration = int((t2 - t1).total_seconds() / 60)
                 # 判断是否小憩
                 is_nap = record.get('is_nap')
                 if is_nap is None and start:
-                    hour = datetime.datetime.strptime(start, '%Y-%m-%d %H:%M:%S').hour
-                    is_nap = 1 if 6 <= hour < 18 else 0
+                    t1 = parse_datetime(start)
+                    if t1:
+                        is_nap = 1 if 6 <= t1.hour < 18 else 0
                 db.execute(
                     '''INSERT INTO sleep_records (baby_id, start_time, end_time, duration_minutes, sleep_quality, is_nap, note)
                        VALUES (?, ?, ?, ?, ?, ?, ?)''',
                     (baby_id, start, end, duration, record.get('sleep_quality'), is_nap, record.get('note', ''))
                 )
             elif record_type == 'diaper':
+                ok_t, change_time, err_t = validate_datetime(record.get('change_time'), '更换时间')
+                if not ok_t:
+                    raise ValueError(err_t)
                 db.execute(
                     '''INSERT INTO diaper_records (baby_id, change_time, diaper_type, color, note)
                        VALUES (?, ?, ?, ?, ?)''',
-                    (baby_id, record['change_time'], record.get('diaper_type', 'wet'),
+                    (baby_id, change_time, record.get('diaper_type', 'wet'),
                      record.get('color'), record.get('note', ''))
                 )
             elif record_type == 'growth':
+                ok_d, record_date, err_d = validate_date(record.get('record_date'), '记录日期')
+                if not ok_d:
+                    raise ValueError(err_d)
                 db.execute(
                     '''INSERT INTO growth_records (baby_id, record_date, height, weight, head_circumference, bmi, note)
                        VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                    (baby_id, record['record_date'], record.get('height'),
+                    (baby_id, record_date, record.get('height'),
                      record.get('weight'), record.get('head_circumference'),
                      record.get('bmi'), record.get('note', ''))
                 )
+            else:
+                # 未知类型：以前这里不 raise，added 照样 +1 ⇒ 用户提交一条
+                # 不认识的类型也会被算成"成功添加 1 条"，实际什么都没写库。
+                raise ValueError(f'未知的记录类型：{record_type}')
             added += 1
         except Exception as e:
             errors.append({'row': idx, 'message': str(e)})
 
     db.commit()
+
+    # 一条都没进去却回 success=True 是最坏的一种"假成功"：
+    # 前端只看 res.success，于是弹「成功添加 0 条记录」然后关弹窗，
+    # 用户以为存好了，实际 errors 里躺着真原因而他永远看不到。
+    if added == 0 and errors:
+        first = errors[0].get('message', '')
+        return jsonify({
+            'success': False,
+            'message': f'一条都没保存成功：{first}' if len(errors) == 1
+                       else f'一条都没保存成功（{len(errors)} 条全部失败）：{first}',
+            'count': 0,
+            'imported': 0,
+            'errors': errors,
+        })
+
+    if errors:
+        # 部分失败：明确说出成功几条、失败几条，别让它淹没在"成功"里
+        msg = f'成功添加 {added} 条记录，{len(errors)} 条失败'
+    else:
+        msg = f'成功添加 {added} 条记录'
+
     return jsonify({
         'success': True,
-        'message': f'成功添加 {added} 条记录',
+        'message': msg,
         'count': added,
         'imported': added,
         'errors': errors
