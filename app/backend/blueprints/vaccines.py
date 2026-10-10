@@ -22,73 +22,29 @@ bp = Blueprint("vaccines", __name__)
 # ==================== 国家标准接种程序 ====================
 
 def _get_standard_vaccine_schedule():
-    """获取标准疫苗接种计划（按出生后天数计）
+    """按出生后天数返回标准接种计划（**派生自权威常量**，勿在此再抄一份）。
 
-    包含国家免疫规划疫苗（一类）和推荐自费疫苗（二类），
-    scheduled_days = scheduled_age_months * 30.44。
+    ⚠ 疫苗表只有一个真值源：blueprints/health_records.py 的 VACCINE_SCHEDULE。
+    本文件此前在三个地方各存了一份（本函数、另一个内联函数、一个已删的死 helper），
+    三份已漂移 —— 脊灰在副本里拆成「灭活/减毒」而权威表统一叫「脊灰疫苗」；
+    日期若按「月龄 × 30.44」近似，3 岁会落成出生+1096 天，而权威表是精确的 1080 天。
+    本函数是**写路径**（/api/babies/<id>/vaccines/init 会把结果写进 vaccine_details），
+    漂移的直接后果是：点「生成疫苗计划」写进库的日期，与读接口显示的对不上。
+
+    返回键与旧实现保持一致（vaccine_name / vaccine_type / dose_number /
+    scheduled_days / note）。旧实现还带一个 category，但全仓无人消费、
+    vaccine_details 表也没有该列，故不再产出。
     """
-    standard = [
-        {'vaccine_name': '乙肝疫苗', 'dose': 1, 'scheduled_age_months': 0, 'type': 'free', 'note': '出生24h内', 'category': 'hepatitis_b'},
-        {'vaccine_name': '卡介苗', 'dose': 1, 'scheduled_age_months': 0, 'type': 'free', 'note': '出生时', 'category': 'bcg'},
-        {'vaccine_name': '乙肝疫苗', 'dose': 2, 'scheduled_age_months': 1, 'type': 'free', 'note': '1月龄', 'category': 'hepatitis_b'},
-        {'vaccine_name': '脊灰灭活疫苗', 'dose': 1, 'scheduled_age_months': 2, 'type': 'free', 'note': '2月龄', 'category': 'polio'},
-        {'vaccine_name': '脊灰减毒疫苗', 'dose': 2, 'scheduled_age_months': 3, 'type': 'free', 'note': '3月龄', 'category': 'polio'},
-        {'vaccine_name': '百白破疫苗', 'dose': 1, 'scheduled_age_months': 3, 'type': 'free', 'note': '3月龄', 'category': 'dtap'},
-        {'vaccine_name': '脊灰减毒疫苗', 'dose': 3, 'scheduled_age_months': 4, 'type': 'free', 'note': '4月龄', 'category': 'polio'},
-        {'vaccine_name': '百白破疫苗', 'dose': 2, 'scheduled_age_months': 4, 'type': 'free', 'note': '4月龄', 'category': 'dtap'},
-        {'vaccine_name': '百白破疫苗', 'dose': 3, 'scheduled_age_months': 5, 'type': 'free', 'note': '5月龄', 'category': 'dtap'},
-        {'vaccine_name': '乙肝疫苗', 'dose': 3, 'scheduled_age_months': 6, 'type': 'free', 'note': '6月龄', 'category': 'hepatitis_b'},
-        {'vaccine_name': 'A群流脑多糖疫苗', 'dose': 1, 'scheduled_age_months': 6, 'type': 'free', 'note': '6月龄', 'category': 'meningitis_a'},
-        {'vaccine_name': '麻腮风疫苗', 'dose': 1, 'scheduled_age_months': 8, 'type': 'free', 'note': '8月龄', 'category': 'mmr'},
-        {'vaccine_name': '乙脑减毒活疫苗', 'dose': 1, 'scheduled_age_months': 8, 'type': 'free', 'note': '8月龄', 'category': 'je'},
-        {'vaccine_name': 'A群流脑多糖疫苗', 'dose': 2, 'scheduled_age_months': 9, 'type': 'free', 'note': '9月龄', 'category': 'meningitis_a'},
-        {'vaccine_name': '甲肝灭活疫苗', 'dose': 1, 'scheduled_age_months': 18, 'type': 'free', 'note': '18月龄', 'category': 'hepatitis_a'},
-        {'vaccine_name': '百白破疫苗', 'dose': 4, 'scheduled_age_months': 18, 'type': 'free', 'note': '18月龄', 'category': 'dtap'},
-        {'vaccine_name': '麻腮风疫苗', 'dose': 2, 'scheduled_age_months': 18, 'type': 'free', 'note': '18月龄', 'category': 'mmr'},
-        {'vaccine_name': '甲肝灭活疫苗', 'dose': 2, 'scheduled_age_months': 24, 'type': 'free', 'note': '2岁', 'category': 'hepatitis_a'},
-        {'vaccine_name': '乙脑减毒活疫苗', 'dose': 2, 'scheduled_age_months': 24, 'type': 'free', 'note': '2岁', 'category': 'je'},
-        {'vaccine_name': 'A+C群流脑多糖疫苗', 'dose': 1, 'scheduled_age_months': 36, 'type': 'free', 'note': '3岁', 'category': 'meningitis_ac'},
-        {'vaccine_name': '脊灰减毒疫苗', 'dose': 4, 'scheduled_age_months': 48, 'type': 'free', 'note': '4岁', 'category': 'polio'},
-        {'vaccine_name': 'A+C群流脑多糖疫苗', 'dose': 2, 'scheduled_age_months': 72, 'type': 'free', 'note': '6岁', 'category': 'meningitis_ac'},
-        {'vaccine_name': '白破疫苗', 'dose': 1, 'scheduled_age_months': 72, 'type': 'free', 'note': '6岁', 'category': 'td'},
-    ]
-    result = []
-    for v in standard:
-        result.append({
-            'vaccine_name': v['vaccine_name'],
+    from blueprints.health_records import VACCINE_SCHEDULE
+    return [
+        {
+            'vaccine_name': v['name'],
             'vaccine_type': v['type'],
             'dose_number': v['dose'],
-            'scheduled_days': int(v['scheduled_age_months'] * 30.44),
+            'scheduled_days': v['scheduled_days'],
             'note': v.get('note', ''),
-            'category': v.get('category', ''),
-        })
-    return result
-
-
-def _get_recommended_vaccines():
-    """获取推荐自费疫苗接种计划"""
-    return [
-        {'vaccine_name': '五联疫苗', 'dose': 1, 'scheduled_age_months': 2, 'type': 'paid', 'note': '可选替代脊灰+百白破+Hib', 'category': 'pentavalent'},
-        {'vaccine_name': '五联疫苗', 'dose': 2, 'scheduled_age_months': 4, 'type': 'paid', 'note': '', 'category': 'pentavalent'},
-        {'vaccine_name': '五联疫苗', 'dose': 3, 'scheduled_age_months': 6, 'type': 'paid', 'note': '', 'category': 'pentavalent'},
-        {'vaccine_name': '五联疫苗', 'dose': 4, 'scheduled_age_months': 18, 'type': 'paid', 'note': '', 'category': 'pentavalent'},
-        {'vaccine_name': '13价肺炎疫苗', 'dose': 1, 'scheduled_age_months': 2, 'type': 'paid', 'note': '', 'category': 'pcv13'},
-        {'vaccine_name': '13价肺炎疫苗', 'dose': 2, 'scheduled_age_months': 4, 'type': 'paid', 'note': '', 'category': 'pcv13'},
-        {'vaccine_name': '13价肺炎疫苗', 'dose': 3, 'scheduled_age_months': 6, 'type': 'paid', 'note': '', 'category': 'pcv13'},
-        {'vaccine_name': '13价肺炎疫苗', 'dose': 4, 'scheduled_age_months': 12, 'type': 'paid', 'note': '', 'category': 'pcv13'},
-        {'vaccine_name': '五价轮状病毒疫苗', 'dose': 1, 'scheduled_age_months': 2, 'type': 'paid', 'note': '口服', 'category': 'rotavirus'},
-        {'vaccine_name': '五价轮状病毒疫苗', 'dose': 2, 'scheduled_age_months': 3, 'type': 'paid', 'note': '口服', 'category': 'rotavirus'},
-        {'vaccine_name': '五价轮状病毒疫苗', 'dose': 3, 'scheduled_age_months': 4, 'type': 'paid', 'note': '口服', 'category': 'rotavirus'},
-        {'vaccine_name': 'Hib疫苗', 'dose': 1, 'scheduled_age_months': 2, 'type': 'paid', 'note': '', 'category': 'hib'},
-        {'vaccine_name': 'Hib疫苗', 'dose': 2, 'scheduled_age_months': 4, 'type': 'paid', 'note': '', 'category': 'hib'},
-        {'vaccine_name': 'Hib疫苗', 'dose': 3, 'scheduled_age_months': 6, 'type': 'paid', 'note': '', 'category': 'hib'},
-        {'vaccine_name': 'Hib疫苗', 'dose': 4, 'scheduled_age_months': 18, 'type': 'paid', 'note': '', 'category': 'hib'},
-        {'vaccine_name': '水痘疫苗', 'dose': 1, 'scheduled_age_months': 12, 'type': 'paid', 'note': '', 'category': 'varicella'},
-        {'vaccine_name': '水痘疫苗', 'dose': 2, 'scheduled_age_months': 48, 'type': 'paid', 'note': '', 'category': 'varicella'},
-        {'vaccine_name': '流感疫苗', 'dose': 1, 'scheduled_age_months': 6, 'type': 'paid', 'note': '每年秋季', 'category': 'flu'},
-        {'vaccine_name': '手足口疫苗(EV71)', 'dose': 1, 'scheduled_age_months': 6, 'type': 'paid', 'note': '', 'category': 'ev71'},
-        {'vaccine_name': '手足口疫苗(EV71)', 'dose': 2, 'scheduled_age_months': 7, 'type': 'paid', 'note': '', 'category': 'ev71'},
-        {'vaccine_name': '23价肺炎疫苗', 'dose': 1, 'scheduled_age_months': 24, 'type': 'paid', 'note': '2岁以上高危人群', 'category': 'ppsv23'},
+        }
+        for v in VACCINE_SCHEDULE
     ]
 
 

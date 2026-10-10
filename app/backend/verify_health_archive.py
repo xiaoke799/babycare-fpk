@@ -327,6 +327,26 @@ check("两接口同一天的日期也对得上（同源同算法）",
       all(_d_live.get(k) == v for k, v in _d_old.items() if k in _d_live),
       {k: (v, _d_live.get(k)) for k, v in _d_old.items() if k in _d_live and _d_live[k] != v})
 
+# 更关键的一条：**写路径**。前端点「生成疫苗计划」调 /api/babies/<id>/vaccines/init，
+# 它用 vaccines._get_standard_vaccine_schedule() 把计划**写进 vaccine_details**。
+# 若那份表与权威常量不一致，用户点完生成、再回读接口看，同一天会出现两个日期。
+import inspect as _inspect
+import blueprints.vaccines as _vac
+import blueprints.health_records as _hr
+_w = [(v['vaccine_name'], v['dose_number'], v['scheduled_days'])
+      for v in _vac._get_standard_vaccine_schedule()]
+_c = [(v['name'], v['dose'], v['scheduled_days']) for v in _hr.VACCINE_SCHEDULE]
+check("写路径（生成计划）的疫苗表与权威常量逐条一致（名称/剂次/天数）",
+      _w == _c,
+      f"写路径 {len(_w)} 条 / 权威 {len(_c)} 条；差异: {sorted(set(_w) ^ set(_c))[:3]}")
+_src = _inspect.getsource(_vac._get_standard_vaccine_schedule)
+check("写路径 helper 是派生实现（源码引用权威常量，不再内联一份表）",
+      'VACCINE_SCHEDULE' in _src and 'scheduled_age_months' not in _src,
+      "仍在内联抄表（源码里出现 scheduled_age_months）")
+check("vaccines.py 里已无内联疫苗表副本",
+      '脊灰灭活疫苗' not in open(_vac.__file__, encoding='utf-8').read(),
+      "文件里仍出现副本专有名称「脊灰灭活疫苗」")
+
 print("\n" + "=" * 46)
 print(f"通过 {_passed} 项，失败 {_failed} 项")
 print("=" * 46)
