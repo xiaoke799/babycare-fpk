@@ -79,11 +79,17 @@ with c.session_transaction() as s:
 
 # ---------- A 进程：保存配置 ----------
 a = BOOT + r'''
-c.post("/api/ai/llm/configure", json={
-    "provider": "deepseek", "api_key": %r, "model": "deepseek-v4-flash",
-    "api_url": "https://api.deepseek.com/v1/chat/completions",
-    "consent_cloud": True, "timeout": 5, "custom_models": [%r],
-})
+# 重试：configure 走 _is_safe_url 的实时 DNS 解析，瞬时解析失败会误判成"URL 不安全"400
+for _i in range(3):
+    _r = c.post("/api/ai/llm/configure", json={
+        "provider": "deepseek", "api_key": %r, "model": "deepseek-v4-flash",
+        "api_url": "https://api.deepseek.com/v1/chat/completions",
+        "consent_cloud": True, "timeout": 5, "custom_models": [%r],
+    }).get_json() or {}
+    if _r.get("success"):
+        break
+else:
+    print("CFG_FAILED=" + str(_r.get("message")))
 import ai_engine
 mem = ai_engine.LLM.get("api_key", "")
 print("SAME_PROC_PLAIN=" + (ai_engine.decrypt_api_key(mem) if mem else ""))
@@ -114,9 +120,26 @@ mem2 = ai_engine.LLM.get("api_key", "")
 print("STABLE_PLAIN=" + (ai_engine.decrypt_api_key(mem2) if mem2 else ""))
 print("ENABLED=" + str(st.get("enabled")))
 
+# configure 会经 _is_safe_url 做**实时 DNS 解析**（SSRF 防护）。解析偶发失败会把
+# 合法厂商地址判成"不安全"并 400 —— 这跟本门禁要验的配置逻辑无关，却会让断言假红
+# （2026-10-10 批跑时实测偶发一次）。这里重试，把瞬时 DNS 抖动与判据解耦；
+# 真失败仍会打印 CFG_FAILED 便于定位，不会把问题藏起来。
+_cfg_retries = 0
+def _cfg(payload, tries=3):
+    global _cfg_retries
+    last = {}
+    for _i in range(tries):
+        last = c.post("/api/ai/llm/configure", json=payload).get_json() or {}
+        if last.get("success"):
+            _cfg_retries += _i
+            return last
+    print("CFG_FAILED=" + str(last.get("message")))
+    _cfg_retries += tries
+    return last
+
 # ---- 失败路径：本地不可达地址，不碰外网 ----
 bid = c.post("/api/babies", json={"name": "门禁宝宝", "birthday": "2025-06-01"}).get_json()["data"]["id"]
-c.post("/api/ai/llm/configure", json={
+_cfg({
     "provider": "ollama", "model": "qwen3:8b",
     "api_url": "http://127.0.0.1:9/api/chat",   # 9 端口没人监听，必然连不上
     "timeout": 2, "custom_models": [],
@@ -133,12 +156,12 @@ print("NOBABY_USED=" + str(r2.get("llm_used")))
 print("NOBABY_REASON=" + str(r2.get("fallback_reason")))
 
 # ---- 「留空 = 不修改」：改个温度再保存，不能把已存的 Key 抹掉 ----
-c.post("/api/ai/llm/configure", json={
+_cfg({
     "provider": "deepseek", "api_key": %r, "model": "deepseek-v4-flash",
     "api_url": "https://api.deepseek.com/v1/chat/completions",
     "consent_cloud": True, "timeout": 5, "custom_models": [],
 })
-c.post("/api/ai/llm/configure", json={
+_cfg({
     "provider": "deepseek", "api_key": "", "model": "deepseek-v4-flash",   # ← 输入框留空
     "api_url": "https://api.deepseek.com/v1/chat/completions",
     "consent_cloud": True, "temperature": 0.3, "timeout": 5, "custom_models": [],
@@ -149,13 +172,14 @@ print("BLANK_KEEP_PLAIN=" + ai_engine.decrypt_api_key(ai_engine.LLM.get("api_key
 print("BLANK_KEEP_TEMP=" + str(st2.get("temperature")))
 
 # 换厂商且留空 ⇒ 旧凭据必须清掉（A 厂商的 Key 打 B 厂商必 401，不如逼重填）
-c.post("/api/ai/llm/configure", json={
+_cfg({
     "provider": "kimi", "api_key": "", "model": "kimi-k3",
     "api_url": "https://api.moonshot.cn/v1/chat/completions",
     "consent_cloud": True, "timeout": 5, "custom_models": [],
 })
 st3 = (c.get("/api/ai/llm/status").get_json() or {}).get("status") or {}
 print("SWITCH_CLEARED=" + str(not st3.get("api_key_configured")))
+print("CFG_RETRIES=" + str(_cfg_retries))
 
 # ---- 测试连接：输入框留空时用**库里存的 Key**；并校验所选模型是否在账号可用列表里 ----
 import json as _json
