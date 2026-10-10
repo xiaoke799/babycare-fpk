@@ -156,6 +156,22 @@ chk((r or {}).get("data", {}).get("need_consent") is False,
     "旧标记不被采信，但不影响用户此前的有效同意")
 
 
+print("\n=== G. 同意书里链到的法律页面，未登录也必须能打开 ===")
+# 背景：同意弹窗把「隐私政策 / 用户协议」做成链接让用户点了去读。
+# 若这两个页面被全局登录校验挡住（/legal/ 曾不在白名单里），
+# 用户就被要求同意一份自己打不开的文档。
+_anon = app.test_client()          # 全新客户端 ⇒ 无会话，等价未登录
+for _p in ("/legal/privacy.html", "/legal/terms.html"):
+    _r = _anon.get(_p)
+    chk(_r.status_code == 200, f"未登录可读 {_p}", f"实际 HTTP {_r.status_code}")
+    chk("<!DOCTYPE html" in _r.get_data(as_text=True)[:200],
+        f"{_p} 返回的是 HTML 正文（不是 needAuth 的 JSON）")
+# 反向：法律页放行**不能**顺手把别的也放开了
+_r = _anon.get("/api/babies")
+chk(_r.status_code == 401, "未登录仍拿不到业务接口（白名单没扩大）",
+    f"实际 HTTP {_r.status_code}")
+
+
 print()
 if fails:
     print("失败 %d 项" % len(fails))

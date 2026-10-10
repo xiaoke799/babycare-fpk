@@ -164,6 +164,7 @@ GET_ENDPOINTS = [
     ("提醒", f"/api/health/reminders/{BABY}"),
     ("健康疫苗", f"/api/health/vaccines/{BABY}"),
     ("疫苗计划", f"/api/health/vaccine/schedule/{BABY}"),
+    ("疫苗计划(旧路径别名)", f"/api/health/vaccines/schedule/{BABY}"),
     ("自费疫苗", "/api/health/vaccine/paid"),
     ("时间线", f"/api/health/timeline/{BABY}"),
     ("生长百分位", f"/api/health/growth/percentile/{BABY}"),
@@ -303,6 +304,28 @@ for name, url in GET_ENDPOINTS[:15]:
     except Exception as e:
         check(f"{name} 不存在的宝宝不抛异常", False, repr(e))
 check("不存在的宝宝所有接口都不 5xx", True)
+
+print("\n=== 9. 两个疫苗计划接口必须给出同一份清单（不许有第二份表）===")
+# 背景：blueprints/vaccines.py 原先在函数里**内联抄了一份**国家免疫规划表，
+# 与 health_records.VACCINE_SCHEDULE 并存且已经漂移（副本缺「白破疫苗」、
+# 脊灰拆名、日期用「月×30.44」近似）。同一件事的医学数据有两份副本，
+# 改一边漏另一边就是静默给出错数据。现统一从权威常量派生，这条断言守住它。
+_r_live = client.get(f"/api/health/vaccine/schedule/{BABY}").get_json() or {}
+_r_old = client.get(f"/api/health/vaccines/schedule/{BABY}").get_json() or {}
+_live = [(v.get("vaccine_name"), v.get("dose")) for v in (_r_live.get("schedule") or [])]
+_old = [(v.get("vaccine_name"), v.get("dose")) for v in (_r_old.get("standard") or [])]
+check("旧路径接口也返回清单", len(_old) > 0, f"standard 条数 {len(_old)}")
+check("两接口的疫苗清单完全一致（名称+剂次）",
+      _live == _old,
+      f"live {len(_live)} 条 / old {len(_old)} 条；只在一边: "
+      f"{sorted(set(_live) ^ set(_old))[:4]}")
+check("清单里含「白破疫苗」（副本曾经漏掉的那条）",
+      any(n == "白破疫苗" for n, _ in _old), [n for n, _ in _old][-4:])
+_d_live = {v.get("vaccine_name"): v.get("scheduled_date") for v in (_r_live.get("schedule") or [])}
+_d_old = {v.get("vaccine_name"): v.get("scheduled_date") for v in (_r_old.get("standard") or [])}
+check("两接口同一天的日期也对得上（同源同算法）",
+      all(_d_live.get(k) == v for k, v in _d_old.items() if k in _d_live),
+      {k: (v, _d_live.get(k)) for k, v in _d_old.items() if k in _d_live and _d_live[k] != v})
 
 print("\n" + "=" * 46)
 print(f"通过 {_passed} 项，失败 {_failed} 项")

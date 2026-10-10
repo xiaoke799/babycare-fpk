@@ -1649,7 +1649,11 @@ def _json_int(data, key, default=None, minimum=None, maximum=None):
 
 # 全局登录校验白名单（其余路由均需登录）
 _AUTH_WHITELIST_EXACT = {'/', '/index.html'}
-_AUTH_WHITELIST_PREFIXES = ('/css/', '/js/', '/images/')
+# /legal/ 是**隐私政策与用户协议**（纯静态 HTML，不含任何用户数据，实测 0 处模板标记）。
+# 它必须和 /css/ /js/ /images/ 同级放行：同意书弹窗就链到这两个页面，
+# 而「要用户同意一份他打不开的文档」既说不过去，也和 static.py 里
+# 「要在浏览器里直接打开阅读…断网时也得能读到」的设计意图自相矛盾。
+_AUTH_WHITELIST_PREFIXES = ('/css/', '/js/', '/images/', '/legal/')
 # webhook 是对外开放入口，靠自己的 bcw_ token 鉴权（见 blueprints/webhook.py），
 # 所以要放行全局登录校验；但该路由内部第一件事就是 verify_webhook_token，
 # 校验不过直接 401，不存在「绕过鉴权」的可能。

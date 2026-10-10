@@ -554,63 +554,48 @@ def vaccine_detail_update(vaccine_id):
 
 @bp.route('/api/health/vaccines/schedule/<int:baby_id>', methods=['GET'])
 def vaccine_schedule(baby_id):
-    """获取标准疫苗接种计划"""
+    """获取标准疫苗接种计划（免费 standard + 自费 recommended）。
+
+    ⚠ 这里**不再自带一份表**。原先本函数内联抄了一份国家免疫规划表，
+    与 health_records.VACCINE_SCHEDULE / PAID_VACCINES 并存，两份已经漂移：
+      - 副本缺「白破疫苗（6岁）」（权威表有）；
+      - 脊灰在副本里拆成「脊灰灭活/脊灰减毒」，权威表统一叫「脊灰疫苗」；
+      - 副本用「月龄 × 30.44」近似算日期，权威表用精确天数偏移
+        （3 岁：副本 1096 天 vs 权威 1080 天）。
+    同一件事的医学数据存在第二份副本，改一边不改另一边就是**静默给出错数据**。
+    现在统一从权威常量派生：两个疫苗接口的清单从此必然一致。
+    """
+    from blueprints.health_records import VACCINE_SCHEDULE, PAID_VACCINES
+
+    def _months_of(days):
+        return round(days / 30.44, 1)
+
     standard_schedule = [
-        {'vaccine_name': '乙肝疫苗', 'dose': 1, 'scheduled_age_months': 0, 'type': 'free', 'note': '出生24h内'},
-        {'vaccine_name': '卡介苗', 'dose': 1, 'scheduled_age_months': 0, 'type': 'free', 'note': '出生时'},
-        {'vaccine_name': '乙肝疫苗', 'dose': 2, 'scheduled_age_months': 1, 'type': 'free', 'note': '1月龄'},
-        {'vaccine_name': '脊灰灭活疫苗', 'dose': 1, 'scheduled_age_months': 2, 'type': 'free', 'note': '2月龄'},
-        {'vaccine_name': '脊灰减毒疫苗', 'dose': 2, 'scheduled_age_months': 3, 'type': 'free', 'note': '3月龄'},
-        {'vaccine_name': '百白破疫苗', 'dose': 1, 'scheduled_age_months': 3, 'type': 'free', 'note': '3月龄'},
-        {'vaccine_name': '脊灰减毒疫苗', 'dose': 3, 'scheduled_age_months': 4, 'type': 'free', 'note': '4月龄'},
-        {'vaccine_name': '百白破疫苗', 'dose': 2, 'scheduled_age_months': 4, 'type': 'free', 'note': '4月龄'},
-        {'vaccine_name': '百白破疫苗', 'dose': 3, 'scheduled_age_months': 5, 'type': 'free', 'note': '5月龄'},
-        {'vaccine_name': '乙肝疫苗', 'dose': 3, 'scheduled_age_months': 6, 'type': 'free', 'note': '6月龄'},
-        {'vaccine_name': 'A群流脑多糖疫苗', 'dose': 1, 'scheduled_age_months': 6, 'type': 'free', 'note': '6月龄'},
-        {'vaccine_name': '麻腮风疫苗', 'dose': 1, 'scheduled_age_months': 8, 'type': 'free', 'note': '8月龄'},
-        {'vaccine_name': '乙脑减毒活疫苗', 'dose': 1, 'scheduled_age_months': 8, 'type': 'free', 'note': '8月龄'},
-        {'vaccine_name': 'A群流脑多糖疫苗', 'dose': 2, 'scheduled_age_months': 9, 'type': 'free', 'note': '9月龄'},
-        {'vaccine_name': '甲肝灭活疫苗', 'dose': 1, 'scheduled_age_months': 18, 'type': 'free', 'note': '18月龄'},
-        {'vaccine_name': '百白破疫苗', 'dose': 4, 'scheduled_age_months': 18, 'type': 'free', 'note': '18月龄'},
-        {'vaccine_name': '麻腮风疫苗', 'dose': 2, 'scheduled_age_months': 18, 'type': 'free', 'note': '18月龄'},
-        {'vaccine_name': '甲肝灭活疫苗', 'dose': 2, 'scheduled_age_months': 24, 'type': 'free', 'note': '2岁'},
-        {'vaccine_name': '乙脑减毒活疫苗', 'dose': 2, 'scheduled_age_months': 24, 'type': 'free', 'note': '2岁'},
-        {'vaccine_name': 'A+C群流脑多糖疫苗', 'dose': 1, 'scheduled_age_months': 36, 'type': 'free', 'note': '3岁'},
-        {'vaccine_name': '脊灰减毒疫苗', 'dose': 4, 'scheduled_age_months': 48, 'type': 'free', 'note': '4岁'},
-        {'vaccine_name': 'A+C群流脑多糖疫苗', 'dose': 2, 'scheduled_age_months': 72, 'type': 'free', 'note': '6岁'},
+        {'vaccine_name': v['name'], 'dose': v['dose'],
+         'scheduled_age_months': _months_of(v['scheduled_days']),
+         'scheduled_days': v['scheduled_days'],
+         'type': v['type'], 'note': v['note']}
+        for v in VACCINE_SCHEDULE
     ]
     recommended = [
-        {'vaccine_name': '五联疫苗', 'dose': 1, 'scheduled_age_months': 2, 'type': 'paid', 'note': '可选替代脊灰+百白破+Hib'},
-        {'vaccine_name': '五联疫苗', 'dose': 2, 'scheduled_age_months': 4, 'type': 'paid', 'note': ''},
-        {'vaccine_name': '五联疫苗', 'dose': 3, 'scheduled_age_months': 6, 'type': 'paid', 'note': ''},
-        {'vaccine_name': '五联疫苗', 'dose': 4, 'scheduled_age_months': 18, 'type': 'paid', 'note': ''},
-        {'vaccine_name': '13价肺炎疫苗', 'dose': 1, 'scheduled_age_months': 2, 'type': 'paid', 'note': ''},
-        {'vaccine_name': '13价肺炎疫苗', 'dose': 2, 'scheduled_age_months': 4, 'type': 'paid', 'note': ''},
-        {'vaccine_name': '13价肺炎疫苗', 'dose': 3, 'scheduled_age_months': 6, 'type': 'paid', 'note': ''},
-        {'vaccine_name': '13价肺炎疫苗', 'dose': 4, 'scheduled_age_months': 12, 'type': 'paid', 'note': ''},
-        {'vaccine_name': '五价轮状病毒疫苗', 'dose': 1, 'scheduled_age_months': 2, 'type': 'paid', 'note': '口服'},
-        {'vaccine_name': '五价轮状病毒疫苗', 'dose': 2, 'scheduled_age_months': 3, 'type': 'paid', 'note': '口服'},
-        {'vaccine_name': '五价轮状病毒疫苗', 'dose': 3, 'scheduled_age_months': 4, 'type': 'paid', 'note': '口服'},
-        {'vaccine_name': 'Hib疫苗', 'dose': 1, 'scheduled_age_months': 2, 'type': 'paid', 'note': ''},
-        {'vaccine_name': 'Hib疫苗', 'dose': 2, 'scheduled_age_months': 4, 'type': 'paid', 'note': ''},
-        {'vaccine_name': 'Hib疫苗', 'dose': 3, 'scheduled_age_months': 6, 'type': 'paid', 'note': ''},
-        {'vaccine_name': 'Hib疫苗', 'dose': 4, 'scheduled_age_months': 18, 'type': 'paid', 'note': ''},
-        {'vaccine_name': '水痘疫苗', 'dose': 1, 'scheduled_age_months': 12, 'type': 'paid', 'note': ''},
-        {'vaccine_name': '水痘疫苗', 'dose': 2, 'scheduled_age_months': 48, 'type': 'paid', 'note': ''},
-        {'vaccine_name': '流感疫苗', 'dose': 1, 'scheduled_age_months': 6, 'type': 'paid', 'note': '每年秋季'},
-        {'vaccine_name': '手足口疫苗(EV71)', 'dose': 1, 'scheduled_age_months': 6, 'type': 'paid', 'note': ''},
-        {'vaccine_name': '手足口疫苗(EV71)', 'dose': 2, 'scheduled_age_months': 7, 'type': 'paid', 'note': ''},
+        {'vaccine_name': p['name'], 'dose': i + 1,
+         'scheduled_age_months': _months_of(d),
+         'scheduled_days': d,
+         'type': p['type'], 'note': p['note']}
+        for p in PAID_VACCINES
+        for i, d in enumerate(p['doses'])
     ]
 
     db = get_db()
     baby = db.execute('SELECT birthday FROM babies WHERE id = ?', (baby_id,)).fetchone()
     if baby and baby['birthday']:
         birth = datetime.datetime.strptime(baby['birthday'], '%Y-%m-%d')
+        # 日期按**精确天数**推进（与 health_records 的疫苗计划同口径）
         for v in standard_schedule:
-            v['scheduled_date'] = (birth + datetime.timedelta(days=int(v['scheduled_age_months'] * 30.44))).strftime('%Y-%m-%d')
+            v['scheduled_date'] = (birth + datetime.timedelta(days=v['scheduled_days'])).strftime('%Y-%m-%d')
             v['scheduled_age_display'] = _format_age_display(v['scheduled_age_months'])
         for v in recommended:
-            v['scheduled_date'] = (birth + datetime.timedelta(days=int(v['scheduled_age_months'] * 30.44))).strftime('%Y-%m-%d')
+            v['scheduled_date'] = (birth + datetime.timedelta(days=v['scheduled_days'])).strftime('%Y-%m-%d')
             v['scheduled_age_display'] = _format_age_display(v['scheduled_age_months'])
 
     return jsonify({'success': True, 'standard': standard_schedule, 'recommended': recommended})
