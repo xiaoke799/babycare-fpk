@@ -16610,7 +16610,7 @@ function renderCheckupList(records) {
                         ${r.bmi ? `<span>BMI ${r.bmi}</span>` : ''}
                     </div>
                 ` : ''}
-                ${r.diagnosis ? `<div class="checkup-card-diagnosis">${r.diagnosis}</div>` : ''}
+                ${r.diagnosis ? `<div class="checkup-card-diagnosis">${escapeHtml(r.diagnosis)}</div>` : ''}
             </div>
         `;
     }).join('');
@@ -17201,11 +17201,11 @@ function showReminderForm(reminder = null) {
         </div>
         <div class="form-group">
             <label>标题 *</label>
-            <input type="text" id="formReminderTitle" value="${reminder?.title || ''}" placeholder="如: 乙肝疫苗第二针">
+            <input type="text" id="formReminderTitle" value="${escapeHtml(reminder?.title || '')}" placeholder="如: 乙肝疫苗第二针">
         </div>
         <div class="form-group">
             <label>描述</label>
-            <textarea id="formReminderDesc" rows="2" placeholder="详细说明">${reminder?.description || ''}</textarea>
+            <textarea id="formReminderDesc" rows="2" placeholder="详细说明">${escapeHtml(reminder?.description || '')}</textarea>
         </div>
         <div class="form-group">
             <label>到期日期 *</label>
@@ -17213,7 +17213,7 @@ function showReminderForm(reminder = null) {
         </div>
         <div class="form-group">
             <label>备注</label>
-            <input type="text" id="formReminderNote" value="${reminder?.note || ''}" placeholder="其他备注">
+            <input type="text" id="formReminderNote" value="${escapeHtml(reminder?.note || '')}" placeholder="其他备注">
         </div>
     `;
 
@@ -17424,21 +17424,21 @@ function showVaccineForm(vaccine = null) {
             <div class="form-group"><label>实际接种日期</label><input type="date" id="formVaccineActual" value="${vaccine?.actual_date || ''}"></div>
         </div>
         <div class="form-row">
-            <div class="form-group"><label>接种单位</label><input type="text" id="formVaccineHospital" value="${vaccine?.hospital || ''}"></div>
-            <div class="form-group"><label>接种部位</label><input type="text" id="formVaccineSite" value="${vaccine?.injection_site || ''}" placeholder="左上臂/右大腿"></div>
+            <div class="form-group"><label>接种单位</label><input type="text" id="formVaccineHospital" value="${escapeHtml(vaccine?.hospital || '')}"></div>
+            <div class="form-group"><label>接种部位</label><input type="text" id="formVaccineSite" value="${escapeHtml(vaccine?.injection_site || '')}" placeholder="左上臂/右大腿"></div>
         </div>
         <div class="form-row">
-            <div class="form-group"><label>生产厂家</label><input type="text" id="formVaccineManufacturer" value="${vaccine?.manufacturer || ''}"></div>
-            <div class="form-group"><label>批号</label><input type="text" id="formVaccineBatch" value="${vaccine?.batch_number || ''}"></div>
+            <div class="form-group"><label>生产厂家</label><input type="text" id="formVaccineManufacturer" value="${escapeHtml(vaccine?.manufacturer || '')}"></div>
+            <div class="form-group"><label>批号</label><input type="text" id="formVaccineBatch" value="${escapeHtml(vaccine?.batch_number || '')}"></div>
         </div>
         <div class="form-group"><label>不良反应</label>
             <div style="display:flex;gap:10px;align-items:center">
                 <label style="font-weight:normal"><input type="checkbox" id="formVaccineReaction" ${vaccine?.has_reaction ? 'checked' : ''}> 有反应</label>
-                <input type="text" id="formVaccineReactionDetail" value="${vaccine?.reaction_detail || ''}" placeholder="如: 低热、局部红肿" style="flex:1">
+                <input type="text" id="formVaccineReactionDetail" value="${escapeHtml(vaccine?.reaction_detail || '')}" placeholder="如: 低热、局部红肿" style="flex:1">
                 <select id="formVaccineReactionSeverity"><option value="none" ${(!vaccine || vaccine.reaction_severity === 'none') ? 'selected' : ''}>无</option><option value="mild" ${vaccine?.reaction_severity === 'mild' ? 'selected' : ''}>轻度</option><option value="moderate" ${vaccine?.reaction_severity === 'moderate' ? 'selected' : ''}>中度</option><option value="severe" ${vaccine?.reaction_severity === 'severe' ? 'selected' : ''}>重度</option></select>
             </div>
         </div>
-        <div class="form-group"><label>备注</label><textarea id="formVaccineNote" rows="2">${vaccine?.note || ''}</textarea></div>
+        <div class="form-group"><label>备注</label><textarea id="formVaccineNote" rows="2">${escapeHtml(vaccine?.note || '')}</textarea></div>
     `;
     document.getElementById('checkupFormBody').innerHTML = formHtml;
     showModal('checkupFormModal');
@@ -17600,7 +17600,7 @@ function showMilestoneForm(milestone = null) {
             <div class="form-group"><label>状态</label><select id="formMilestoneStatus"><option value="pending" ${(!milestone || milestone.status === 'pending') ? 'selected' : ''}>待达成</option><option value="achieved" ${milestone?.status === 'achieved' ? 'selected' : ''}>已达成</option><option value="delayed" ${milestone?.status === 'delayed' ? 'selected' : ''}>延迟</option><option value="concerned" ${milestone?.status === 'concerned' ? 'selected' : ''}>需关注</option></select></div>
             <div class="form-group"><label>达成日期</label><input type="date" id="formMilestoneDate" value="${milestone?.achieved_date || ''}"></div>
         </div>
-        <div class="form-group"><label>备注</label><textarea id="formMilestoneNote" rows="2">${milestone?.note || ''}</textarea></div>
+        <div class="form-group"><label>备注</label><textarea id="formMilestoneNote" rows="2">${escapeHtml(milestone?.note || '')}</textarea></div>
     `;
     document.getElementById('checkupFormBody').innerHTML = formHtml;
     showModal('checkupFormModal');
@@ -17733,8 +17733,8 @@ function renderScreeningList(screenings) {
         const status = statusMap[s.result_status] || statusMap.pending;
         return `<div class="screening-card">
             <div class="screening-card-header"><span class="screening-type">${typeMap[s.screening_type] || s.screening_type}</span><span class="screening-date">${s.screening_date}</span><span class="screening-tag ${status.cls}">${status.text}</span></div>
-            ${s.result_summary ? `<div class="screening-summary-text">${s.result_summary}</div>` : ''}
-            ${s.hospital ? `<span> ${s.hospital}</span>` : ''}
+            ${s.result_summary ? `<div class="screening-summary-text">${escapeHtml(s.result_summary)}</div>` : ''}
+            ${s.hospital ? `<span> ${escapeHtml(s.hospital)}</span>` : ''}
             ${s.referral_needed ? `<span class="screening-referral"> 需转诊${s.referral_done ? '(已完成)' : ''}</span>` : ''}
             <div class="screening-card-actions"><button class="btn btn-sm btn-secondary" onclick="editScreening(${s.id})">编辑</button><button class="btn btn-sm btn-danger" onclick="deleteScreening(${s.id})">删除</button></div>
         </div>`;
@@ -17750,24 +17750,24 @@ function showScreeningForm(screening = null) {
             <div class="form-group"><label>筛查日期 *</label><input type="date" id="formScreeningDate" value="${screening?.screening_date || today}"></div>
         </div>
         <div class="form-row">
-            <div class="form-group"><label>筛查方法</label><input type="text" id="formScreeningMethod" value="${screening?.screening_method || ''}" placeholder="如: OAE, ABR"></div>
+            <div class="form-group"><label>筛查方法</label><input type="text" id="formScreeningMethod" value="${escapeHtml(screening?.screening_method || '')}" placeholder="如: OAE, ABR"></div>
             <div class="form-group"><label>结果判定</label><select id="formScreeningStatus"><option value="normal" ${(!screening || screening.result_status === 'normal') ? 'selected' : ''}>正常</option><option value="borderline" ${screening?.result_status === 'borderline' ? 'selected' : ''}>边缘</option><option value="abnormal" ${screening?.result_status === 'abnormal' ? 'selected' : ''}>异常</option><option value="pending" ${screening?.result_status === 'pending' ? 'selected' : ''}>待判</option></select></div>
         </div>
-        <div class="form-group"><label>结果概述</label><input type="text" id="formScreeningSummary" value="${screening?.result_summary || ''}"></div>
+        <div class="form-group"><label>结果概述</label><input type="text" id="formScreeningSummary" value="${escapeHtml(screening?.result_summary || '')}"></div>
         <div class="form-row">
-            <div class="form-group"><label>左眼/左耳</label><input type="text" id="formScreeningLeft" value="${screening?.detail_left || ''}"></div>
-            <div class="form-group"><label>右眼/右耳</label><input type="text" id="formScreeningRight" value="${screening?.detail_right || ''}"></div>
+            <div class="form-group"><label>左眼/左耳</label><input type="text" id="formScreeningLeft" value="${escapeHtml(screening?.detail_left || '')}"></div>
+            <div class="form-group"><label>右眼/右耳</label><input type="text" id="formScreeningRight" value="${escapeHtml(screening?.detail_right || '')}"></div>
         </div>
         <div class="form-row">
-            <div class="form-group"><label>检查机构</label><input type="text" id="formScreeningHospital" value="${screening?.hospital || ''}"></div>
-            <div class="form-group"><label>检查医生</label><input type="text" id="formScreeningDoctor" value="${screening?.doctor || ''}"></div>
+            <div class="form-group"><label>检查机构</label><input type="text" id="formScreeningHospital" value="${escapeHtml(screening?.hospital || '')}"></div>
+            <div class="form-group"><label>检查医生</label><input type="text" id="formScreeningDoctor" value="${escapeHtml(screening?.doctor || '')}"></div>
         </div>
         <div class="form-group">
             <label>转诊</label>
             <div style="display:flex;gap:10px"><label style="font-weight:normal"><input type="checkbox" id="formScreeningReferral" ${screening?.referral_needed ? 'checked' : ''}> 需转诊</label><label style="font-weight:normal"><input type="checkbox" id="formScreeningReferralDone" ${screening?.referral_done ? 'checked' : ''}> 已转诊</label></div>
         </div>
         <div class="form-group"><label>下次筛查日期</label><input type="date" id="formScreeningNext" value="${screening?.next_screening_date || ''}"></div>
-        <div class="form-group"><label>备注</label><textarea id="formScreeningNote" rows="2">${screening?.note || ''}</textarea></div>
+        <div class="form-group"><label>备注</label><textarea id="formScreeningNote" rows="2">${escapeHtml(screening?.note || '')}</textarea></div>
     `;
     document.getElementById('checkupFormBody').innerHTML = formHtml;
     showModal('checkupFormModal');
@@ -17895,10 +17895,10 @@ function showAllergyForm(allergy = null) {
             <div class="form-group"><label>最近发生日期</label><input type="date" id="formAllergyLast" value="${allergy?.last_occurrence_date || ''}"></div>
         </div>
         <div class="form-row">
-            <div class="form-group"><label>诊断方法</label><input type="text" id="formAllergyDiagMethod" value="${allergy?.diagnosis_method || ''}" placeholder="如: 血清IgE、皮肤点刺"></div>
-            <div class="form-group"><label>诊断医生</label><input type="text" id="formAllergyDiagBy" value="${allergy?.diagnosed_by || ''}"></div>
+            <div class="form-group"><label>诊断方法</label><input type="text" id="formAllergyDiagMethod" value="${escapeHtml(allergy?.diagnosis_method || '')}" placeholder="如: 血清IgE、皮肤点刺"></div>
+            <div class="form-group"><label>诊断医生</label><input type="text" id="formAllergyDiagBy" value="${escapeHtml(allergy?.diagnosed_by || '')}"></div>
         </div>
-        <div class="form-group"><label>处理措施</label><textarea id="formAllergyMgmt" rows="2" placeholder="治疗和预防措施">${allergy?.management || ''}</textarea></div>
+        <div class="form-group"><label>处理措施</label><textarea id="formAllergyMgmt" rows="2" placeholder="治疗和预防措施">${escapeHtml(allergy?.management || '')}</textarea></div>
         <div class="form-group"><label>备注</label><textarea id="formAllergyNote" rows="1">${escapeHtml(allergy?.note || '')}</textarea></div>
     `;
     document.getElementById('checkupFormBody').innerHTML = formHtml;
@@ -18014,8 +18014,8 @@ function showFeedingForm(summary = null) {
         <div class="form-row">
             <div class="form-group"><label>月增高(cm)</label><input type="number" id="formFeedingHeight" step="0.1" value="${summary?.height_gain_month || ''}"></div>
         </div>
-        <div class="form-group"><label>喂养问题/注意事项</label><textarea id="formFeedingConcerns" rows="2">${summary?.concerns || ''}</textarea></div>
-        <div class="form-group"><label>备注</label><textarea id="formFeedingNote" rows="1">${summary?.note || ''}</textarea></div>
+        <div class="form-group"><label>喂养问题/注意事项</label><textarea id="formFeedingConcerns" rows="2">${escapeHtml(summary?.concerns || '')}</textarea></div>
+        <div class="form-group"><label>备注</label><textarea id="formFeedingNote" rows="1">${escapeHtml(summary?.note || '')}</textarea></div>
     `;
     document.getElementById('checkupFormBody').innerHTML = formHtml;
     showModal('checkupFormModal');
