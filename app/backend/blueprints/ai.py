@@ -444,6 +444,48 @@ def ai_chat():
         })
 
 
+def _ai_write_fail(default_msg='无法识别，请手动填写或换一种描述'):
+    """AI 帮写失败时的统一响应 —— **必须把真实原因带上**。
+
+    此前 11 个 /api/ai/write/* 端点在任何失败下都回同一句「无法识别，请手动填写」：
+    密钥无效(401)、模型名不存在(404)、NAS 出不了网、以及"模型确实看不懂你这句话"，
+    在用户眼里长得一模一样 —— 他会照着那句话反复改描述，改一百遍也没用，
+    真正该做的是去设置页修 Key 或换个模型。
+
+    注意语义：`get_last_llm_error()` 在**成功**时会清空，所以
+    「调用成功但返回的 JSON 解析不了」时它为空 —— 那时确实就是"无法识别"，
+    文案保持原样，不会把无关的旧错误塞进去。
+    """
+    try:
+        from ai_engine import get_last_llm_error
+        reason = (get_last_llm_error() or '').strip()
+    except Exception:
+        reason = ''
+
+    # 熔断中要单独说，别把上一次的错误当成这次的原因：
+    # 熔断打开时 call_llm_with_resilience 会**直接返回、根本不发请求**，
+    # 于是 _LAST_LLM_ERROR 还是上一次的（例如 HTTP 500）—— 照着它去查，
+    # 用户会以为"请求发出去了、被厂商 500 拒了"，其实一个包都没发。
+    breaker_open = False
+    try:
+        from ai_client import get_ai_client_stats
+        breaker_open = ((get_ai_client_stats().get('circuit_breaker') or {})
+                        .get('state') == 'open')
+    except Exception:
+        breaker_open = False
+    if breaker_open:
+        return jsonify({
+            'success': False,
+            'message': default_msg + '（大模型连续失败已熔断，约 2 分钟后自动恢复，可先检查网络与密钥）',
+            'llm_used': False,
+            'fallback_reason': '连续调用失败已熔断，本次未发起请求',
+        }), 422
+
+    msg = default_msg + ('（大模型调用失败：%s）' % reason if reason else '')
+    return jsonify({'success': False, 'message': msg,
+                    'llm_used': False, 'fallback_reason': reason or None}), 422
+
+
 def _safe_max_tool_rounds(v) -> int:
     try:
         n = int(v)
@@ -1080,7 +1122,7 @@ def ai_extract_feeding():
             'message': '已提取喂养记录，请确认后保存',
         })
     else:
-        return jsonify({'success': False, 'message': '无法识别，请手动填写或换一种描述'}), 422
+        return _ai_write_fail('无法识别，请手动填写或换一种描述')
 
 
 @bp.route('/api/ai/write/extract-sleep', methods=['POST'])
@@ -1109,7 +1151,7 @@ def ai_extract_sleep():
             'message': '已提取睡眠记录，请确认后保存',
         })
     else:
-        return jsonify({'success': False, 'message': '无法识别，请手动填写或换一种描述'}), 422
+        return _ai_write_fail('无法识别，请手动填写或换一种描述')
 
 
 @bp.route('/api/ai/write/suggest-milestones', methods=['POST'])
@@ -1199,7 +1241,7 @@ def ai_extract_diaper():
     ok, record = extract_diaper_record(data['input'])
     if ok:
         return jsonify({'success': True, 'record': record, 'message': '已提取换尿布记录，请确认后保存'})
-    return jsonify({'success': False, 'message': '无法识别，请手动填写'}), 422
+    return _ai_write_fail('无法识别，请手动填写')
 
 
 @bp.route('/api/ai/write/extract-growth', methods=['POST'])
@@ -1215,7 +1257,7 @@ def ai_extract_growth():
     ok, record = extract_growth_record(data['input'])
     if ok:
         return jsonify({'success': True, 'record': record, 'message': '已提取成长记录，请确认后保存'})
-    return jsonify({'success': False, 'message': '无法识别，请手动填写'}), 422
+    return _ai_write_fail('无法识别，请手动填写')
 
 
 @bp.route('/api/ai/write/extract-temperature', methods=['POST'])
@@ -1231,7 +1273,7 @@ def ai_extract_temperature():
     ok, record = extract_temperature_record(data['input'])
     if ok:
         return jsonify({'success': True, 'record': record, 'message': '已提取体温记录，请确认后保存'})
-    return jsonify({'success': False, 'message': '无法识别，请手动填写'}), 422
+    return _ai_write_fail('无法识别，请手动填写')
 
 
 @bp.route('/api/ai/write/extract-medication', methods=['POST'])
@@ -1247,7 +1289,7 @@ def ai_extract_medication():
     ok, record = extract_medication_record(data['input'])
     if ok:
         return jsonify({'success': True, 'record': record, 'message': '已提取用药记录，请确认后保存'})
-    return jsonify({'success': False, 'message': '无法识别，请手动填写'}), 422
+    return _ai_write_fail('无法识别，请手动填写')
 
 
 @bp.route('/api/ai/write/extract-vaccine', methods=['POST'])
@@ -1263,7 +1305,7 @@ def ai_extract_vaccine():
     ok, record = extract_vaccine_record(data['input'])
     if ok:
         return jsonify({'success': True, 'record': record, 'message': '已提取疫苗记录，请确认后保存'})
-    return jsonify({'success': False, 'message': '无法识别，请手动填写'}), 422
+    return _ai_write_fail('无法识别，请手动填写')
 
 
 @bp.route('/api/ai/write/extract-pumping', methods=['POST'])
@@ -1279,7 +1321,7 @@ def ai_extract_pumping():
     ok, record = extract_pumping_record(data['input'])
     if ok:
         return jsonify({'success': True, 'record': record, 'message': '已提取吸奶记录，请确认后保存'})
-    return jsonify({'success': False, 'message': '无法识别，请手动填写'}), 422
+    return _ai_write_fail('无法识别，请手动填写')
 
 
 @bp.route('/api/ai/write/extract-milestone', methods=['POST'])
@@ -1295,7 +1337,7 @@ def ai_extract_milestone():
     ok, record = extract_milestone_record(data['input'])
     if ok:
         return jsonify({'success': True, 'record': record, 'message': '已提取里程碑记录，请确认后保存'})
-    return jsonify({'success': False, 'message': '无法识别，请手动填写'}), 422
+    return _ai_write_fail('无法识别，请手动填写')
 
 
 @bp.route('/api/ai/write/extract-teething', methods=['POST'])
@@ -1311,7 +1353,7 @@ def ai_extract_teething():
     ok, record = extract_teething_record(data['input'])
     if ok:
         return jsonify({'success': True, 'record': record, 'message': '已提取出牙记录，请确认后保存'})
-    return jsonify({'success': False, 'message': '无法识别，请手动填写'}), 422
+    return _ai_write_fail('无法识别，请手动填写')
 
 
 @bp.route('/api/ai/write/extract-allergy-test', methods=['POST'])
@@ -1327,7 +1369,7 @@ def ai_extract_allergy_test():
     ok, record = extract_allergy_test_record(data['input'])
     if ok:
         return jsonify({'success': True, 'record': record, 'message': '已提取过敏测试记录，请确认后保存'})
-    return jsonify({'success': False, 'message': '无法识别，请手动填写'}), 422
+    return _ai_write_fail('无法识别，请手动填写')
 
 
 @bp.route('/api/ai/write/full-diary', methods=['POST'])

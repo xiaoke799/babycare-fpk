@@ -1658,7 +1658,8 @@ SYSTEM_PROMPT = """你是「育儿宝」的 AI 育儿顾问，服务对象是用
 - 涉及健康判断时，末尾附一句「以上仅供参考，如不放心请及时就医」。"""
 
 
-def call_llm(question, baby_context=None, history=None, model_override=None, trace_id=None):
+def call_llm(question, baby_context=None, history=None, model_override=None, trace_id=None,
+             max_tokens=None):
     """
     调用 LLM，返回 (success, answer)
     失败返回 (False, None)，调用方回退到规则引擎
@@ -1669,6 +1670,9 @@ def call_llm(question, baby_context=None, history=None, model_override=None, tra
         history: 历史消息列表 [{'role': 'user', 'content': '...'}, ...]（可为 None）
         model_override: 临时指定本次调用的模型（如 AI 对话页选择），优先于全局配置
         trace_id: 链路 id（由 ai_client 传入并跨重试复用）；不传则自动生成
+        max_tokens: 本次回复长度上限。不传/<=0 时依次回落到全局配置、厂商模板默认。
+                    （此前这个参数在 ai_writer 里一路传到空 —— extract_* 想要 500、
+                    full-diary 想要 2000，实际一律按全局值发。）
     """
     # 每次调用一个 trace id：把这次调用在各跳留下的日志串起来。
     # 上层（ai_client）传进来就复用，这样"一次问答含重试"的所有日志是同一个 id。
@@ -1712,9 +1716,11 @@ def call_llm(question, baby_context=None, history=None, model_override=None, tra
                      _key_desc, len(messages), len(question or '')))
 
         if provider == 'ollama':
-            ok, ans = _call_ollama(messages, model_override, trace_id=_tid)
+            ok, ans = _call_ollama(messages, model_override, trace_id=_tid,
+                                   max_tokens=max_tokens)
         else:
-            ok, ans = _call_openai_compat(messages, model_override, trace_id=_tid)
+            ok, ans = _call_openai_compat(messages, model_override, trace_id=_tid,
+                                          max_tokens=max_tokens)
         if ok and ans:
             _set_last_llm_error('')       # 成功就清掉，别让旧错误一直挂着误导人
             llm_trace(_tid, '⑦', '✓ 成功 耗时=%dms 回答长度=%d'
@@ -1817,35 +1823,37 @@ def llm_trace(trace_id, step, msg) -> None:
         pass
 
 
-def _call_ollama(messages, model_override=None, trace_id=None):
-    """Ollama 本地 API"""
-    url = LLM.get('api_url') or PROVIDER_TEMPLATES['ollama']['api_url']
-    parsed = urllib.parse.urlparse(url)
-    if parsed.hostname not in ('localhost', '127.0.0.1', '::1') and parsed.scheme != 'https':
-        logger.warning('非本地服务必须使用 HTTPS 地址')
-        if trace_id:
-            llm_trace(trace_id, '⑤', '地址校验未通过：%s（host=%s scheme=%s）'
-                      % (url[:120], parsed.hostname, parsed.scheme))
-        return False, None
-    payload = {
-        'model': model_override or LLM.get('model') or PROVIDER_TEMPLATES['ollama']['default_model'],
-        'messages': messages,
-        'stream': False,
-        'options': {'temperature': LLM.get('temperature') or 0.7}
-    }
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode('utf-8'),
-        headers={'Content-Type': 'application/json'}
-    )
-    _http_t0 = time.time()
+def _post_chat_json(url, payload, headers, trace_id=None, tag=''):
+    """统一的 chat/completions HTTP 往返 —— **四条调用路径共用这一份**。
+
+    🔴 为什么必须共用：这段错误处理原本在
+        ai_engine._call_ollama / _call_openai_compat
+        ai_engine_tooling._round_ollama / _round_openai_compat
+    里各写了一遍（共 4 份）。2026-10-10 的故障正是「只给其中 2 份补了
+    _set_last_llm_error」—— 工具调用那条路不记原因，界面就只回一句笼统的
+    「调用失败」，401 / 模型名错 / 断网三种处境长得一模一样。
+    4 份里漏改任何一份都会重演；收敛成一份后，改一处即四条路径同时生效。
+
+    附带修掉一个误导：**进入本次尝试先清空上一次的失败原因**。
+    否则「上一次 401、这一次 200 但正文为空」时，界面会把上一次的 401
+    当成本次原因展示 —— 用户会照着错误方向去查。
+
+    返回 (ok, parsed_json)。失败时已写好 _set_last_llm_error 并留 trace。
+    """
+    _set_last_llm_error('')          # 本次尝试的结果才是权威，别让陈年原因留上面
+    _t0 = time.time()
+    prefix = ('%s ' % tag) if tag else ''
     if trace_id:
-        llm_trace(trace_id, '⑤', 'POST %s model=%s timeout=%ss'
-                  % (url[:120], payload.get('model'), _effective_timeout()))
+        llm_trace(trace_id, '⑤', '%sPOST %s model=%s max_tokens=%s timeout=%ss'
+                  % (prefix, url[:120], payload.get('model'),
+                     payload.get('max_tokens'), _effective_timeout()))
     try:
+        req = urllib.request.Request(
+            url, data=json.dumps(payload).encode('utf-8'), headers=headers)
         with _utils.urlopen_bound(req, timeout=_effective_timeout()) as resp:
             result = json.loads(resp.read().decode('utf-8'))
     except urllib.error.HTTPError as he:
+        # 最常见也最该被看清的一类：401(密钥) / 404(地址或模型) / 429(限流) / 5xx(厂商侧)
         body = ''
         try:
             body = he.read().decode('utf-8', errors='replace')[:300]
@@ -1853,31 +1861,96 @@ def _call_ollama(messages, model_override=None, trace_id=None):
             pass
         _set_last_llm_error('HTTP %s: %s' % (he.code, body))
         if trace_id:
-            llm_trace(trace_id, '⑥', 'HTTP 错误 status=%s 耗时=%dms body=%s'
-                      % (he.code, (time.time() - _http_t0) * 1000, body))
+            llm_trace(trace_id, '⑥', '%sHTTP 错误 status=%s 耗时=%dms body=%s'
+                      % (prefix, he.code, (time.time() - _t0) * 1000, body))
         return False, None
     except urllib.error.URLError as ue:
+        # 连不上 / DNS / 超时 —— 区分「NAS 出不了网」与「密钥问题」的关键证据
         _set_last_llm_error('网络不可达: %s' % (getattr(ue, 'reason', ue),))
         if trace_id:
-            llm_trace(trace_id, '⑥', '网络不可达 耗时=%dms reason=%s（Ollama 未启动或端口不对？）'
-                      % ((time.time() - _http_t0) * 1000, getattr(ue, 'reason', ue)))
+            llm_trace(trace_id, '⑥',
+                      '%s网络不可达 耗时=%dms reason=%s（服务未启动 / 端口不对 / 出网被挡？）'
+                      % (prefix, (time.time() - _t0) * 1000, getattr(ue, 'reason', ue)))
         return False, None
     except (TimeoutError, OSError) as te:
         _set_last_llm_error('超时/连接异常: %s' % (te,))
         if trace_id:
-            llm_trace(trace_id, '⑥', '超时/连接异常 耗时=%dms %s: %s'
-                      % ((time.time() - _http_t0) * 1000, type(te).__name__, te))
+            llm_trace(trace_id, '⑥', '%s超时/连接异常 耗时=%dms %s: %s'
+                      % (prefix, (time.time() - _t0) * 1000, type(te).__name__, te))
+        return False, None
+    except Exception as exc:
+        # 响应不是合法 JSON 之类：以前会冒到 call_llm 最外层 except，
+        # 现在就地归类，顺带保证工具分支也一定有原因可展示。
+        _set_last_llm_error('%s: %s' % (type(exc).__name__, exc))
+        if trace_id:
+            llm_trace(trace_id, '⑥', '%s异常 %s: %s'
+                      % (prefix, type(exc).__name__, str(exc)[:160]))
         return False, None
 
     if trace_id:
-        llm_trace(trace_id, '⑥', 'HTTP 200 耗时=%dms 响应键=%s'
-                  % ((time.time() - _http_t0) * 1000, ','.join(list(result.keys())[:6])))
+        llm_trace(trace_id, '⑥', '%sHTTP 200 耗时=%dms 响应键=%s'
+                  % (prefix, (time.time() - _t0) * 1000,
+                     ','.join(list(result.keys())[:6])))
+    return True, result
+
+
+def _check_llm_url(url, trace_id=None):
+    """非本地地址必须 HTTPS。四条 HTTP 路径原先各判一遍，一并收敛到这里。
+
+    这里也写 _set_last_llm_error：此前该分支只留一行 warning，不记原因，
+    用户看到的就是那句笼统的「调用失败」，根本猜不到是地址没写 https。
+    """
+    parsed = urllib.parse.urlparse(url)
+    if parsed.hostname not in ('localhost', '127.0.0.1', '::1') and parsed.scheme != 'https':
+        logger.warning('非本地服务必须使用 HTTPS 地址')
+        _set_last_llm_error('非本地地址必须使用 HTTPS：%s' % url[:120])
+        if trace_id:
+            llm_trace(trace_id, '⑤', '地址校验未通过：%s（host=%s scheme=%s）'
+                      % (url[:120], parsed.hostname, parsed.scheme))
+        return False
+    return True
+
+
+def _resolve_max_tokens(max_tokens, template):
+    """本次请求的回复上限：调用方显式给的 > 全局配置 > 厂商模板默认。
+
+    此前 max_tokens **只读全局配置**，调用方传进来的值被直接丢弃 ——
+    ai_writer 里 extract_* 想要 500、full-diary 想要 2000，实测一律按模板默认
+    16384 发出去。全局值被用户调小时，长文生成会被无声截断。
+    """
+    for v in (max_tokens, LLM.get('max_tokens')):
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            continue
+        if n > 0:
+            return n
+    return template.get('max_output_tokens', 1024)
+
+
+def _call_ollama(messages, model_override=None, trace_id=None, max_tokens=None):
+    """Ollama 本地 API"""
+    url = LLM.get('api_url') or PROVIDER_TEMPLATES['ollama']['api_url']
+    if not _check_llm_url(url, trace_id):
+        return False, None
+    payload = {
+        'model': model_override or LLM.get('model') or PROVIDER_TEMPLATES['ollama']['default_model'],
+        'messages': messages,
+        'stream': False,
+        'options': {'temperature': LLM.get('temperature') or 0.7},
+    }
+    ok, result = _post_chat_json(url, payload, {'Content-Type': 'application/json'},
+                                 trace_id=trace_id)
+    if not ok:
+        return False, None
     if 'message' in result:
         return True, result['message']['content']
+    if trace_id:
+        llm_trace(trace_id, '⑥', '响应里没有 message 字段，取不到正文')
     return False, None
 
 
-def _call_openai_compat(messages, model_override=None, trace_id=None):
+def _call_openai_compat(messages, model_override=None, trace_id=None, max_tokens=None):
     """OpenAI 兼容格式（DeepSeek、通义千问、Kimi、自定义等）"""
     provider_id = LLM['provider']
     template = PROVIDER_TEMPLATES.get(provider_id, {})
@@ -1885,20 +1958,14 @@ def _call_openai_compat(messages, model_override=None, trace_id=None):
     url = LLM.get('api_url') or template.get('api_url', '')
     model = model_override or LLM.get('model') or template.get('default_model', '')
 
-    parsed = urllib.parse.urlparse(url)
-    if parsed.hostname not in ('localhost', '127.0.0.1', '::1') and parsed.scheme != 'https':
-        # 以前只说"必须用 HTTPS"，不说具体是哪个地址 —— 用户没法判断是不是自己填错了
-        logger.warning('非本地服务必须使用 HTTPS 地址')
-        if trace_id:
-            llm_trace(trace_id, '⑤', '地址校验未通过：%s（host=%s scheme=%s）'
-                      % (url[:120], parsed.hostname, parsed.scheme))
+    if not _check_llm_url(url, trace_id):
         return False, None
 
     payload = {
         'model': model,
         'messages': messages,
         'temperature': LLM.get('temperature') or 0.7,
-        'max_tokens': LLM.get('max_tokens') or template.get('max_output_tokens', 1024),
+        'max_tokens': _resolve_max_tokens(max_tokens, template),
     }
     # 解密 API Key（存储时加密）
     api_key_plain = decrypt_api_key(LLM.get('api_key', ''))
@@ -1911,50 +1978,11 @@ def _call_openai_compat(messages, model_override=None, trace_id=None):
         headers[auth_header] = auth_format.format(api_key=api_key_plain)
 
     # 额外请求头（如 Anthropic 需要版本号）
-    extra_headers = template.get('extra_headers', {})
-    headers.update(extra_headers)
+    headers.update(template.get('extra_headers', {}))
 
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode('utf-8'),
-        headers=headers
-    )
-    _http_t0 = time.time()
-    if trace_id:
-        llm_trace(trace_id, '⑤', 'POST %s model=%s max_tokens=%s timeout=%ss'
-                  % (url[:120], model, payload.get('max_tokens'), _effective_timeout()))
-    try:
-        with _utils.urlopen_bound(req, timeout=_effective_timeout()) as resp:
-            result = json.loads(resp.read().decode('utf-8'))
-    except urllib.error.HTTPError as he:
-        # 这是最常见、也最该被看清的一类：401(密钥) / 404(地址或模型) / 429(限流) / 5xx(厂商侧)
-        body = ''
-        try:
-            body = he.read().decode('utf-8', errors='replace')[:300]
-        except Exception:
-            pass
-        _set_last_llm_error('HTTP %s: %s' % (he.code, body))
-        if trace_id:
-            llm_trace(trace_id, '⑥', 'HTTP 错误 status=%s 耗时=%dms body=%s'
-                      % (he.code, (time.time() - _http_t0) * 1000, body))
+    ok, result = _post_chat_json(url, payload, headers, trace_id=trace_id)
+    if not ok:
         return False, None
-    except urllib.error.URLError as ue:
-        # 连不上/超时/DNS —— 区分"NAS 出不了网"与"密钥问题"的关键证据
-        _set_last_llm_error('网络不可达: %s' % (getattr(ue, 'reason', ue),))
-        if trace_id:
-            llm_trace(trace_id, '⑥', '网络不可达 耗时=%dms reason=%s'
-                      % ((time.time() - _http_t0) * 1000, getattr(ue, 'reason', ue)))
-        return False, None
-    except (TimeoutError, OSError) as te:
-        _set_last_llm_error('超时/连接异常: %s' % (te,))
-        if trace_id:
-            llm_trace(trace_id, '⑥', '超时/连接异常 耗时=%dms %s: %s'
-                      % ((time.time() - _http_t0) * 1000, type(te).__name__, te))
-        return False, None
-
-    if trace_id:
-        llm_trace(trace_id, '⑥', 'HTTP 200 耗时=%dms 响应键=%s'
-                  % ((time.time() - _http_t0) * 1000, ','.join(list(result.keys())[:6])))
     if 'choices' in result and result['choices']:
         try:
             content = result['choices'][0]['message']['content']
@@ -1964,6 +1992,8 @@ def _call_openai_compat(messages, model_override=None, trace_id=None):
             return False, None
         return True, content
     return False, None
+
+
 
 
 def chat_with_llm(question, db=None, baby_id=None):

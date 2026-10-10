@@ -203,18 +203,16 @@ def call_llm_with_tools(
 def _round_ollama(messages, tools, model_override, trace_id=None):
     """一轮 Ollama 调用，返回 (ok, text_or_None, tool_calls_or_None)
 
-    ⚠ 与 _round_openai_compat 同理：这条路的失败原先也只留一行 warning，
-    不说是哪个地址、也不说 Ollama 是不是没起来。
+    ⚠ 这条路的 HTTP 与错误处理现在与 ai_engine 共用 _post_chat_json ——
+    原先四条路径各写一份，「只给其中两份补 _set_last_llm_error」就酿成
+    界面只回笼统「调用失败」的故障（2026-10-10）。改一处必须四条同时生效。
     """
-    from ai_engine import (LLM, PROVIDER_TEMPLATES, _effective_timeout, llm_trace,
-                           _set_last_llm_error)
+    from ai_engine import (LLM, PROVIDER_TEMPLATES, _check_llm_url,
+                           _post_chat_json, get_last_llm_error, llm_trace)
     url = LLM.get("api_url") or PROVIDER_TEMPLATES["ollama"]["api_url"]
-    parsed = urllib.parse.urlparse(url)
-    if parsed.hostname not in ("localhost", "127.0.0.1", "::1") and parsed.scheme != "https":
-        logger.warning("非本地 Ollama 必须使用 HTTPS")
-        llm_trace(trace_id, '⑤', '工具分支拦截：非本地 Ollama 必须 HTTPS，已拒发 url=%s' % url[:120])
-        _set_last_llm_error('非本地 Ollama 地址必须使用 HTTPS，已拒绝发送请求：%s' % url[:120])
-        return False, "non-local url", None
+    if not _check_llm_url(url, trace_id):
+        llm_trace(trace_id, '⑤', '工具分支拦截：非本地地址必须 HTTPS，已拒发 url=%s' % url[:120])
+        return False, (get_last_llm_error() or "non-local url"), None
 
     payload: Dict[str, Any] = {
         "model": model_override or LLM.get("model") or PROVIDER_TEMPLATES["ollama"]["default_model"],
@@ -226,53 +224,17 @@ def _round_ollama(messages, tools, model_override, trace_id=None):
     if tools:
         payload["tools"] = tools
 
-    llm_trace(trace_id, '⑤',
-              '工具分支(Ollama) POST %s model=%s timeout=%ss'
-              % (url[:120], payload.get('model'), _effective_timeout()))
-    try:
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-        )
-        with utils.urlopen_bound(req, timeout=_effective_timeout()) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        body = ''
-        try:
-            body = exc.read().decode('utf-8', 'replace')[:200]
-        except Exception:
-            pass
-        logger.warning("Ollama 调用失败: %s", exc)
-        llm_trace(trace_id, '⑥', '工具分支(Ollama) HTTP 错误 status=%s url=%s body=%s'
-                  % (getattr(exc, 'code', '?'), url[:120], body))
-        _set_last_llm_error('HTTP %s: %s' % (getattr(exc, 'code', '?'), body or exc))
-        return False, str(exc), None
-    except urllib.error.URLError as exc:
-        logger.warning("Ollama 调用失败: %s", exc)
-        llm_trace(trace_id, '⑥', '工具分支(Ollama) 网络不可达 url=%s 原因=%s（Ollama 未启动？）'
-                  % (url[:120], exc.reason))
-        _set_last_llm_error('网络不可达: %s' % (getattr(exc, 'reason', exc),))
-        return False, str(exc), None
-    except (TimeoutError, OSError) as exc:
-        logger.warning("Ollama 调用失败: %s", exc)
-        llm_trace(trace_id, '⑥', '工具分支(Ollama) 超时/连接异常 url=%s %s: %s'
-                  % (url[:120], type(exc).__name__, exc))
-        _set_last_llm_error('超时/连接异常: %s' % (exc,))
-        return False, str(exc), None
-    except Exception as exc:
-        logger.warning("Ollama 调用失败: %s", exc)
-        llm_trace(trace_id, '⑥', '工具分支(Ollama) 异常 %s: %s' % (type(exc).__name__, str(exc)[:160]))
-        _set_last_llm_error('%s: %s' % (type(exc).__name__, exc))
-        return False, str(exc), None
+    ok, result = _post_chat_json(url, payload, {"Content-Type": "application/json"},
+                                trace_id=trace_id, tag='工具分支(Ollama)')
+    if not ok:
+        return False, (get_last_llm_error() or "request failed"), None
 
     tool_calls = _should_emit_tool_calls(result)
     if tool_calls:
         return True, None, tool_calls
 
     message = result.get("message") or {}
-    content = message.get("content")
-    return True, content, None
+    return True, message.get("content"), None
 
 
 def _round_openai_compat(messages, tools, model_override, trace_id=None):
@@ -282,35 +244,27 @@ def _round_openai_compat(messages, tools, model_override, trace_id=None):
     2026-10-05：用户 NAS 日志里那两行
         LLM 调用失败: HTTP Error 404: Not Found
         LLM 请求失败: HTTP Error 404: Not Found
-    就是从这出去的 —— 而当时埋的 trace 在**另一条路**上，所以这两行里
-    既没有地址、也没有状态码含义（404 到底是 base_url 拼错还是模型不存在？看不出来）。
-    这里补上同样的逐跳留痕，与 ai_client/ai_engine 共用同一个 trace id。
+    就是从这出去的 —— 而当时埋的 trace 在**另一条路**上，看不出 404 到底是
+    base_url 拼错还是模型不存在。
+    现在 HTTP 与错误处理与 ai_engine 共用 _post_chat_json，四条路径同源同口径。
     """
-    from ai_engine import (
-        LLM,
-        PROVIDER_TEMPLATES,
-        _effective_timeout,
-        decrypt_api_key,
-        llm_trace,
-        _set_last_llm_error,
-    )
+    from ai_engine import (LLM, PROVIDER_TEMPLATES, _check_llm_url,
+                           _post_chat_json, _resolve_max_tokens,
+                           decrypt_api_key, get_last_llm_error)
     provider_id = LLM.get("provider", "")
     template = PROVIDER_TEMPLATES.get(provider_id, {})
 
     url = LLM.get("api_url") or template.get("api_url", "")
     model = model_override or LLM.get("model") or template.get("default_model", "")
 
-    parsed = urllib.parse.urlparse(url)
-    if parsed.hostname not in ("localhost", "127.0.0.1", "::1") and parsed.scheme != "https":
-        logger.warning("非本地 LLM 必须使用 HTTPS: %s", url)
-        llm_trace(trace_id, '⑤', '工具分支拦截：非本地地址必须 HTTPS，已拒发 url=%s' % url[:120])
-        return False, "non-local url", None
+    if not _check_llm_url(url, trace_id):
+        return False, (get_last_llm_error() or "non-local url"), None
 
     payload: Dict[str, Any] = {
         "model": model,
         "messages": messages,
         "temperature": LLM.get("temperature") or 0.7,
-        "max_tokens": LLM.get("max_tokens") or template.get("max_output_tokens", 1024),
+        "max_tokens": _resolve_max_tokens(None, template),
     }
     if tools:
         payload["tools"] = tools
@@ -324,48 +278,9 @@ def _round_openai_compat(messages, tools, model_override, trace_id=None):
         headers[auth_header] = auth_format.format(api_key=api_key_plain)
     headers.update(template.get("extra_headers", {}) or {})
 
-    llm_trace(trace_id, '⑤',
-              '工具分支 POST %s model=%s timeout=%ss 轮次消息=%d'
-              % (url[:120], model, _effective_timeout(), len(messages)))
-    try:
-        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
-        with utils.urlopen_bound(req, timeout=_effective_timeout()) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        # ⚠ 关键：把状态码与响应体贴出来。404 最常见的两种成因——
-        #   ① api_url 写错（少了/多了 /v1）；② 模型名在该厂商不存在。
-        body = ''
-        try:
-            body = exc.read().decode('utf-8', 'replace')[:200]
-        except Exception:
-            pass
-        logger.warning("LLM 调用失败: %s", exc)
-        llm_trace(trace_id, '⑥',
-                  '工具分支 HTTP 错误 status=%s url=%s body=%s'
-                  % (getattr(exc, 'code', '?'), url[:120], body))
-        # body 里才有真原因（"Model Not Exist" / "Authentication Fails"），别只留一行 warning
-        _set_last_llm_error('HTTP %s: %s' % (getattr(exc, 'code', '?'), body or exc))
-        return False, str(exc), None
-    except urllib.error.URLError as exc:
-        logger.warning("LLM 调用失败: %s", exc)
-        llm_trace(trace_id, '⑥',
-                  '工具分支 网络不可达 url=%s 原因=%s（NAS 能否访问外网？）' % (url[:120], exc.reason))
-        _set_last_llm_error('网络不可达: %s' % (getattr(exc, 'reason', exc),))
-        return False, str(exc), None
-    except (TimeoutError, OSError) as exc:
-        logger.warning("LLM 调用失败: %s", exc)
-        llm_trace(trace_id, '⑥',
-                  '工具分支 超时/连接异常 url=%s 耗时上限=%ss %s: %s'
-                  % (url[:120], _effective_timeout(), type(exc).__name__, exc))
-        _set_last_llm_error('超时/连接异常: %s' % (exc,))
-        return False, str(exc), None
-    except Exception as exc:
-        logger.warning("LLM 调用失败: %s", exc)
-        llm_trace(trace_id, '⑥', '工具分支 异常 %s: %s' % (type(exc).__name__, str(exc)[:160]))
-        _set_last_llm_error('%s: %s' % (type(exc).__name__, exc))
-        return False, str(exc), None
-
-    llm_trace(trace_id, '⑥', '工具分支 HTTP 200 已返回，解析 choices')
+    ok, result = _post_chat_json(url, payload, headers, trace_id=trace_id, tag='工具分支')
+    if not ok:
+        return False, (get_last_llm_error() or "request failed"), None
 
     tool_calls = _should_emit_tool_calls(result)
     if tool_calls:

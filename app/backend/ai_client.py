@@ -214,11 +214,13 @@ class LLMCallError(Exception):
 
 # ==================== 缓存键生成 ====================
 
-def _make_cache_key(question: str, baby_context: Optional[str] = None, history: Optional[list] = None, model: Optional[str] = None, provider: Optional[str] = None) -> str:
-    """生成缓存键（厂商 + 模型 + 问题 + 上下文 + 最近历史哈希）
+def _make_cache_key(question: str, baby_context: Optional[str] = None, history: Optional[list] = None, model: Optional[str] = None, provider: Optional[str] = None, max_tokens: Optional[int] = None) -> str:
+    """生成缓存键（厂商 + 模型 + 问题 + 上下文 + 最近历史哈希 + 长度上限）
 
     必须带上 provider：不同厂商可能存在同名模型（如 qwen 与自定义），
     否则切换厂商后会命中上一家厂商留下的答案。
+    也必须带上 max_tokens：同一提示词用 500 与 2000 的预算问，答案长度本就不同，
+    复用了就相当于把短答当成满足长请求的结果返回。
     """
     # 包含最近2条历史消息的哈希（避免对话上下文中返回过时答案）
     hist_hash = ""
@@ -226,7 +228,8 @@ def _make_cache_key(question: str, baby_context: Optional[str] = None, history: 
         recent = history[-2:] if len(history) >= 2 else history
         hist_str = json.dumps(recent, ensure_ascii=False, sort_keys=True)
         hist_hash = hashlib.md5(hist_str.encode("utf-8")).hexdigest()[:8]
-    raw = f"{provider or ''}|{model or ''}|{question}|{baby_context or ''}|{hist_hash}"
+    raw = (f"{provider or ''}|{model or ''}|{question}|{baby_context or ''}|{hist_hash}"
+           f"|mt={max_tokens or 0}")
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
 
@@ -247,6 +250,7 @@ def call_llm_with_resilience(
     tools: Optional[list] = None,
     execute_tool_fn=None,
     max_tool_rounds: int = 5,
+    max_tokens: Optional[int] = None,
     trace_id: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
     """
@@ -280,7 +284,7 @@ def call_llm_with_resilience(
             _provider = LLM.get('provider') or ''
         except Exception:
             _provider = ''
-        cache_key = _make_cache_key(question, baby_context, history, model, _provider)
+        cache_key = _make_cache_key(question, baby_context, history, model, _provider, max_tokens)
         cached = _llm_cache.get(cache_key)
         if cached is not None:
             logger.debug("LLM 缓存命中: %s...", question[:30])
@@ -327,7 +331,7 @@ def call_llm_with_resilience(
             return False, None
         else:
             ok, answer = _call_llm_with_retry(question, baby_context, history, model,
-                                              trace_id=trace_id)
+                                              max_tokens=max_tokens, trace_id=trace_id)
             if ok:
                 _circuit_breaker.record_success()
                 # 缓存结果
@@ -354,6 +358,7 @@ def _call_llm_with_retry(
     baby_context: Optional[str] = None,
     history: Optional[list] = None,
     model: Optional[str] = None,
+    max_tokens: Optional[int] = None,
     trace_id: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
     """内部：带重试的 LLM 调用（使用 ai_engine 的 call_llm）
@@ -383,7 +388,7 @@ def _call_llm_with_retry(
     _trace('③', '重试层放行 → 进入 ai_engine.call_llm provider=%s model=%s'
            % (provider, model or LLM.get('model') or '(默认)'), trace_id)
     ok, answer = call_llm(question, baby_context, history, model_override=model,
-                          trace_id=trace_id)
+                          trace_id=trace_id, max_tokens=max_tokens)
     if not ok:
         raise LLMCallError('LLM 调用未成功')
     return True, answer

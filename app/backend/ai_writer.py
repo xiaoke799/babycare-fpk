@@ -134,17 +134,25 @@ MILESTONE_SUGGESTION_PROMPT = """你是一位婴儿发育评估助手。根据�
 
 def _call_llm_for_generation(prompt: str, max_tokens: int = 1000) -> Tuple[bool, Optional[str]]:
     """
-    调用 LLM 生成内容。
-    优先使用本地模型，回退到云端（需用户同意）。
-    
+    调用 LLM 生成内容。优先使用本地模型，回退到云端（需用户同意）。
+
+    🔴 这里以前直接 `ai_engine.call_llm(prompt)` —— **绕过了韧性层**：
+    没有重试、没有熔断、没有链路 trace，而它背后是 17 个 /api/ai/write/* 端点。
+    对话页那条路出故障会熔断保护，这条路却会对着一个已经挂掉的厂商反复打。
+
+    现在统一走 ai_client.call_llm_with_resilience（与对话页同一条链）：
+    重试 / 熔断 / 缓存 / trace 全部生效；max_tokens 也终于传得下去
+    （extract_* 想要 500、full-diary 想要 2000，以前传了等于没传）。
+
     Returns:
         (success, content)
     """
     try:
-        from ai_engine import call_llm, LLM
+        from ai_engine import LLM
         if not LLM.get('provider'):
             return False, None
-        ok, answer = call_llm(prompt)
+        from ai_client import call_llm_with_resilience
+        ok, answer = call_llm_with_resilience(prompt, max_tokens=max_tokens)
         return ok, answer if ok else None
     except Exception as e:
         logger.error("AI 生成调用失败: %s", e)
