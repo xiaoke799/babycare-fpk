@@ -329,35 +329,65 @@ def get_diaper_report(baby_id):
 
 @bp.route("/api/babies/<int:baby_id>/diaper/batch", methods=["POST"])
 def batch_add_diaper_records(baby_id):
-    """批量添加换尿布记录"""
-    data = json_body()
-    if not data or not data.get("records"):
-        return jsonify({"success": False, "message": "请提供记录数据"}), 400
+    """批量添加换尿布记录。
 
-    records = data["records"]
-    if not isinstance(records, list) or len(records) == 0:
-        return jsonify({"success": False, "message": "记录格式不正确"}), 400
+    ⚠ 本路由与统一批量接口 /api/babies/<id>/batch-records（settings.py）是**同一件事的两个入口**。
+    前端已改走统一接口，本路由保留是为兼容外部集成；因此行为必须与统一接口对齐，
+    否则从旧入口进来的数据会走一套更松的校验：
+      - item 必须是对象（否则 rec.get 直接 AttributeError → 500）；
+      - 时间走 validate_datetime 收口（历史写法 'YYYY-MM-DD HH:MM' 无秒也能收，
+        且统一归一化成库里约定的 'YYYY-MM-DD HH:MM:SS'）；
+      - **一条都没进去不许回 success=True** —— 那会变成"成功添加 0 条记录"的假成功，
+        调用方以为存好了，真原因（errors）却永远看不到。
+    """
+    data = json_body()
+    if not data or not isinstance(data.get("records"), list) or not data["records"]:
+        return jsonify({"success": False, "message": "请提供记录数据"}), 400
 
     db = get_db()
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     inserted = 0
+    errors = []
 
-    for rec in records:
-        diaper_type = rec.get("diaper_type")
-        if not diaper_type:
-            continue
-        change_time = rec.get("change_time", now)
-        db.execute(
-            """INSERT INTO diaper_records
-               (baby_id, change_time, diaper_type, color, skin_condition, brand, note)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (baby_id, change_time, diaper_type, rec.get("color"),
-             rec.get("skin_condition"), rec.get("brand"), rec.get("note", "")),
-        )
-        inserted += 1
+    for idx, rec in enumerate(data["records"]):
+        try:
+            if not isinstance(rec, dict):
+                raise ValueError("记录格式不正确（每条必须是对象）")
+            diaper_type = rec.get("diaper_type")
+            if not diaper_type:
+                raise ValueError("缺少 diaper_type")
+            ok_t, change_time, err_t = validate_datetime(
+                rec.get("change_time") or now, "更换时间"
+            )
+            if not ok_t:
+                raise ValueError(err_t)
+            db.execute(
+                """INSERT INTO diaper_records
+                   (baby_id, change_time, diaper_type, color, skin_condition, brand, note)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (baby_id, change_time, diaper_type, rec.get("color"),
+                 rec.get("skin_condition"), rec.get("brand"), rec.get("note", "")),
+            )
+            inserted += 1
+        except Exception as e:
+            errors.append({"row": idx, "message": str(e)})
 
     db.commit()
-    return jsonify({"success": True, "message": f"成功添加 {inserted} 条记录", "count": inserted})
+
+    if inserted == 0 and errors:
+        return jsonify({
+            "success": False,
+            "message": f"一条都没保存成功：{errors[0]['message']}",
+            "count": 0,
+            "errors": errors,
+        }), 400
+
+    result = {"success": True, "message": f"成功添加 {inserted} 条记录", "count": inserted}
+    if errors:
+        # 部分失败要说清楚，别让失败行淹没在"成功"里
+        result["message"] = f"成功添加 {inserted} 条记录，{len(errors)} 条失败"
+        result["errors"] = errors
+    return jsonify(result)
 
 
 # ==================== API: 获取常用品牌 ====================

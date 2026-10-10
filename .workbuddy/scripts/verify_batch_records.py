@@ -166,6 +166,34 @@ if errors and any(e.get("message") for e in errors):
 else:
     bad("非法时间没有返回可展示的原因（用户只能看到干巴巴的失败）", j)
 
+print("\n=== D. legacy 入口 /diaper/batch 必须与统一接口同口径 ===")
+# 前端已改走 /batch-records，但外部集成可能仍在调 /diaper/batch。
+# 两个入口是「同一件事」，不能一个严一个松：旧实现 item 不校验（非对象直接 500）、
+# 时间硬存原串、且一条都没进去也回 success=True。
+r = client.post(f"/api/babies/{BID}/diaper/batch",
+                json={"records": [{"diaper_type": "wet",
+                                   "change_time": "2026-10-06 14:30", "note": "BDL"}]})
+j = r.get_json() or {}
+if j.get("success") and j.get("count") == 1 and find_in(f"/api/babies/{BID}/diapers", "note", "BDL"):
+    ok("legacy 入口：无秒时间能落库（已被 validate_datetime 收口）")
+else:
+    bad("legacy 入口：无秒时间没能落库", j)
+
+r = client.post(f"/api/babies/{BID}/diaper/batch",
+                json={"records": [{"diaper_type": ""},
+                                  {"diaper_type": "wet", "change_time": "不是时间"}]})
+j = r.get_json() or {}
+if j.get("success") is True and j.get("count") == 0:
+    bad("legacy 入口：success=True 却 0 条入库（假成功）", j)
+else:
+    ok(f"legacy 入口：不谎报成功（success={j.get('success')} count={j.get('count')}）")
+
+r = client.post(f"/api/babies/{BID}/diaper/batch", json={"records": [1, 2]})
+if r.status_code >= 500:
+    bad("legacy 入口：畸形记录项导致 5xx", r.status_code)
+else:
+    ok(f"legacy 入口：畸形记录项不 5xx（{r.status_code}）")
+
 print(f"\n通过 {len(PASS)} 项，失败 {len(FAIL)} 项")
 if FAIL:
     print("\n失败明细：")
