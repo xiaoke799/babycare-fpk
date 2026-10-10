@@ -360,7 +360,11 @@ def ai_chat():
             # 没拿到大模型回答就回退规则引擎 —— 并且**一定**把原因带上
             if not llm_answered:
                 answer = chat_response(question, db, baby_id)
-                if not fallback_reason:
+                # 例外：用户**主动**在模型下拉里选了「规则引擎（本地，无需联网）」
+                # （model_sel == '__rule__' ⇒ force_rule）。这不是失败，不该弹
+                # 「大模型本次没有生效」的黄条 —— 否则还会瞎指路让用户去"选择厂商并填入
+                # API Key"，而他可能早就配好了。前端仍会显示「规则引擎」徽章，信息没丢。
+                if not fallback_reason and not force_rule:
                     fallback_reason = _reason_now()
 
             # 保存 AI 回复

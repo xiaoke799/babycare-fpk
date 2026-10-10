@@ -102,7 +102,8 @@ def call_llm_with_tools(
     Returns:
         (success, final_text_or_None)
     """
-    from ai_engine import LLM, PROVIDER_TEMPLATES, _effective_timeout, llm_trace
+    from ai_engine import (LLM, PROVIDER_TEMPLATES, _effective_timeout, llm_trace,
+                           _set_last_llm_error, get_last_llm_error)
     provider = LLM.get("provider", "")
 
     current_messages: List[Dict[str, Any]] = list(messages)
@@ -115,6 +116,7 @@ def call_llm_with_tools(
         # 与 ai_client 重试层同因：多进程下本 worker 没同步到配置
         llm_trace(trace_id, '④',
                   '工具分支拦截：provider 为空 —— 本 worker 的 LLM 配置未同步，直接失败')
+        _set_last_llm_error('本进程没有同步到大模型配置（provider 为空），请重试或重启应用')
         return False, None
 
     for _round in range(max_rounds):
@@ -130,6 +132,10 @@ def call_llm_with_tools(
             llm_trace(trace_id, '⑦',
                       '工具分支第 %d 轮失败 → 整条工具链放弃（不再重试，因工具调用是明确指定的）'
                       ' 原因=%s' % (_round + 1, str(payload_or_text)[:200]))
+            # 兜底：底层出口若没写具体原因（未来新增出口也算），至少把这一轮的原因带上。
+            # 否则界面只会回一句笼统的"调用失败"，401/模型名错/断网三种处境长得一样。
+            if not get_last_llm_error():
+                _set_last_llm_error(str(payload_or_text) or '大模型调用失败（未给出具体原因）')
             return False, None
 
         if tool_calls:
@@ -182,10 +188,15 @@ def call_llm_with_tools(
         if isinstance(final_text, dict):
             final_text = final_text.get("content") or json.dumps(final_text, ensure_ascii=False)
         if isinstance(final_text, str) and final_text.strip():
+            _set_last_llm_error('')
             return True, final_text
+
+        # 200 但没有可用正文：不是网络/凭据问题，而是模型名或额度
+        _set_last_llm_error('厂商返回了响应但没有可用内容（可能是模型名不对或额度不足）')
         return True, None
 
     logger.warning("工具调用超过最大轮次 %d，返回空", max_rounds)
+    _set_last_llm_error('工具调用超过最大轮次（%d）仍未拿到最终回答' % max_rounds)
     return True, None
 
 
@@ -195,12 +206,14 @@ def _round_ollama(messages, tools, model_override, trace_id=None):
     ⚠ 与 _round_openai_compat 同理：这条路的失败原先也只留一行 warning，
     不说是哪个地址、也不说 Ollama 是不是没起来。
     """
-    from ai_engine import LLM, PROVIDER_TEMPLATES, _effective_timeout, llm_trace
+    from ai_engine import (LLM, PROVIDER_TEMPLATES, _effective_timeout, llm_trace,
+                           _set_last_llm_error)
     url = LLM.get("api_url") or PROVIDER_TEMPLATES["ollama"]["api_url"]
     parsed = urllib.parse.urlparse(url)
     if parsed.hostname not in ("localhost", "127.0.0.1", "::1") and parsed.scheme != "https":
         logger.warning("非本地 Ollama 必须使用 HTTPS")
         llm_trace(trace_id, '⑤', '工具分支拦截：非本地 Ollama 必须 HTTPS，已拒发 url=%s' % url[:120])
+        _set_last_llm_error('非本地 Ollama 地址必须使用 HTTPS，已拒绝发送请求：%s' % url[:120])
         return False, "non-local url", None
 
     payload: Dict[str, Any] = {
@@ -233,20 +246,24 @@ def _round_ollama(messages, tools, model_override, trace_id=None):
         logger.warning("Ollama 调用失败: %s", exc)
         llm_trace(trace_id, '⑥', '工具分支(Ollama) HTTP 错误 status=%s url=%s body=%s'
                   % (getattr(exc, 'code', '?'), url[:120], body))
+        _set_last_llm_error('HTTP %s: %s' % (getattr(exc, 'code', '?'), body or exc))
         return False, str(exc), None
     except urllib.error.URLError as exc:
         logger.warning("Ollama 调用失败: %s", exc)
         llm_trace(trace_id, '⑥', '工具分支(Ollama) 网络不可达 url=%s 原因=%s（Ollama 未启动？）'
                   % (url[:120], exc.reason))
+        _set_last_llm_error('网络不可达: %s' % (getattr(exc, 'reason', exc),))
         return False, str(exc), None
     except (TimeoutError, OSError) as exc:
         logger.warning("Ollama 调用失败: %s", exc)
         llm_trace(trace_id, '⑥', '工具分支(Ollama) 超时/连接异常 url=%s %s: %s'
                   % (url[:120], type(exc).__name__, exc))
+        _set_last_llm_error('超时/连接异常: %s' % (exc,))
         return False, str(exc), None
     except Exception as exc:
         logger.warning("Ollama 调用失败: %s", exc)
         llm_trace(trace_id, '⑥', '工具分支(Ollama) 异常 %s: %s' % (type(exc).__name__, str(exc)[:160]))
+        _set_last_llm_error('%s: %s' % (type(exc).__name__, exc))
         return False, str(exc), None
 
     tool_calls = _should_emit_tool_calls(result)
@@ -275,6 +292,7 @@ def _round_openai_compat(messages, tools, model_override, trace_id=None):
         _effective_timeout,
         decrypt_api_key,
         llm_trace,
+        _set_last_llm_error,
     )
     provider_id = LLM.get("provider", "")
     template = PROVIDER_TEMPLATES.get(provider_id, {})
@@ -325,21 +343,26 @@ def _round_openai_compat(messages, tools, model_override, trace_id=None):
         llm_trace(trace_id, '⑥',
                   '工具分支 HTTP 错误 status=%s url=%s body=%s'
                   % (getattr(exc, 'code', '?'), url[:120], body))
+        # body 里才有真原因（"Model Not Exist" / "Authentication Fails"），别只留一行 warning
+        _set_last_llm_error('HTTP %s: %s' % (getattr(exc, 'code', '?'), body or exc))
         return False, str(exc), None
     except urllib.error.URLError as exc:
         logger.warning("LLM 调用失败: %s", exc)
         llm_trace(trace_id, '⑥',
                   '工具分支 网络不可达 url=%s 原因=%s（NAS 能否访问外网？）' % (url[:120], exc.reason))
+        _set_last_llm_error('网络不可达: %s' % (getattr(exc, 'reason', exc),))
         return False, str(exc), None
     except (TimeoutError, OSError) as exc:
         logger.warning("LLM 调用失败: %s", exc)
         llm_trace(trace_id, '⑥',
                   '工具分支 超时/连接异常 url=%s 耗时上限=%ss %s: %s'
                   % (url[:120], _effective_timeout(), type(exc).__name__, exc))
+        _set_last_llm_error('超时/连接异常: %s' % (exc,))
         return False, str(exc), None
     except Exception as exc:
         logger.warning("LLM 调用失败: %s", exc)
         llm_trace(trace_id, '⑥', '工具分支 异常 %s: %s' % (type(exc).__name__, str(exc)[:160]))
+        _set_last_llm_error('%s: %s' % (type(exc).__name__, exc))
         return False, str(exc), None
 
     llm_trace(trace_id, '⑥', '工具分支 HTTP 200 已返回，解析 choices')

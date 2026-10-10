@@ -64,6 +64,19 @@ def chk(name, cond, detail=None):
     print(("PASS  " if cond else "FAIL  ") + name + ("" if cond else "   <- %s" % (detail,)))
 
 
+def has_real_error(txt):
+    """失败原因里必须带**真实报错**，而不是只有那句笼统的兜底文案。
+
+    只判「非空」是不够的：'调用失败（检查 API Key、模型名或 NAS 外网连通性）'
+    也非空，401 / 模型名不存在 / 断网在这句里长得一模一样，用户没法排查 ——
+    2026-10-10 用户截图报的就是这个（工具分支漏记真实原因）。
+    """
+    t = (txt or '').strip()
+    if '最近一次错误' not in t:
+        return False
+    return len(t.split('最近一次错误', 1)[1].strip()) > 8
+
+
 BOOT = r'''
 import os, sys
 sys.path.insert(0, %r)
@@ -150,10 +163,29 @@ print("FAIL_LLM_ENABLED=" + str(r.get("llm_enabled")))
 print("FAIL_LLM_USED=" + str(r.get("llm_used")))
 print("FAIL_LLM_MODEL=" + str(r.get("llm_model")))
 print("FAIL_REASON=" + str(r.get("fallback_reason")))
+# 同一处境、但走**不带工具**的那套 HTTP 实现（ai_engine._call_*）：
+# 两条路都必须把真实报错带回来。工具分支（ai_engine_tooling）曾漏写 _LAST_LLM_ERROR
+# ⇒ 界面只回一句笼统的"调用失败"，401 / 模型名错 / 断网三种处境长得一模一样。
+r3 = c.post("/api/ai/chat", json={"message": "睡眠怎么样", "baby_id": bid,
+                                  "model": "", "enable_tools": False}).get_json() or {}
+print("FAIL_REASON_NOTOOLS=" + str(r3.get("fallback_reason")))
+# 上面两次失败已把熔断计数推到 4（阈值 5，每次调用含 1 次重试），
+# 先复位，别让后面「测试连接」那几跳被熔断挡住而误报。
+try:
+    from ai_client import reset_circuit_breaker as _reset_cb
+    _reset_cb()
+except Exception:
+    pass
 r2 = c.post("/api/ai/chat", json={"message": "你好", "baby_id": None, "model": ""}).get_json() or {}
 print("NOBABY_MODEL=" + str(r2.get("llm_model")))
 print("NOBABY_USED=" + str(r2.get("llm_used")))
 print("NOBABY_REASON=" + str(r2.get("fallback_reason")))
+# 用户**主动**在下拉里选「规则引擎（本地，无需联网）」时不是失败：
+# 不许回 fallback_reason，否则前端会弹黄条让他去"配置厂商"，而他可能早就配好了。
+rr = c.post("/api/ai/chat", json={"message": "今天该注意什么", "baby_id": bid,
+                                 "model": "__rule__"}).get_json() or {}
+print("RULE_MODEL=" + str(rr.get("llm_model")))
+print("RULE_REASON=" + str(rr.get("fallback_reason")))
 
 # ---- 「留空 = 不修改」：改个温度再保存，不能把已存的 Key 抹掉 ----
 _cfg({
@@ -261,6 +293,10 @@ chk("调用失败时 llm_model 标「规则引擎」（不许标模型名）",
     v.get("FAIL_LLM_MODEL") == "规则引擎",
     {"llm_model": v.get("FAIL_LLM_MODEL"), "注意": "标模型名会让用户以为是大模型答的"})
 chk("调用失败时 llm_used 为 False", v.get("FAIL_LLM_USED") == "False", v.get("FAIL_LLM_USED"))
+chk("🔴 带工具的失败必须回真实报错（工具分支曾漏记 ⇒ 界面只显示笼统『调用失败』）",
+    has_real_error(v.get("FAIL_REASON")), (v.get("FAIL_REASON") or "")[:200])
+chk("🔴 不带工具的失败同样要回真实报错（两套 HTTP 实现口径必须一致）",
+    has_real_error(v.get("FAIL_REASON_NOTOOLS")), (v.get("FAIL_REASON_NOTOOLS") or "")[:200])
 chk("调用失败时带上失败原因", bool((v.get("FAIL_REASON") or "").strip()) and v.get("FAIL_REASON") != "None",
     v.get("FAIL_REASON"))
 chk("llm_enabled 仍为 True（配置没问题，是调用失败）", v.get("FAIL_LLM_ENABLED") == "True",
@@ -270,6 +306,11 @@ chk("无宝宝分支也标「规则引擎」且带原因",
     v.get("NOBABY_MODEL") == "规则引擎" and v.get("NOBABY_USED") == "False"
     and bool((v.get("NOBABY_REASON") or "").strip()) and v.get("NOBABY_REASON") != "None",
     {"model": v.get("NOBABY_MODEL"), "used": v.get("NOBABY_USED"), "reason": v.get("NOBABY_REASON")})
+
+chk("🔴 主动选「规则引擎」不算失败：不弹「大模型没有生效」，也不再瞎指路去配置厂商",
+    v.get("RULE_MODEL") == "规则引擎"
+    and (v.get("RULE_REASON") or "").strip() in ("", "None"),
+    {"model": v.get("RULE_MODEL"), "reason": v.get("RULE_REASON")})
 
 chk("保存时 API Key 留空 = 不修改（改温度不会把已存 Key 抹掉）",
     v.get("BLANK_KEEP_CONFIGURED") == "True" and v.get("BLANK_KEEP_PLAIN") == KEY,
