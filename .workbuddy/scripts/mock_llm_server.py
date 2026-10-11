@@ -170,6 +170,13 @@ def reset():
 
 
 if __name__ == '__main__':
+    import sys
+    import threading
     s, p = start_mock(port=18099)
-    print(f'假厂商已启动 http://127.0.0.1:{p}/v1/chat/completions  (Ctrl-C 退出)')
-    threading.Event().wait()
+    print(f'假厂商已启动 http://127.0.0.1:{p}/v1/chat/completions')
+    if '--serve' in sys.argv:
+        threading.Event().wait()          # 常驻模式（手动调试用）
+    else:
+        # ⚠ 默认**不阻塞**：批量门禁会把 scripts/ 下所有 .py 都跑一遍，
+        #   常驻会把那一跑拖成超时失败（本文件是测试库，不是门禁）。
+        print('（默认不常驻；要常驻加 --serve）')

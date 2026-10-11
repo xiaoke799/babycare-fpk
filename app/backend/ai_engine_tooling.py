@@ -19,12 +19,12 @@ from __future__ import annotations
 
 import json
 import logging
-import urllib.error
-import urllib.parse
-import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
-import utils
+# ⚠ 本模块**不再自己发 HTTP**：出网与错误处理统一走 ai_engine._post_chat_json
+#   （2026-10-10 收敛；此前这里与 ai_engine 各写一份，只补其中一份就酿成
+#    「界面只回笼统调用失败」的故障）。所以这里的 urllib/utils 导入已移除 ——
+#    留着它们会让人以为「这个文件自己发请求」，改的时候又去改错地方。
 
 logger = logging.getLogger(__name__)
 

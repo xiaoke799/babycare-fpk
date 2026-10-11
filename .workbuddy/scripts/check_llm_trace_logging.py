@@ -150,40 +150,49 @@ def main():
     chk("call_llm：未同意外发那一支确实写了日志",
         "llm_trace(" in strip_comments(seg2), "切片=%r" % seg2[:80])
 
-    # ③ 底层 HTTP 三个失败分支
+    # ③ 底层 HTTP 三个失败分支 —— 判据点：共用 helper（2026-10-10 起）
+    # 背景：这段错误处理原先在 _call_openai_compat / _call_ollama /
+    # _round_openai_compat / _round_ollama 里各写一遍（4 份）。只给其中两份
+    # 补东西就酿成过「工具分支不记原因 ⇒ 界面只回笼统调用失败」的故障。
+    # 现在收敛成 ai_engine._post_chat_json 一份 —— **判据强度不变，判据点移到这里**，
+    # 并额外钉死「四条路径都必须经由它」，否则又会出现没留痕的分支。
+    _helper = body_of(eng_raw, "def _post_chat_json(")
+    _hcode = strip_comments(_helper)
+    chk("共用出网 helper 存在（四条路径的唯一出网点）", bool(_helper.strip()))
+    chk("helper：发起请求前留日志（带地址与模型）",
+        "llm_trace(" in _hcode and "url[:120]" in _hcode)
+    chk("helper：HTTPError 分支留日志（含状态码与响应体）",
+        "HTTPError" in _hcode and "llm_trace(" in strip_comments(
+            _helper.split("HTTPError", 1)[-1][:400])
+        and "he.code" in _hcode)
+    chk("helper：URLError 分支留日志",
+        "URLError" in _hcode and "llm_trace(" in strip_comments(
+            _helper.split("URLError", 1)[-1][:400]))
+    chk("helper：超时/连接异常分支留日志",
+        "TimeoutError" in _hcode and "llm_trace(" in strip_comments(
+            _helper.split("TimeoutError", 1)[-1][:400]))
+    chk("helper：兜底 Exception 分支也留日志",
+        "except Exception as exc" in _hcode and "llm_trace(" in _hcode)
     for fn in ("_call_openai_compat", "_call_ollama"):
-        raw = body_of(eng_raw, "def %s(" % fn)
-        body = strip_comments(raw)
-        chk("%s：HTTPError 分支留日志" % fn,
-            "HTTPError" in body and "llm_trace(" in strip_comments(
-                raw.split("HTTPError", 1)[-1][:400]))
-        chk("%s：URLError 分支留日志" % fn,
-            "URLError" in body and "llm_trace(" in strip_comments(
-                raw.split("URLError", 1)[-1][:400]))
-        chk("%s：超时/连接异常分支留日志" % fn,
-            "TimeoutError" in body and "llm_trace(" in strip_comments(
-                raw.split("TimeoutError", 1)[-1][:400]))
-        chk("%s：发起请求前留日志（带地址与模型）" % fn,
-            "llm_trace(" in body and "url[:120]" in body)
+        _b = strip_comments(body_of(eng_raw, "def %s(" % fn))
+        chk("%s 经由共用 helper 出网（否则这条路没留痕）" % fn,
+            "_post_chat_json(" in _b, "没走 helper")
 
-    # ③b 工具调用分支（ai_engine_tooling.py）——2026-10-05 补
+    # ③b 工具调用分支（ai_engine_tooling.py）
     # 背景：带 tools 时走的是另一条路，原先**完全没有 trace**。用户 NAS 日志里那两行
     #   LLM 调用失败: HTTP Error 404: Not Found
     #   LLM 请求失败: HTTP Error 404: Not Found
-    # 就是从这出的，既没地址也没状态码含义。本组锁的就是"这条路也得留痕"。
+    # 就是从这出的，既没地址也没状态码含义。
+    # 现在它的 HTTP 也走共用 helper，于是「这条路也得留痕」由
+    # ①helper 自身的 trace + ②下面的「经由 helper」共同保证。
     tool_raw = src(TOOLING)
-    chk("ai_engine_tooling 有 urllib.error 导入（判 HTTPError 靠它）",
-        "import urllib.error" in strip_comments(tool_raw))
     for fn in ("_round_openai_compat", "_round_ollama"):
         raw = body_of(tool_raw, "def %s(" % fn)
         body = strip_comments(raw)
         chk("%s：走 trace_id 参数" % fn,
             "trace_id" in raw.split(") ->")[0] or "trace_id=None" in raw.split("\n", 1)[0])
-        chk("%s：HTTPError 分支留日志（含状态码与响应体）" % fn,
-            "HTTPError" in body and "llm_trace(" in strip_comments(
-                raw.split("except urllib.error.HTTPError", 1)[-1][:500]))
-        chk("%s：发起请求前留日志（带地址）" % fn,
-            "llm_trace(" in body and "url[:120]" in body)
+        chk("%s：经由共用 helper 出网（错误分支的留痕由 helper 保证）" % fn,
+            "_post_chat_json(" in body and "trace_id" in body, "没走 helper")
     _ctl = body_of(tool_raw, "def call_llm_with_tools(")
     chk("工具分支入口留日志（工具数/模型/轮次）",
         "llm_trace(" in strip_comments(_ctl))

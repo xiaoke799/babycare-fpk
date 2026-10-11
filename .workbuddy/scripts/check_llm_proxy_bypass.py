@@ -67,8 +67,6 @@ SITES = [
     ("ai_engine.py", "call_llm 的 OpenAI 兼容分支"),
     ("ai_engine.py", "Ollama 模型发现 /api/tags"),
     ("ai_engine.py", "LM Studio 模型发现 /v1/models"),
-    ("ai_engine_tooling.py", "工具分支(Ollama)"),
-    ("ai_engine_tooling.py", "工具分支(OpenAI 兼容)"),
 ]
 
 total_bare = 0
@@ -82,6 +80,43 @@ for fname, where in SITES:
     bound = len(re.findall(r"urlopen_bound\(", src))
     total_bound += bound
     chk(bound > 0, "%s / %s 已改用 urlopen_bound" % (fname, where), "还是裸 urlopen")
+
+# ---- 工具分支：出网点判定 ----
+# 2026-10-10 起，四条路径的 HTTP 往返收敛到 ai_engine._post_chat_json 一份
+# （此前 4 份各写一遍，只给其中 2 份补 _set_last_llm_error 就酿成过故障）。
+# 【判据强度不变】仍是「工具分支出网必须走 urlopen_bound、本机地址不走代理」，
+# 只是判据点从「每个函数各自调」移到「经由共用 helper」。
+# ⚠ 位置不对只会告诉你「这里不是判据」，不会告诉你判据坏了 —— 所以这里改判据点，
+#   而不是删掉这条断言。
+_tol_path = os.path.join(BACKEND, "ai_engine_tooling.py")
+if "ai_engine_tooling.py" not in _src_cache:
+    _src_cache["ai_engine_tooling.py"] = io.open(_tol_path, "r", encoding="utf-8").read()
+_tol_src = _src_cache["ai_engine_tooling.py"]
+_eng_src = _src_cache["ai_engine.py"]
+
+
+def _fn_src(src, name):
+    i = src.find("def %s(" % name)
+    if i == -1:
+        return ""
+    j = src.find("\ndef ", i + 1)
+    return src[i:j if j != -1 else len(src)]
+
+
+_helper_src = _fn_src(_eng_src, "_post_chat_json")
+# ⚠ 本文件的 chk 是 chk(cond, name, detail) —— 与 check_llm_trace_logging.py 的
+#   chk(name, cond) **参数顺序相反**。照那边抄过来会变成「条件位收到一个非空字符串」
+#   ⇒ 断言恒真、看着很凶却什么都没测。这里曾真的踩过，靠负向对照才发现。
+chk(bool(_helper_src),
+    "共用出网 helper _post_chat_json 存在（四条路径的唯一出网点）",
+    "找不到，说明出网又被拆开了")
+chk("urlopen_bound(" in _helper_src,
+    "共用 helper 走 urlopen_bound（本机地址不走代理）",
+    "helper 里没用 urlopen_bound")
+for _fn in ("_round_ollama", "_round_openai_compat"):
+    chk("_post_chat_json(" in _fn_src(_tol_src, _fn),
+        "工具分支 %s 经由共用 helper 出网" % _fn,
+        "没走共用 helper —— HTTP 与错误处理又会分叉")
 
 # 🔴 计数与明细**必须按文件扫一次**，不能塞在 SITES 循环里 —— SITES 里有
 #    4 项都指向 ai_engine.py，逐项累加会把同一行数 4 遍（实测报「8 处」、
