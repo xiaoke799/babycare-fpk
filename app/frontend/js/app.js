@@ -833,8 +833,9 @@ function initMascot() {
                     chatBody.scrollTop = chatBody.scrollHeight;
                     handleMascotQuery(kind);
                 } else {
-                    chatInput.value = q;
-                    sendMsg();
+                    // 固定话术类问题：走本地规则引擎，**不需要大模型**，
+                    // 所以没配 API 时这些按钮照常可用（这正是不该混的地方）。
+                    askRuleEngine(q);
                 }
             });
             container.appendChild(btn);
@@ -877,15 +878,17 @@ function initMascot() {
             if (Array.isArray(data.tool_events) && data.tool_events.length > 0) {
                 data.tool_events.forEach(ev => appendToolEventCard(ev));
             }
-            appendBotMsg(data.answer || '抱歉，我暂时回答不了这个问题，换个方式问问？', data.llm_model || '');
-            // 大模型没生效时把原因亮出来——之前静默回退规则引擎，用户以为"接入了但 AI 装傻"。
-            // ⚠ 判据用 llm_used，不要拿模型名字符串猜：以前只判 llm_model === '规则引擎'，
-            //    而「配置看着没问题、调用却失败（key 坏 / 外网不通 / 已熔断）」时后端标的是
-            //    模型名 ⇒ 这套提示在最常见的失败场景下永远不出现。
-            const _usedLLM = data.llm_used === true
-                || (data.llm_used === undefined && !!data.llm_model && data.llm_model !== '规则引擎');
-            if (!_usedLLM && data.fallback_reason) {
-                appendFallbackNotice(data.fallback_reason);
+            // 🔴 输入框是**纯 AI**（2026-10-11 用户要求把规则引擎与 AI 分开）。
+            // 以前大模型没答上来就用规则引擎顶一条固定话术、再弹黄条解释 —— 用户的感受是
+            // 「AI 在装傻」，因为他分不出哪句是模型说的、哪句是本地模板。
+            // 现在：有回答才显示回答（带 via 模型名）；没回答就如实说没回答、把真实原因给出来，
+            // 并且**绝不**拿规则引擎的话术冒充。想要固定话术请点旁边的快捷回复按钮。
+            if (data.llm_used === true && data.answer) {
+                appendBotMsg(data.answer, data.llm_model || '');
+            } else {
+                appendChatUnavailable(data.fallback_reason || '大模型本次没有给出回答',
+                                      data.need_config === true);
+                if (data.llm_available === false) refreshChatAvailability();
             }
             setTimeout(() => setMascotState(null), 2000);
         })
@@ -926,15 +929,52 @@ function initMascot() {
     }
 
     // 渲染 AI 工具调用事件卡片（在小萌对话中显示 AI 执行了哪些操作）
-    // 大模型未生效的说明条：淡黄底小字，告诉用户这次为什么是规则引擎在答、去哪修
-    function appendFallbackNotice(reason) {
+    // 「这次没能回答」的说明条。
+    // 文案刻意不再声称"由本地引擎作答"—— 那种混淆正是这次要消掉的：
+    // 规则引擎只会回固定话术，拿它冒充 AI 的回答，用户根本分不出来。
+    function appendChatUnavailable(reason, needConfig) {
         const wrap = document.createElement('div');
         wrap.className = 'chat-msg bot chat-fallback-note';
-        wrap.innerHTML = '<b>大模型本次没有生效</b>（' + escapeHtml(String(reason || '未知原因')) +
-            '），所以由本地规则引擎回答。可到<b> 设置 → AI 大模型</b> 检查厂商、API Key 与'
-            + '「同意数据发送至云端」后重试。';
+        wrap.innerHTML = '<b>这次没能回答</b>（' + escapeHtml(String(reason || '未知原因')) + '）。'
+            + (needConfig
+                ? '聊天需要先在 设置 → AI 大模型 里配置；旁边的快捷回复不受影响，仍然可用。'
+                : '可以稍后再试；旁边的快捷回复不受影响，仍然可用。');
+        if (needConfig) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'chat-goto-settings';
+            btn.textContent = '去设置';
+            btn.addEventListener('click', gotoAISettings);
+            wrap.appendChild(btn);
+        }
         chatBody.appendChild(wrap);
         chatBody.scrollTop = chatBody.scrollHeight;
+    }
+
+    // 点击回复：走本地规则引擎（/api/ai/quick-answer），**不依赖大模型配置**。
+    // 固定话术类问题（"睡眠不好怎么办？"等）走这里；数据查询类走 handleMascotQuery。
+    function askRuleEngine(question) {
+        const userMsg = document.createElement('div');
+        userMsg.className = 'chat-msg user';
+        userMsg.textContent = question;
+        chatBody.appendChild(userMsg);
+        chatBody.scrollTop = chatBody.scrollHeight;
+        const typingEl = showTyping();
+        api('/api/ai/quick-answer', {
+            method: 'POST',
+            body: JSON.stringify({ message: question, baby_id: App.currentBaby || null })
+        }).then(res => {
+            typingEl.remove();
+            if (res && res.success && res.answer) {
+                // 显式标注「本地回复」：让用户一眼看出这条不是模型答的
+                appendBotMsg(res.answer, '本地回复');
+            } else {
+                appendChatUnavailable((res && res.message) || '本地回复生成失败', false);
+            }
+        }).catch(() => {
+            typingEl.remove();
+            appendChatUnavailable('本地回复生成失败，请稍后再试', false);
+        });
     }
     const _TOOL_LABELS = {
         query_baby_info: '查询宝宝信息',
@@ -7589,7 +7629,7 @@ function updateStatusBadge() {
         badge.textContent = llmProviders[provider].name;
         badge.classList.add('active');
     } else {
-        badge.textContent = '规则引擎';
+        badge.textContent = '未启用';
         badge.classList.remove('active');
     }
 }
@@ -7753,7 +7793,9 @@ function loadLLMProviders() {
         if (!select) return;
 
         // 保留第一个"关闭"选项
-        select.innerHTML = '<option value="">关闭（使用规则引擎）</option>';
+        // 「关闭」= 不启用 AI 对话（不是"改用规则引擎回答"）。
+        // 规则引擎现在只服务点击回复，不参与聊天。
+        select.innerHTML = '<option value="">关闭（不启用 AI 对话）</option>';
 
         // 按分组添加提供商
         if (llmProviderGroups && llmProviderGroups.length > 0) {
@@ -8049,7 +8091,9 @@ function saveLLMConfig(config) {
             const tip = document.getElementById('llmTip');
             if (res.success) {
                 if (tip) {
-                    tip.textContent = gated.provider ? '大模型配置已保存' : '已切换到规则引擎';
+                    tip.textContent = gated.provider
+                        ? '大模型配置已保存'
+                        : '已关闭 AI 对话（聊天输入将不可用；点击回复仍可用）';
                     tip.style.color = 'var(--success-color)';
                     tip.style.display = 'block';
                     setTimeout(() => { tip.style.display = 'none'; }, 2000);
@@ -8320,16 +8364,92 @@ function loadLLMStatus() {
         const badge = document.getElementById('aiLLMBadge');
         if (!badge) return;
 
-        if (status.enabled) {
+        // 徽章显示的是「聊天能不能用」，不再显示「规则引擎」——
+        // 规则引擎已经不在聊天链路里了（它只服务点击回复），标它等于骗人。
+        if (status.chat_usable) {
             badge.textContent = ` ${status.provider_name || status.model || 'LLM'}`;
             badge.style.background = 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)';
         } else {
-            badge.textContent = ' 规则引擎';
+            badge.textContent = ' 未配置大模型';
             badge.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
         }
+        // 判据由后端给（ai_engine.llm_usability），前端只负责据此禁用输入框 ——
+        // 自己拼 provider/consent/key 三个条件必然与后端漂移，
+        // 结果就是「界面说能用、点了没反应」。
+        applyChatAvailability(status.chat_usable === true,
+                              status.chat_unusable_reason || '',
+                              status.chat_need_config === true);
     }).catch(() => {
         const badge = document.getElementById('aiLLMBadge');
-        if (badge) badge.textContent = ' 规则引擎';
+        if (badge) badge.textContent = ' 状态未知';
+        // 状态都拉不到（网络抖动）时不要锁死输入框，让用户至少能试一次
+        applyChatAvailability(true, '', false);
+    });
+}
+
+// ==================== 聊天可用性（AI 页 + 小萌弹窗共用一份实现） ====================
+function refreshChatAvailability() {
+    // 状态变了（比如刚配置完、或一次调用失败后熔断）时重新拉一次
+    if (typeof loadLLMStatus === 'function') loadLLMStatus();
+}
+
+function gotoAISettings() {
+    const chat = document.getElementById('xiaomengChat');
+    if (chat) chat.classList.remove('active');   // 从小萌弹窗点进来时先关掉弹窗
+    switchPage('settings');
+    const sec = document.getElementById('llmSettingsSection');
+    if (sec && sec.scrollIntoView) {
+        sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+function _syncChatHint(hostEl, usable, reason, needConfig) {
+    if (!hostEl) return;
+    let hint = hostEl.querySelector('.chat-availability-hint');
+    if (usable) {
+        if (hint) hint.remove();
+        return;
+    }
+    if (!hint) {
+        hint = document.createElement('div');
+        hint.className = 'chat-availability-hint';
+        const txt = document.createElement('span');
+        txt.className = 'chat-availability-text';
+        hint.appendChild(txt);
+        hostEl.insertBefore(hint, hostEl.firstChild);
+    }
+    const txt = hint.querySelector('.chat-availability-text');
+    // 一句话说清三件事：为什么不可用、点了会怎样、什么还能用
+    txt.textContent = (reason || '大模型暂不可用')
+        + '（聊天输入暂不可用；旁边的快捷回复不受影响）';
+    if (needConfig && !hint.querySelector('.chat-goto-settings')) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'chat-goto-settings';
+        b.textContent = '去设置';
+        b.addEventListener('click', gotoAISettings);
+        hint.appendChild(b);
+    }
+}
+
+function applyChatAvailability(usable, reason, needConfig) {
+    const targets = [
+        ['aiChatInput', 'aiSendBtn', '输入你的问题，如：6个月宝宝该添加什么辅食？', '.ai-chat-input-area'],
+        ['xiaomengInput', 'xiaomengSend', '和小萌说点什么…', '.pet-chat-input'],
+    ];
+    targets.forEach(([inputId, btnId, ph, hostSel]) => {
+        const input = document.getElementById(inputId);
+        const btn = document.getElementById(btnId);
+        if (input) {
+            input.disabled = !usable;
+            input.placeholder = usable ? ph : '未配置大模型，聊天暂不可用';
+        }
+        if (btn) {
+            btn.disabled = !usable;
+            btn.title = usable ? '' : (reason || '未配置大模型');
+        }
+        const host = input ? input.closest(hostSel) : null;
+        _syncChatHint(host, usable, reason, needConfig);
     });
 }
 
@@ -8383,20 +8503,22 @@ function initAIChat() {
             })
         }).then(res => {
             removeLoadingMessage(loadingId);
-            if (res.success) {
+            // 🔴 只有 llm_used 为真才算"答出来了"。以前只判 res.success ——
+            // 而后端现在「没答上来」时 success 仍是 true、answer 是 null，
+            // 直接 addChatMessage('bot', null) 会渲染出一片空白，比报错更让人摸不着头脑。
+            if (res.success && res.llm_used === true && res.answer) {
                 addChatMessage('bot', res.answer);
-                // 显示回答来源徽章
-                if (res.llm_enabled) {
-                    showLLMIndicator(res.llm_model);
-                } else {
-                    loadLLMStatus();
-                }
+                showLLMIndicator(res.llm_model);
+            } else if (res.success) {
+                addChatMessage('notice', (res.fallback_reason || '大模型本次没有给出回答')
+                    + (res.need_config ? '。可到 设置 → AI 大模型 配置后重试。' : '。'));
+                if (res.llm_available === false || res.need_config === true) refreshChatAvailability();
             } else {
-                addChatMessage('bot', '抱歉，我暂时无法回答这个问题。请稍后再试。');
+                addChatMessage('notice', res.message || '这次没能回答，请稍后再试。');
             }
         }).catch(() => {
             removeLoadingMessage(loadingId);
-            addChatMessage('bot', '网络错误，请检查连接后重试。');
+            addChatMessage('notice', '网络错误，请检查连接后重试。');
         });
     };
 
@@ -8405,15 +8527,14 @@ function initAIChat() {
         if (e.key === 'Enter') sendMessage();
     });
 
-    // 快捷问题按钮 + 常见问题 chips（点击直接发送并回复）
+    // 侧边栏「常见问题」按钮 = **点击回复**（本地规则引擎，不需要大模型配置）；
+    // 只有输入框里打字才走大模型。两者刻意分开：规则引擎只会回固定话术，
+    // 让它冒充 AI 的回答，用户分不出哪句是模型说的、哪句是本地模板。
     document.querySelectorAll('.ai-quick-btn, .ai-faq-chip').forEach(btn => {
         if (btn.id) return;  // 一键分析/清除历史等已有专门绑定
         btn.addEventListener('click', () => {
             const question = btn.dataset.question;
-            if (question) {
-                input.value = question;
-                sendMessage();
-            }
+            if (question) askRuleAnswer(question);
         });
     });
 
@@ -8445,8 +8566,11 @@ function fillChatModelSelect(sel) {
     if (!sel) return;
     const prev = App.aiChatModel || '';
     sel.innerHTML = '';
+    // 🔴 不再提供「规则引擎」这个"模型"选项（2026-10-11）：
+    // 规则引擎不是一个模型，它只是固定话术。把它摆在"回答模型"下拉里，
+    // 用户会以为它和 deepseek 是同类东西 —— 这正是"两个功能混淆"的来源。
+    // 想要固定话术请用侧边栏的「常见问题」按钮（走 /api/ai/quick-answer）。
     sel.add(new Option('跟随设置（默认）', ''));
-    sel.add(new Option('规则引擎（本地，无需联网）', '__rule__'));
 
     // 拉取当前配置的提供商及可用模型列表
     Promise.all([api('/api/ai/llm/status'), api('/api/ai/llm/providers')]).then(([stRes, prRes]) => {
@@ -8474,13 +8598,36 @@ function initChatModelSelect() {
     fillChatModelSelect(document.getElementById('aiModelSelect'));
 }
 
-function addChatMessage(role, content) {
+// 点击回复：走本地规则引擎（/api/ai/quick-answer），不依赖大模型配置。
+// 与 sendMessage() 刻意分开成两条路，避免又混回去。
+function askRuleAnswer(question) {
+    addChatMessage('user', question);
+    const loadingId = addLoadingMessage();
+    api('/api/ai/quick-answer', {
+        method: 'POST',
+        body: JSON.stringify({ message: question, baby_id: App.currentBaby || null })
+    }).then(res => {
+        removeLoadingMessage(loadingId);
+        if (res && res.success && res.answer) {
+            addChatMessage('bot', res.answer, '本地回复');
+        } else {
+            addChatMessage('notice', (res && res.message) || '本地回复生成失败');
+        }
+    }).catch(() => {
+        removeLoadingMessage(loadingId);
+        addChatMessage('notice', '本地回复生成失败，请稍后再试。');
+    });
+}
+
+function addChatMessage(role, content, tag) {
     const container = document.getElementById('aiChatMessages');
     if (!container) return;
 
     const messageDiv = document.createElement('div');
-    // analysis 类型使用特殊样式
-    const cssClass = role === 'analysis' ? 'ai-message ai-message-analysis' : `ai-message ai-message-${role}`;
+    // analysis 类型使用特殊样式；notice 用于「没能回答」这类提示
+    const cssClass = (role === 'analysis' || role === 'notice')
+        ? `ai-message ai-message-${role}`
+        : `ai-message ai-message-${role}`;
     messageDiv.className = cssClass;
 
     const avatar = document.createElement('div');
@@ -8499,6 +8646,14 @@ function addChatMessage(role, content) {
         p.textContent = line || ' ';
         contentDiv.appendChild(p);
     });
+
+    // 来源标签：显式标注「本地回复」，让用户一眼看出这条不是模型答的
+    if (tag) {
+        const t = document.createElement('span');
+        t.className = 'ai-message-tag';
+        t.textContent = 'via ' + tag;
+        contentDiv.appendChild(t);
+    }
 
     messageDiv.appendChild(avatar);
     messageDiv.appendChild(contentDiv);

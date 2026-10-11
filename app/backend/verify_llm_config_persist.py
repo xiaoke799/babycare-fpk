@@ -19,10 +19,11 @@
   A. 同进程：保存后立即解密 == 原文
   B. **新进程**：重启同步后解密 == 原文（这条是 P0 的守门人）
   C. 新进程：自定义模型没丢
-  D. 调用失败时 llm_model 标「规则引擎」且带 fallback_reason
+  D. 调用失败时 **answer 为空**、不标模型名、带 fallback_reason
      （用本地不可达地址造失败，**不依赖外网**）
-  E. 无宝宝 id 分支也要带原因
-  F. 前端不靠模型名字符串判断是否回退（必须认 llm_used）
+     2026-10-11 起不再拿规则引擎回退聊天 —— 规则引擎只服务点击回复
+  E. 无宝宝 id 分支也不再降级成规则引擎，同样带真实原因
+  F. 前端按 llm_used / llm_available 渲染，并按后端 chat_usable 禁用输入框
   G. **老库脏值在重启回灌时被修正并落盘**（2026-10-05 第三轮补）
      老版本落库时值不校验 ⇒ 磁盘上可能躺着 temperature='abc'、timeout=99999、
      max_tokens=-5，甚至指向已退役模型的 model。configure_llm 的收口只管内存，
@@ -162,6 +163,7 @@ r = c.post("/api/ai/chat", json={"message": "今天该注意什么", "baby_id": 
 print("FAIL_LLM_ENABLED=" + str(r.get("llm_enabled")))
 print("FAIL_LLM_USED=" + str(r.get("llm_used")))
 print("FAIL_LLM_MODEL=" + str(r.get("llm_model")))
+print("FAIL_ANSWER=" + str(r.get("answer")))
 print("FAIL_REASON=" + str(r.get("fallback_reason")))
 # 同一处境、但走**不带工具**的那套 HTTP 实现（ai_engine._call_*）：
 # 两条路都必须把真实报错带回来。工具分支（ai_engine_tooling）曾漏写 _LAST_LLM_ERROR
@@ -179,12 +181,14 @@ except Exception:
 r2 = c.post("/api/ai/chat", json={"message": "你好", "baby_id": None, "model": ""}).get_json() or {}
 print("NOBABY_MODEL=" + str(r2.get("llm_model")))
 print("NOBABY_USED=" + str(r2.get("llm_used")))
+print("NOBABY_ANSWER=" + str(r2.get("answer")))
 print("NOBABY_REASON=" + str(r2.get("fallback_reason")))
 # 用户**主动**在下拉里选「规则引擎（本地，无需联网）」时不是失败：
 # 不许回 fallback_reason，否则前端会弹黄条让他去"配置厂商"，而他可能早就配好了。
 rr = c.post("/api/ai/chat", json={"message": "今天该注意什么", "baby_id": bid,
                                  "model": "__rule__"}).get_json() or {}
 print("RULE_MODEL=" + str(rr.get("llm_model")))
+print("RULE_ANSWER=" + str(rr.get("answer")))
 print("RULE_REASON=" + str(rr.get("fallback_reason")))
 
 # ---- 「留空 = 不修改」：改个温度再保存，不能把已存的 Key 抹掉 ----
@@ -289,9 +293,12 @@ chk("多次请求后仍然 == 原文（不会每次请求再加密一遍）",
 chk("新进程：自定义模型没丢", CUSTOM in (v.get("NEW_PROC_CUSTOM") or ""), v.get("NEW_PROC_CUSTOM"))
 chk("新进程：status.enabled 为 True", v.get("ENABLED") == "True", v.get("ENABLED"))
 
-chk("调用失败时 llm_model 标「规则引擎」（不许标模型名）",
-    v.get("FAIL_LLM_MODEL") == "规则引擎",
-    {"llm_model": v.get("FAIL_LLM_MODEL"), "注意": "标模型名会让用户以为是大模型答的"})
+# 2026-10-11 起聊天输入是**纯 AI**：失败时不再拿规则引擎顶一条固定话术，
+# 所以 llm_model 也不再标「规则引擎」（标了等于说"这是本地答的"，而其实什么都没答）。
+chk("🔴 调用失败时不拿规则引擎冒充回答：answer 为空、也不标任何模型名",
+    v.get("FAIL_ANSWER") in ("None", "") and v.get("FAIL_LLM_MODEL") == "",
+    {"answer": v.get("FAIL_ANSWER"), "llm_model": v.get("FAIL_LLM_MODEL"),
+     "注意": "回退成规则引擎话术，用户就分不出哪句是模型说的了"})
 chk("调用失败时 llm_used 为 False", v.get("FAIL_LLM_USED") == "False", v.get("FAIL_LLM_USED"))
 chk("🔴 带工具的失败必须回真实报错（工具分支曾漏记 ⇒ 界面只显示笼统『调用失败』）",
     has_real_error(v.get("FAIL_REASON")), (v.get("FAIL_REASON") or "")[:200])
@@ -302,15 +309,18 @@ chk("调用失败时带上失败原因", bool((v.get("FAIL_REASON") or "").strip
 chk("llm_enabled 仍为 True（配置没问题，是调用失败）", v.get("FAIL_LLM_ENABLED") == "True",
     v.get("FAIL_LLM_ENABLED"))
 
-chk("无宝宝分支也标「规则引擎」且带原因",
-    v.get("NOBABY_MODEL") == "规则引擎" and v.get("NOBABY_USED") == "False"
+chk("🔴 没选宝宝也不再降级成规则引擎（以前这条会回一句固定话术）",
+    v.get("NOBABY_USED") == "False" and v.get("NOBABY_MODEL") == ""
+    and v.get("NOBABY_ANSWER") in ("None", "")
     and bool((v.get("NOBABY_REASON") or "").strip()) and v.get("NOBABY_REASON") != "None",
-    {"model": v.get("NOBABY_MODEL"), "used": v.get("NOBABY_USED"), "reason": v.get("NOBABY_REASON")})
+    {"used": v.get("NOBABY_USED"), "answer": v.get("NOBABY_ANSWER"),
+     "reason": v.get("NOBABY_REASON")})
 
-chk("🔴 主动选「规则引擎」不算失败：不弹「大模型没有生效」，也不再瞎指路去配置厂商",
-    v.get("RULE_MODEL") == "规则引擎"
-    and (v.get("RULE_REASON") or "").strip() in ("", "None"),
-    {"model": v.get("RULE_MODEL"), "reason": v.get("RULE_REASON")})
+# __rule__ 已从"回答模型"下拉里移除；老前端若还传，后端当"跟随设置"处理。
+# 判据落在最要紧的一点上：**传了它也不许让规则引擎来回答聊天**。
+chk("🔴 传 __rule__ 不再触发规则引擎回答（那个选项已从下拉移除）",
+    v.get("RULE_MODEL") == "" and v.get("RULE_ANSWER") in ("None", ""),
+    {"model": v.get("RULE_MODEL"), "answer": v.get("RULE_ANSWER")})
 
 chk("保存时 API Key 留空 = 不修改（改温度不会把已存 Key 抹掉）",
     v.get("BLANK_KEEP_CONFIGURED") == "True" and v.get("BLANK_KEEP_PLAIN") == KEY,
@@ -335,8 +345,13 @@ chk("测试连接：模型不在可用列表 ⇒ model_ok 为 False 且给出可
 
 # ---------- F：前端判据 ----------
 js = io.open(os.path.join(ROOT, "app", "frontend", "js", "app.js"), "r", encoding="utf-8").read()
-chk("前端用 llm_used 判断是否回退（不再靠模型名字符串猜）",
-    "data.llm_used" in js and "appendFallbackNotice" in js)
+chk("🔴 前端按 llm_used / llm_available 渲染（不再靠模型名字符串猜）",
+    "data.llm_used === true" in js and "data.llm_available === false" in js
+    and "appendChatUnavailable" in js)
+chk("🔴 前端不再说「由本地规则引擎回答」（那是被拆掉的混淆行为）",
+    "所以由本地规则引擎回答" not in js and "appendFallbackNotice" not in js)
+chk("前端按后端给的 chat_usable 禁用输入框（不自己拼 provider/consent/key 条件）",
+    "applyChatAvailability" in js and "status.chat_usable" in js)
 chk("后端响应里带了 llm_used 字段",
     "llm_used" in io.open(os.path.join(BACKEND, "blueprints", "ai.py"),
                           "r", encoding="utf-8").read())

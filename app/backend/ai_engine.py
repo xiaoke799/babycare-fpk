@@ -2030,6 +2030,43 @@ def chat_with_llm(question, db=None, baby_id=None):
     return chat_response(question, db, baby_id)
 
 
+def llm_usability():
+    """聊天输入到底能不能用 —— **全应用唯一的判据**。
+
+    为什么要单独一个函数：2026-10-11 用户明确要求「规则引擎和 AI 分开」——
+    规则引擎只服务点击回复（快捷按钮），聊天输入是纯 AI，没配好就**不给用**，
+    不许再悄悄拿规则引擎顶上冒充 AI 的回答。
+
+    于是前端要禁用输入框、后端要拒绝发起调用，两处必须用**同一个判据**，
+    否则会出现「界面说能用、点了没反应」或者反过来。
+    判据与 ai_client._call_llm_with_retry 的拦截条件严格一致，
+    并额外要求云端厂商必须填了 Key（没 Key 只会拿到 401，不如提前说清）。
+
+    返回 (usable: bool, reason: str, need_config: bool)
+      need_config=True 表示这是**没配好**（去设置就能解决），
+      False 表示配置看着没问题、但这次调用失败（可重试/查网络）。
+    """
+    provider = (LLM.get('provider') or '').strip()
+    if not provider:
+        return False, '还没有配置大模型：请到 设置 → AI 大模型 选择厂商并填入 API Key', True
+
+    is_local = provider in ('ollama', 'lmstudio')
+    try:
+        key_ok = bool(decrypt_api_key(LLM.get('api_key') or ''))
+    except Exception:
+        key_ok = bool(LLM.get('api_key'))
+
+    if not is_local and not LLM.get('consent_cloud'):
+        return False, ('云端大模型需要先勾选「同意数据发送至云端」：'
+                       '设置 → AI 大模型 → 勾选后保存'), True
+    if not is_local and not key_ok:
+        return False, '没有填入 API Key：请到 设置 → AI 大模型 填入后保存', True
+    backend = (LLM.get('model') or '').strip()
+    if not backend:
+        return False, '还没有选择模型：请到 设置 → AI 大模型 选择模型后保存', True
+    return True, '', False
+
+
 def get_llm_status():
     """获取 LLM 状态（不含 API Key 明文，只返回脱敏状态）"""
     provider = LLM['provider']

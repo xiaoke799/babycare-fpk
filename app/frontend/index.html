@@ -1408,9 +1408,9 @@
                     </span>
                     <div class="settings-card-head-text">
                         <div class="settings-card-title">AI 大模型</div>
-                        <div class="settings-card-desc">配置后可获得更智能的 AI 回答，未配置时使用本地规则引擎（无需联网）</div>
+                        <div class="settings-card-desc">配置后才可使用 AI 对话（聊天输入）。旁边那些「点击回复」按钮走本地规则引擎，无需配置。</div>
                     </div>
-                    <span class="llm-status-badge" id="llmStatusBadge">规则引擎</span>
+                    <span class="llm-status-badge" id="llmStatusBadge">未启用</span>
                 </div>
 
                 <div class="llm-panel">
@@ -1421,7 +1421,7 @@
                             <a href="#" class="llm-get-key-link" id="getKeyLink" target="_blank" rel="noopener" style="display:none;">查看文档</a>
                         </div>
                         <select id="llmProvider" class="settings-select settings-select-block">
-                            <option value="">关闭（使用规则引擎）</option>
+                            <option value="">关闭（不启用 AI 对话）</option>
                         </select>
                     </div>
 
@@ -2402,7 +2402,7 @@
 <section class="page" id="page-ai">
     <div class="ai-header">
         <h3 class="section-title"> AI 智能助手</h3>
-        <span class="ai-badge" id="aiLLMBadge">规则引擎</span>
+        <span class="ai-badge" id="aiLLMBadge">未配置大模型</span>
     </div>
     <div class="ai-container">
         <!-- 侧边栏：常见问题（点击直接回复）与数据查询 -->

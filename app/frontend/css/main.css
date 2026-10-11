@@ -14787,3 +14787,79 @@ input:checked + .toggle-slider:before {
 .chat-fallback-note b {
     color: var(--text-primary);
 }
+
+
+/* ==================== 聊天可用性提示（2026-10-11） ==================== */
+/* 未配置大模型时：输入框禁用 + 输入区上方一条说明 + 「去设置」。
+   规则引擎与 AI 对话分开后，必须让用户一眼看懂"哪个能用、哪个不能用"。 */
+.chat-availability-hint {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 0 0 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(102, 126, 234, 0.10);
+    border: 1px solid rgba(102, 126, 234, 0.30);
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.chat-availability-hint .chat-availability-text {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.chat-goto-settings {
+    flex: 0 0 auto;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(102, 126, 234, 0.55);
+    background: transparent;
+    color: #667eea;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.chat-goto-settings:hover {
+    background: rgba(102, 126, 234, 0.14);
+}
+
+/* 输入框禁用态：明确"这里现在不能用" */
+.ai-chat-input-area input:disabled,
+.pet-chat-input input:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
+.ai-chat-input-area .btn:disabled,
+.pet-chat-input .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+/* 「没能回答」的提示消息（AI 页） */
+.ai-message-notice .ai-message-content {
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: 8px;
+    color: var(--text-secondary);
+}
+
+.ai-message-notice .ai-message-content p {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+/* 来源标签：让"本地回复"和"模型回答"一眼可分 */
+.ai-message-tag {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(148, 163, 184, 0.20);
+    color: var(--text-secondary);
+    font-size: 11px;
+}

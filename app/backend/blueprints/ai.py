@@ -233,9 +233,13 @@ def ai_chat():
 
         question = data['message']
         baby_id = data.get('baby_id')
-        # 对话内选择的回答模型：''=跟随全局设置；'__rule__'=强制规则引擎；其他=临时指定模型
+        # 对话内选择的回答模型：''=跟随全局设置；其他=临时指定模型
+        # 2026-10-11：不再支持「强制规则引擎」这个选项 —— 规则引擎已独立成
+        # /api/ai/quick-answer（专供点击回复），聊天输入只走大模型，两者不混。
+        # 老前端若还传 '__rule__'，这里当成"跟随全局设置"，不再让规则引擎冒充回答。
         model_sel = str(data.get('model') or '').strip()
-        force_rule = model_sel == '__rule__'
+        if model_sel == '__rule__':
+            model_sel = ''
         enable_tools = bool(data.get('enable_tools', True))
         max_tool_rounds = _safe_max_tool_rounds(data.get('max_tool_rounds', 5))
         db = get_db() if baby_id else None
@@ -244,7 +248,7 @@ def ai_chat():
         if db and baby_id:
             from ai_engine import (
                 save_chat_message, get_chat_context,
-                chat_response, LLM, PROVIDER_TEMPLATES,
+                LLM, PROVIDER_TEMPLATES,
                 _get_baby_context as _build_baby_ctx,
             )
 
@@ -263,7 +267,6 @@ def ai_chat():
             llm_answered = False     # 这次回答是否**真的**来自大模型（回退时必须是 False）
 
             provider_now = (LLM.get('provider') or '').strip()
-            is_local_provider = provider_now in ('ollama', 'lmstudio')
 
             def _reason_now():
                 breaker_state = ''
@@ -288,13 +291,14 @@ def ai_chat():
                     last_err,
                 )
 
-            # 可用性判定与 ai_client._call_llm_with_retry 的拦截条件保持一致：
-            # 云端厂商未同意数据外发时必然被静默拦截，提前视为不可用并给出明确原因，
-            # 免得白烧两次重试 + 熔断计数。
-            llm_enabled = bool(provider_now) and not force_rule \
-                and (is_local_provider or LLM.get('consent_cloud'))
-            if not llm_enabled and not force_rule:
-                fallback_reason = _reason_now()
+            # 可用性判定：与前端「能不能用」共用同一个判据（ai_engine.llm_usability），
+            # 免得出现「界面说能用、点了没反应」或者反过来。
+            # 判据同时覆盖了 ai_client._call_llm_with_retry 的拦截条件（provider 为空 /
+            # 云端未同意外发），所以到不了这里就白烧两次重试 + 熔断计数。
+            from ai_engine import llm_usability
+            llm_enabled, usable_reason, need_config = llm_usability()
+            if not llm_enabled:
+                fallback_reason = usable_reason
 
             if llm_enabled:
                 from ai_client import call_llm_with_resilience
@@ -357,14 +361,14 @@ def ai_chat():
                 if not llm_answered:
                     answer = None
 
-            # 没拿到大模型回答就回退规则引擎 —— 并且**一定**把原因带上
+            # 🔴 不拿到大模型回答就**不回退规则引擎**（2026-10-11 用户要求把两者分开）：
+            # 聊天输入是纯 AI 功能。以前用规则引擎顶上、再弹一条黄条解释，用户的感受是
+            # 「AI 在装傻」—— 因为规则引擎只会死板地回那几句固定话术，读者分不出哪句是
+            # 模型说的、哪句是本地模板。现在失败就如实说失败，答案留空由前端显示原因；
+            # 想拿固定话术请用旁边的「点击回复」按钮（走 /api/ai/quick-answer）。
             if not llm_answered:
-                answer = chat_response(question, db, baby_id)
-                # 例外：用户**主动**在模型下拉里选了「规则引擎（本地，无需联网）」
-                # （model_sel == '__rule__' ⇒ force_rule）。这不是失败，不该弹
-                # 「大模型本次没有生效」的黄条 —— 否则还会瞎指路让用户去"选择厂商并填入
-                # API Key"，而他可能早就配好了。前端仍会显示「规则引擎」徽章，信息没丢。
-                if not fallback_reason and not force_rule:
+                answer = None
+                if not fallback_reason:
                     fallback_reason = _reason_now()
 
             # 保存 AI 回复
@@ -380,9 +384,11 @@ def ai_chat():
             # 结果那套提示在**最常见**的失败场景下永远不出现。
             if llm_answered:
                 used_model = (model_sel or LLM.get('model')
-                              or PROVIDER_TEMPLATES.get(LLM.get('provider', ''), {}).get('default_model', '规则引擎'))
+                              or PROVIDER_TEMPLATES.get(LLM.get('provider', ''), {}).get('default_model', ''))
             else:
-                used_model = '规则引擎'
+                # 不再标「规则引擎」：这次压根没用规则引擎回答问题。
+                # 留空是诚实的 —— 前端据 llm_used / llm_available 决定提示。
+                used_model = ''
 
             # ---- 本次 AI 问答的**结论行**：一次失败的所有关键事实汇总成一行 ----
             # 排查「配好了却一直走规则引擎」时，只要 grep 这一行就够，
@@ -399,49 +405,108 @@ def ai_chat():
             except Exception:
                 pass
 
-            return jsonify({
-                'success': True,
-                'answer': answer,
-                'llm_enabled': llm_enabled,
-                'llm_used': llm_answered,      # 显式字段：前端别靠模型名字符串猜
-                'llm_model': used_model,
-                'fallback_reason': fallback_reason,
-                'tool_events': tool_events,
-                'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            })
+            return jsonify(_ai_chat_payload(
+                answer, used=llm_answered, available=llm_enabled,
+                need_config=need_config, reason=fallback_reason,
+                tool_events=tool_events, model=used_model))
 
-        # 无宝宝 ID 时的简单回复
-        from ai_engine import chat_response
-        answer = chat_response(question, db, baby_id)
-        return jsonify({
-            'success': True,
-            'answer': answer,
-            'llm_enabled': False,
-            'llm_used': False,
-            'llm_model': '规则引擎',
-            'fallback_reason': '未选择宝宝，大模型需要宝宝数据作为上下文，本次由本地规则引擎回答',
-            'tool_events': [],
-            'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        })
+        # ---- 没指定宝宝：也走大模型，只是不带宝宝数据当上下文 ----
+        # 以前这里直接回规则引擎，等于「没选宝宝就自动降级成固定话术」。聊天输入
+        # 既然定位成纯 AI，就不该留着这种暗门。
+        from ai_engine import LLM, llm_usability, get_last_llm_error
+        _ensure_llm_applied()
+        usable, why, need_cfg = llm_usability()
+        if not usable:
+            return jsonify(_ai_chat_payload(None, used=False, available=False,
+                                            need_config=need_cfg, reason=why))
+        try:
+            from ai_client import call_llm_with_resilience
+            ok, ans = call_llm_with_resilience(question, model=model_sel or None)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("AI chat(no baby) error: %s", e)
+            ok, ans = False, None
+        if ok and ans:
+            return jsonify(_ai_chat_payload(ans, used=True, available=True, need_config=False,
+                                            reason='',
+                                            model=model_sel or LLM.get('model') or ''))
+        return jsonify(_ai_chat_payload(
+            None, used=False, available=True, need_config=False,
+            reason=get_last_llm_error() or '大模型调用失败（未给出具体原因）'))
     except Exception as e:
         import logging
         logging.getLogger(__name__).error("AI chat error: %s", e, exc_info=True)
-        # 即使出错也返回一个友好回答，避免前端显示"网络错误"
-        try:
-            from ai_engine import chat_response
-            fallback = chat_response(data.get('message', '') if data else '', None, None)
-        except Exception:
-            fallback = "抱歉，我暂时无法回答这个问题。请稍后再试，或尝试换个方式提问。"
+        # 🔴 不再拿规则引擎兜底：那会让「服务器出错」看起来像一次正常回答，
+        # 用户永远不知道出了问题。如实报错，前端会把 message 显示出来。
         return jsonify({
-            'success': True,
-            'answer': fallback,
-            'llm_enabled': False,
+            'success': False,
+            'answer': None,
             'llm_used': False,
-            'llm_model': '规则引擎',
-            'fallback_reason': '对话处理异常，已用本地规则引擎兜底',
+            'llm_available': False,
+            'need_config': False,
+            'llm_model': '',
+            'message': '对话处理出错：%s。请稍后重试，或到 设置 → AI 大模型 检查配置。'
+                       % type(e).__name__,
+            'fallback_reason': '对话处理异常：%s: %s' % (type(e).__name__, str(e)[:160]),
             'tool_events': [],
-            'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        })
+            'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        }), 500
+
+
+# ==================== 点击回复（纯规则引擎，不需要大模型） ====================
+# 2026-10-11：把「规则引擎」和「AI 对话」彻底拆开——
+#   聊天输入（/api/ai/chat）        = 纯 AI，没配好就不给用
+#   点击回复（本端点）              = 纯规则引擎，永远可用、不碰网络、不花钱
+# 规则引擎只会按固定话术回答，所以它只适合"点一下就出固定内容"的场景；
+# 让它在聊天里冒充 AI，用户分不出哪句是模型说的、哪句是本地模板。
+@bp.route('/api/ai/quick-answer', methods=['POST'])
+def ai_quick_answer():
+    """点击回复：用本地规则引擎直接给答案（不调用大模型）。
+
+    请求：{message, baby_id?}
+    响应：{success, answer, source: 'rule'}
+    """
+    try:
+        data = request.get_json() or {}
+        question = str(data.get('message') or '').strip()
+        if not question:
+            return jsonify({'success': False, 'message': '缺少 message'}), 400
+        baby_id = data.get('baby_id')
+        db = get_db() if baby_id else None
+        from ai_engine import chat_response
+        answer = chat_response(question, db, baby_id)
+        return jsonify({'success': True, 'answer': answer, 'source': 'rule'})
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("ai_quick_answer error: %s", e, exc_info=True)
+        return jsonify({'success': False, 'message': '本地回复生成失败：%s' % type(e).__name__}), 500
+
+
+def _ai_chat_payload(answer, *, used, available, need_config, reason, tool_events=None,
+                     model=''):
+    """AI 对话的统一响应体 —— 三条出口（有宝宝 / 无宝宝 / 异常）共用一份。
+
+    抽出来是为了不让几处分支各自拼字段：以前它们各写一遍，加一个字段就要改三处，
+    漏一处就出现「有的分支有 llm_available、有的没有」，前端只能靠猜。
+
+    约定（前端据此渲染，别再靠模型名字符串判断）：
+      llm_used=True            → answer 是模型答的，正常显示
+      llm_used=False & available=True   → 配好了但这次调用失败，显示 reason 让人排查
+      llm_used=False & available=False  → 还没配好，显示 reason + 「去设置」引导
+      **任何时候 answer 都不会是规则引擎的话术**（规则引擎已独立到 quick-answer）
+    """
+    return {
+        'success': True,
+        'answer': answer,
+        'llm_enabled': available,
+        'llm_used': used,
+        'llm_available': available,
+        'need_config': bool(need_config),
+        'llm_model': model if used else '',
+        'fallback_reason': reason or '',
+        'tool_events': tool_events or [],
+        'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+    }
 
 
 def _ai_write_fail(default_msg='无法识别，请手动填写或换一种描述'):
@@ -531,6 +596,14 @@ def ai_llm_status():
         from ai_client import get_ai_client_stats
         status = get_llm_status()
         status['client_stats'] = get_ai_client_stats()
+        # 「聊天输入能不能用」的唯一判据，前端据此禁用/启用输入框。
+        # 放在状态接口里，前端只需问一处，不用自己拼 provider/consent/key 三个条件
+        # （自己拼就会和 backend 慢慢漂移，出现"界面说能用、点了没反应"）。
+        from ai_engine import llm_usability
+        usable, why, need_cfg = llm_usability()
+        status['chat_usable'] = usable
+        status['chat_unusable_reason'] = why
+        status['chat_need_config'] = need_cfg
         return jsonify({
             'success': True,
             'status': status
