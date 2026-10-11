@@ -191,6 +191,23 @@ if "/api/ai/quick-answer" in open(os.path.join(BACKEND, "blueprints", "ai.py"),
 else:
     bad("后端没有 /api/ai/quick-answer")
 
+print("\n=== D. 畸形 body 不许打出 5xx（这条是冒烟门禁抓出来的真缺陷）===")
+# 背景：这两个端点原先用 request.get_json()。**没带 Content-Type** 时它会抛 415，
+# 被兜底 except 接住后变成 500 —— 前端偶尔漏设 Content-Type 就会看到服务器错误。
+# 正确写法是 utils.json_body()（silent=True + 只认 dict）。冒烟门禁抓到了它，
+# 这里补一条定点断言，免得只靠全路由穷举才发现。
+for _path in ("/api/ai/chat", "/api/ai/quick-answer"):
+    _bad = []
+    for _raw in (None, "null", "[]", "{}", '"str"'):
+        _kw = {} if _raw is None else {"data": _raw, "content_type": "application/json"}
+        _rr = c.post(_path, **_kw)
+        if _rr.status_code >= 500:
+            _bad.append((_raw, _rr.status_code))
+    if not _bad:
+        ok(f"{_path} 对畸形/空 body 一律不 5xx（没带 Content-Type 也是 4xx）")
+    else:
+        bad(f"{_path} 对畸形 body 打出了 5xx", _bad)
+
 srv.shutdown()
 print("\n" + "=" * 46)
 print(f"通过 {len(PASS)} 项，失败 {len(FAIL)} 项")

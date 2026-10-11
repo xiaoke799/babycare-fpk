@@ -10,7 +10,7 @@ import datetime
 import json
 from flask import Blueprint, request, jsonify
 
-from utils import get_db, row_to_dict, _get_app_setting, _set_app_setting
+from utils import get_db, row_to_dict, _get_app_setting, _set_app_setting, json_body
 from logger import get_logger
 from user_context import require_admin
 
@@ -227,11 +227,21 @@ def ai_chat():
     - tool_events (list): 本次对话中 AI 调用的工具列表，前端可渲染卡片
     """
     try:
-        data = request.get_json()
+        # ⚠ 必须用 json_body() 而不是 request.get_json()：
+        # 没带 Content-Type 的请求会让 get_json() 抛 415，被下面的兜底 except 接住后
+        # 变成 **500**（冒烟门禁就是这么抓到的）。json_body() 用 silent=True + 只认 dict，
+        # 「没带 Content-Type / body 是 null / body 是数组」统一退化成空 dict → 干净的 400。
+        data = json_body()
         if not data or 'message' not in data:
             return jsonify({'success': False, 'message': '请输入问题'}), 400
 
+        # message 必须是字符串：前端传了对象/数组时，后面拼进对话历史会在深处炸成 500
         question = data['message']
+        if not isinstance(question, str):
+            question = str(question or '')
+        question = question.strip()
+        if not question:
+            return jsonify({'success': False, 'message': '请输入问题'}), 400
         baby_id = data.get('baby_id')
         # 对话内选择的回答模型：''=跟随全局设置；其他=临时指定模型
         # 2026-10-11：不再支持「强制规则引擎」这个选项 —— 规则引擎已独立成
@@ -467,7 +477,8 @@ def ai_quick_answer():
     响应：{success, answer, source: 'rule'}
     """
     try:
-        data = request.get_json() or {}
+        # 同 chat：用 json_body()，否则没带 Content-Type 会被 415 顶成 500
+        data = json_body()
         question = str(data.get('message') or '').strip()
         if not question:
             return jsonify({'success': False, 'message': '缺少 message'}), 400
