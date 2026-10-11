@@ -60,10 +60,21 @@ BODIES = [
     ("[]", "[]"),
 ]
 
+# GET 没有 body 可言：4 种变体对 GET 来说跑的是同一条路径（body 被忽略），
+# 结果是**全路由 4 倍冗余**。实测 GET 占一半以上，去掉冗余能省 100s+。
+# 写成「畸形 body」的历史缺陷形态针对的是**写接口**，所以这里只对非 GET 跑 4 种。
+BODIES_FOR_GET = [("无body", None)]
+
 # 静态资源 / 前端入口 / 登录与登出（登出会清 session，单独排除）
+# ⚠ 另排除两个「本地模型发现」接口：它们会**去连不存在的本地服务**并以 4~5s 超时结束
+#   （实测 8 次请求合计 25s，且耗时随机器负载浮动）。本门禁只关心「畸形 body 会不会
+#   打出 5xx」，而这两条是纯网络探测，已由 check_llm_proxy_bypass.py 专项覆盖。
+#   不排掉它们，本门禁会长时间贴着批量超时线跑 —— 实测 322s vs 300s 上限，
+#   一条时灵时不灵的门禁比没有门禁更贵。
 SKIP_URL = re.compile(
     r"^/static/|favicon|/manifest|^/login$|^/logout$|/auth/logout$|"
-    r"^/consent-gate|^/legal/|ws://|healthz"
+    r"^/consent-gate|^/legal/|ws://|healthz|"
+    r"^/api/ai/(?:ollama|lmstudio)/models$"
 )
 
 
@@ -131,7 +142,7 @@ failures = []
 touched = 0
 
 for method, url in rules:
-    for label, raw in BODIES:
+    for label, raw in (BODIES_FOR_GET if method == "GET" else BODIES):
         headers = {}
         kwargs = {}
         if raw is not None:
