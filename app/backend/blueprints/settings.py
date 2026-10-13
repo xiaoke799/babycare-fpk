@@ -10,7 +10,7 @@ import json
 import os
 from flask import Blueprint, request, jsonify, current_app
 
-from utils import get_db, row_to_dict, rows_to_list, json_body
+from utils import get_db, row_to_dict, rows_to_list, json_body, normalize_author
 from logger import get_logger, get_recent_logs, get_log_stats, clear_logs
 from user_context import require_admin
 # 写入端一律过收口函数：前端 datetime-local 给的是不带秒/带 T 的写法，
@@ -457,12 +457,34 @@ def export_all_data():
 
 @bp.route('/api/babies/<int:baby_id>/batch-records', methods=['POST'])
 def add_batch_records(baby_id):
-    """批量添加记录"""
+    """批量添加记录
+
+    🔴 校验必须与单条路由同一套 helper（P0 级教训）：本端点此前各类型只校验了
+    时间，枚举/范围/长度全放行——单条路由同参数必 400 的脏数据，走批量全部
+    200 入库（尿布颜色 "purple"、奶量 -999、note 十万字、sleep 时长 "abc"）。
+    单条与批量校验不对称，用户从批量入口录进的脏数据会让筛选/统计/WHO 曲线
+    全部错位，而界面显示"成功添加"。现在四种类型都直接调用单条路由的
+    _clean_*_payload / _validate_*_payload，从根上杜绝"各写一套、迟早漂移"。
+    """
+    from blueprints.feeding import _clean_feeding_payload
+    from blueprints.sleep import _clean_sleep_payload
+    from blueprints.diaper import _validate_diaper_payload
+    from blueprints.growth import _clean_growth_payload
+
     data = json_body()
-    if not data or 'records' not in data:
+    if not isinstance(data, dict) or 'records' not in data:
         return jsonify({'success': False, 'message': '无效的数据格式'}), 400
 
     records = data['records']
+    # records 必须是 list[dict]：非 list 时下面 enumerate 直接 TypeError 500；
+    # 元素非 dict 时 .get  AttributeError。批量入口的 500 全是用户手误触发的。
+    if not isinstance(records, list):
+        return jsonify({'success': False, 'message': 'records 必须为数组'}), 400
+    for idx, rec in enumerate(records):
+        if not isinstance(rec, dict):
+            return jsonify({'success': False,
+                            'message': f'第 {idx + 1} 条记录格式错误（应为对象）'}), 400
+
     db = get_db()
     added = 0
     errors = []
@@ -471,65 +493,54 @@ def add_batch_records(baby_id):
         record_type = record.get('type')
         try:
             if record_type == 'feeding':
-                ok_s, start, err_s = validate_datetime(record.get('start_time'), '开始时间')
-                if not ok_s:
-                    raise ValueError(err_s)
-                ok_e, end, err_e = validate_datetime(record.get('end_time'), '结束时间')
-                if not ok_e:
-                    raise ValueError(err_e)
+                clean, err = _clean_feeding_payload(record)
+                if err:
+                    raise ValueError(err)
                 db.execute(
-                    '''INSERT INTO feeding_records (baby_id, start_time, end_time, feeding_type, amount, side, note)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                    (baby_id, start, end,
-                     record.get('feeding_type', 'breast'), record.get('amount'),
-                     record.get('side'), record.get('note', ''))
+                    '''INSERT INTO feeding_records
+                       (baby_id, start_time, end_time, feeding_type, amount, side, note,
+                        left_duration, right_duration, author)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (baby_id, clean['start_time'], clean.get('end_time'),
+                     clean['feeding_type'], clean.get('amount'), clean.get('side'),
+                     clean.get('note', ''), clean.get('left_duration'),
+                     clean.get('right_duration'), normalize_author(record))
                 )
             elif record_type == 'sleep':
-                ok_s, start, err_s = validate_datetime(record.get('start_time'), '开始时间')
-                if not ok_s:
-                    raise ValueError(err_s)
-                ok_e, end, err_e = validate_datetime(record.get('end_time'), '结束时间')
-                if not ok_e:
-                    raise ValueError(err_e)
-                duration = record.get('duration_minutes') or 0
-                if not duration and end:
-                    # 宽松解析：库里/前端可能是 '... HH:MM' 无秒或带 T 的写法，
-                    # 硬按带秒 strptime 会让每一条 sleep 都进 errors（2026-10-06 实测）
-                    t1 = parse_datetime(start)
-                    t2 = parse_datetime(end)
-                    if t1 and t2:
-                        duration = int((t2 - t1).total_seconds() / 60)
-                # 判断是否小憩
-                is_nap = record.get('is_nap')
-                if is_nap is None and start:
-                    t1 = parse_datetime(start)
-                    if t1:
-                        is_nap = 1 if 6 <= t1.hour < 18 else 0
+                clean, err = _clean_sleep_payload(record)
+                if err:
+                    raise ValueError(err)
                 db.execute(
-                    '''INSERT INTO sleep_records (baby_id, start_time, end_time, duration_minutes, sleep_quality, is_nap, note)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                    (baby_id, start, end, duration, record.get('sleep_quality'), is_nap, record.get('note', ''))
+                    '''INSERT INTO sleep_records
+                       (baby_id, start_time, end_time, duration_minutes, sleep_quality, is_nap, note, author)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (baby_id, clean['start_time'], clean.get('end_time'),
+                     clean.get('duration_minutes'), clean.get('sleep_quality'),
+                     clean.get('is_nap'), clean.get('note', ''), normalize_author(record))
                 )
             elif record_type == 'diaper':
-                ok_t, change_time, err_t = validate_datetime(record.get('change_time'), '更换时间')
-                if not ok_t:
-                    raise ValueError(err_t)
+                if not record.get('change_time') or not record.get('diaper_type'):
+                    raise ValueError('请填写更换时间和尿布类型')
+                values, err_resp = _validate_diaper_payload(record)
+                if err_resp:
+                    raise ValueError(err_resp[0].get_json().get('message', '参数无效'))
                 db.execute(
-                    '''INSERT INTO diaper_records (baby_id, change_time, diaper_type, color, note)
-                       VALUES (?, ?, ?, ?, ?)''',
-                    (baby_id, change_time, record.get('diaper_type', 'wet'),
-                     record.get('color'), record.get('note', ''))
+                    '''INSERT INTO diaper_records
+                       (baby_id, change_time, diaper_type, color, skin_condition, brand, note, author)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (baby_id,) + tuple(values) + (normalize_author(record),)
                 )
             elif record_type == 'growth':
-                ok_d, record_date, err_d = validate_date(record.get('record_date'), '记录日期')
-                if not ok_d:
-                    raise ValueError(err_d)
+                clean, err = _clean_growth_payload(record)
+                if err:
+                    raise ValueError(err)
                 db.execute(
-                    '''INSERT INTO growth_records (baby_id, record_date, height, weight, head_circumference, bmi, note)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                    (baby_id, record_date, record.get('height'),
-                     record.get('weight'), record.get('head_circumference'),
-                     record.get('bmi'), record.get('note', ''))
+                    '''INSERT INTO growth_records
+                       (baby_id, record_date, height, weight, head_circumference, bmi, note, author)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (baby_id, clean['record_date'], clean.get('height'),
+                     clean.get('weight'), clean.get('head_circumference'),
+                     clean.get('bmi'), clean.get('note', ''), normalize_author(record))
                 )
             else:
                 # 未知类型：以前这里不 raise，added 照样 +1 ⇒ 用户提交一条

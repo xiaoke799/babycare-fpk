@@ -55,6 +55,8 @@ app.config["TESTING"] = True
 client = app.test_client()
 with client.session_transaction() as sess:
     sess["authenticated"] = True
+    sess["is_admin"] = True        # 存储总览等管理接口要管理员
+    sess["user_id"] = 1
 
 # 设置安全码
 r = client.put("/api/settings/safety-code", json={"code": "2580"})
@@ -107,6 +109,14 @@ with zipfile.ZipFile(backup_path) as zf:
     check("日记在备份数据中",
           any("diary" in (t or "") for t in (data.get("babies") or [{}])[0].get("records", {}).keys()),
           str(list((data.get("babies") or [{}])[0].get("records", {}).keys())[:20]))
+
+print("\n=== 1.5 存储总览必须看见刚建的备份 ===")
+# 2026-10-12 修：overview 此前 glob 的是 DATA_DIR/backups/*.json，而真实备份
+# 是 .zip —— 「备份 0 个 / 0B」恒显示，磁盘被备份塞满时用户无从察觉。
+r = client.get("/api/storage/overview")
+ov = (r.get_json() or {}).get("backups", {})
+check("总览计数 >= 1", (ov.get("count") or 0) >= 1, str(ov))
+check("总览体积 > 0", (ov.get("size") or 0) > 0, str(ov))
 
 print("\n=== 2. 恢复需安全码 ===")
 # 删掉照片文件，恢复后应重新出现

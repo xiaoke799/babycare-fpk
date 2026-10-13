@@ -803,6 +803,19 @@ def restore_backup():
     if not os.path.isfile(filepath):
         return jsonify({'success': False, 'message': '备份文件不存在'}), 404
 
+    # 恢复前强制 pre-flight 完整性校验：_restore_from_data 对同名宝宝是
+    # **先删后插**，损坏备份（拷贝中断 / 磁盘写满 / 被手工改过）只要 JSON
+    # 还能解析就会通过，结果是删掉现有记录 + 写入残本后 commit —— 静默数据丢失。
+    # inspect_backup_archive（manifest 行数比对 + data.json sha256 + zip CRC）
+    # 早就写好了，但三个恢复入口都没调用它。机制在，链路没接上 = 没有。
+    report = inspect_backup_archive(filepath)
+    if not report.get('ok'):
+        return jsonify({
+            'success': False,
+            'message': f'备份校验未通过，已拒绝恢复：{report.get("message") or "备份可能已损坏"}',
+            'inspect': report,
+        }), 400
+
     try:
         backup_data, media_iter, zf = _load_backup_file(filepath)
     except (json.JSONDecodeError, OSError, zipfile.BadZipFile, KeyError) as e:
@@ -903,6 +916,14 @@ def upload_restore():
             with open(tmp_path, 'wb') as out:
                 shutil.copyfileobj(stream, out)
             backup_data, media_iter, zf = _load_backup_file(tmp_path)
+            # 上传恢复同样要过 pre-flight（理由同 restore_backup：先删后插）
+            report = inspect_backup_archive(tmp_path)
+            if not report.get('ok'):
+                return jsonify({
+                    'success': False,
+                    'message': f'备份校验未通过，已拒绝恢复：{report.get("message") or "备份可能已损坏"}',
+                    'inspect': report,
+                }), 400
         else:
             try:
                 backup_data = json.load(stream)
@@ -1111,6 +1132,15 @@ def restore_from_share():
             break
     if not filepath:
         return jsonify({'success': False, 'message': '目录中不存在该备份'}), 404
+
+    # 共享目录里的备份是用户手工拷贝进来的，损坏概率更高 —— pre-flight 更不能省
+    report = inspect_backup_archive(filepath)
+    if not report.get('ok'):
+        return jsonify({
+            'success': False,
+            'message': f'备份校验未通过，已拒绝恢复：{report.get("message") or "备份可能已损坏"}',
+            'inspect': report,
+        }), 400
 
     zf = None
     try:

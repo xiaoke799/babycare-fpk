@@ -13,7 +13,9 @@ from flask import Blueprint, request, jsonify
 from utils import get_db, row_to_dict, rows_to_list, json_body, normalize_author
 from logger import get_logger
 from validators import (validate_enum, validate_date, validate_text_length,
-                        NOTE_MAX_LENGTH, NAME_MAX_LENGTH)
+                        validate_height, validate_weight, validate_head_circumference,
+                        NOTE_MAX_LENGTH, NAME_MAX_LENGTH,
+                        TITLE_MAX_LENGTH, CONTENT_MAX_LENGTH)
 import growth_utils
 
 bp = Blueprint("development", __name__)
@@ -33,6 +35,7 @@ VALID_TOOTH_CODES = {
 VALID_FOOD_CATEGORIES = {"vegetable", "fruit", "meat", "grain", "dairy", "other"}
 VALID_FOOD_REACTIONS = {"none", "mild", "severe"}
 VALID_FONTANELLE_STATUS = {"open", "closing", "closed"}
+VALID_MILESTONE_CATEGORIES = {"motor", "language", "social", "cognitive", "other"}
 LEAP_NUMBER_MIN, LEAP_NUMBER_MAX = 1, 10        # Wonder Weeks 共 10 次飞跃
 
 
@@ -61,20 +64,34 @@ def list_milestones(baby_id):
 @bp.route("/api/babies/<int:baby_id>/milestones", methods=["POST"])
 def add_milestone(baby_id):
     """添加里程碑"""
-    data = request.get_json()
-    if not data or not data.get("title") or not data.get("achieved_date"):
+    data = json_body()
+    # 非空 list 也会让 `not data` 为 False，接着 data.get 直接 AttributeError → 500
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "message": "无效数据"}), 400
+    if not data.get("title") or not data.get("achieved_date"):
         return jsonify({"success": False, "message": "请填写标题和达成日期"}), 400
 
     ok, achieved_date, derr = validate_date(data.get("achieved_date"), "达成日期")
     if not ok:
         return jsonify({"success": False, "message": derr}), 400
 
+    ok, title, terr = validate_text_length(data.get("title"), TITLE_MAX_LENGTH, "标题")
+    if not ok:
+        return jsonify({"success": False, "message": terr}), 400
+    ok, desc, derr2 = validate_text_length(data.get("description"), CONTENT_MAX_LENGTH, "描述")
+    if not ok:
+        return jsonify({"success": False, "message": derr2}), 400
+    ok, category, cerr = validate_enum(data.get("category", "other"),
+                                       VALID_MILESTONE_CATEGORIES, "分类")
+    if not ok:
+        return jsonify({"success": False, "message": cerr}), 400
+
     db = get_db()
     db.execute(
         """INSERT INTO milestones (baby_id, title, description, achieved_date, category, is_first, author)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (baby_id, data["title"], data.get("description", ""),
-         achieved_date, data.get("category", "other"),
+        (baby_id, title, desc or "",
+         achieved_date, category or "other",
          1 if data.get("is_first") else 0, normalize_author(data))
     )
     db.commit()
@@ -84,10 +101,14 @@ def add_milestone(baby_id):
 @bp.route("/api/babies/<int:baby_id>/milestones/<int:record_id>", methods=["PUT"])
 def update_milestone(baby_id, record_id):
     """更新里程碑"""
-    data = request.get_json()
-    if not data:
+    data = json_body()
+    if not isinstance(data, dict):
         return jsonify({"success": False, "message": "无效数据"}), 400
     db = get_db()
+    row = db.execute("SELECT id FROM milestones WHERE id = ? AND baby_id = ?",
+                     (record_id, baby_id)).fetchone()
+    if not row:
+        return jsonify({"success": False, "message": "里程碑不存在"}), 404
     fields = []
     values = []
     for key in ("title", "description", "achieved_date", "category"):
@@ -98,6 +119,15 @@ def update_milestone(baby_id, record_id):
             ok, value, derr = validate_date(value, "达成日期")
             if not ok:
                 return jsonify({"success": False, "message": derr}), 400
+        elif key in ("title", "description"):
+            max_len = TITLE_MAX_LENGTH if key == "title" else CONTENT_MAX_LENGTH
+            ok, value, terr = validate_text_length(value, max_len, "标题" if key == "title" else "描述")
+            if not ok:
+                return jsonify({"success": False, "message": terr}), 400
+        elif key == "category":
+            ok, value, cerr = validate_enum(value, VALID_MILESTONE_CATEGORIES, "分类")
+            if not ok:
+                return jsonify({"success": False, "message": cerr}), 400
         fields.append(f"{key} = ?")
         values.append(value)
     if "is_first" in data:
@@ -477,8 +507,10 @@ def get_teething_records(baby_id):
 @bp.route("/api/babies/<int:baby_id>/checkups", methods=["POST"])
 def add_checkup_record(baby_id):
     """添加体检记录（自动同步生成成长记录）"""
-    data = request.get_json()
-    if not data or not data.get("checkup_date"):
+    data = json_body()
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "message": "无效数据"}), 400
+    if not data.get("checkup_date"):
         return jsonify({"success": False, "message": "请填写体检日期"}), 400
 
     ok, checkup_date, derr = validate_date(data.get("checkup_date"), "体检日期")
@@ -488,20 +520,54 @@ def add_checkup_record(baby_id):
     if not ok:
         return jsonify({"success": False, "message": nerr}), 400
 
+    # 数值必须过闸：此前 height/weight/head_circumference/age_months 裸入库，
+    # 「-5 / abc / 9999」也能存，而下面会把身高体重**自动同步进 growth_records**——
+    # 脏值直接进 WHO 百分位曲线。新建体检与新建成长必须是同一套校验。
+    ok, height, herr = validate_height(data.get("height"), "身高")
+    if not ok:
+        return jsonify({"success": False, "message": herr}), 400
+    ok, weight, werr = validate_weight(data.get("weight"), "体重")
+    if not ok:
+        return jsonify({"success": False, "message": werr}), 400
+    ok, head_circumference, cerr = validate_head_circumference(data.get("head_circumference"), "头围")
+    if not ok:
+        return jsonify({"success": False, "message": cerr}), 400
+
+    age_months = data.get("age_months")
+    if age_months not in (None, ""):
+        try:
+            age_months = float(age_months)
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "message": "月龄必须为数字"}), 400
+        if age_months < 0 or age_months > 72:
+            return jsonify({"success": False, "message": "月龄需在 0-72 之间"}), 400
+    else:
+        age_months = None
+
+    ok, doctor, derr2 = validate_text_length(data.get("doctor"), NAME_MAX_LENGTH, "医生")
+    if not ok:
+        return jsonify({"success": False, "message": derr2}), 400
+    ok, hospital, herr2 = validate_text_length(data.get("hospital"), NAME_MAX_LENGTH, "医院")
+    if not ok:
+        return jsonify({"success": False, "message": herr2}), 400
+    ok, advice, aerr = validate_text_length(data.get("advice"), CONTENT_MAX_LENGTH, "医嘱")
+    if not ok:
+        return jsonify({"success": False, "message": aerr}), 400
+    ok, note, nerr2 = validate_text_length(data.get("note"), NOTE_MAX_LENGTH, "备注")
+    if not ok:
+        return jsonify({"success": False, "message": nerr2}), 400
+
     db = get_db()
-    height = data.get("height")
-    weight = data.get("weight")
-    head_circumference = data.get("head_circumference")
 
     # 保存体检记录
     db.execute(
         """INSERT INTO checkup_records (baby_id, checkup_date, age_months, height, weight,
            head_circumference, doctor, hospital, result, advice, next_checkup_date, note, author)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (baby_id, checkup_date, data.get("age_months"),
+        (baby_id, checkup_date, age_months,
          height, weight, head_circumference,
-         data.get("doctor", ""), data.get("hospital", ""), data.get("result", "normal"),
-         data.get("advice", ""), next_checkup_date, data.get("note", ""),
+         doctor or "", hospital or "", data.get("result", "normal"),
+         advice or "", next_checkup_date, note or "",
          normalize_author(data))
     )
 
@@ -527,7 +593,7 @@ def add_checkup_record(baby_id):
                 """INSERT INTO growth_records (baby_id, record_date, height, weight, head_circumference, bmi, note)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (baby_id, checkup_date, height, weight, head_circumference, bmi,
-                 f"体检自动同步: {data.get('hospital', '')}")
+                 f"体检自动同步: {hospital or ''}")
             )
 
     db.commit()

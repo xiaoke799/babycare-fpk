@@ -28,6 +28,7 @@ AI 的缺陷（错误分类、超时、空响应、工具循环、max_tokens、�
 退出码：0 全过；1 有失败。
 """
 import os
+import re
 import sys
 import tempfile
 
@@ -228,6 +229,35 @@ if "_post_chat_json" in src_engine and src_tooling.count("_post_chat_json") >= 2
     ok("工具分支的两轮调用都走共用 helper")
 else:
     bad("工具分支没有全部走共用 helper")
+
+print("\n=== H. ollama 路径同样按调用方意图发 max_tokens ===")
+# F 段只覆盖了 openai 兼容路径。2026-10-12 审计发现：_call_ollama 的签名
+# 收了 max_tokens，函数体却根本没用 —— ai_writer 要的 500/2000 在 ollama
+# 路径上一律被丢弃。这类「参数写了没用」的缺陷读代码看不出来，
+# 必须真发一次请求、看假厂商到底收到了什么。
+r = client.post("/api/ai/llm/configure", json={
+    "provider": "ollama", "api_key": "", "model": "qwen2.5:7b",
+    "api_url": URL, "consent_cloud": False, "timeout": 3, "custom_models": [],
+})
+if not (r.get_json() or {}).get("success"):
+    bad("切到 ollama 假厂商失败", r.get_json())
+else:
+    sc("json-ok")
+    mk.reset()
+    client.post("/api/ai/write/extract-feeding", json={"input": "今天喂了180ml母乳"})
+    got_np = [s.get("num_predict") for s in mk.seen()]
+    if got_np and all(v == 500 for v in got_np):
+        ok("ollama 路径：options.num_predict=500 按调用方意图发出")
+    else:
+        bad("ollama 路径的 num_predict 不是调用方要的值（max_tokens 被丢弃？）",
+            {"期望": 500, "实际": got_np})
+    # 结构断言兜底：_call_ollama 必须经由 _resolve_max_tokens 取值
+    m = re.search(r"def _call_ollama\(.*?\n(.*?)\n\ndef ", src_engine, re.S)
+    body = m.group(1) if m else ""
+    if "num_predict" in body and "_resolve_max_tokens" in body:
+        ok("_call_ollama 函数体里真的有 num_predict 且走 _resolve_max_tokens")
+    else:
+        bad("_call_ollama 又没有把 max_tokens 接进 payload", body[:200])
 
 srv.shutdown()
 

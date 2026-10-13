@@ -6,13 +6,26 @@
 提供宝宝信息的增删查改功能。
 """
 
+import datetime
+
 from flask import Blueprint, request, jsonify
 from utils import get_db, get_baby_age, get_baby_age_months, row_to_dict, rows_to_list, json_body
 from user_context import require_admin, require_not_integration
 from constants import BABY_SCOPED_TABLES
+from validators import validate_date
 import safety_code
 
 bp = Blueprint("babies", __name__, url_prefix="/api/babies")
+
+# 预产期与生日的合理间隔上限（天）。
+# 为什么不是「预产期不能晚于生日」：早产儿的预产期本就晚于实际生日，
+# 而 growth_utils.effective_age_basis 正是用预产期起算**纠正月龄**的
+# （见该函数文档：早产儿才真正受影响）——旧规则把预产期卡在生日之前，
+# 等于把最需要填预产期的早产儿家庭直接拒之门外，且它从前只作用于 PUT、
+# POST 完全没校验，所以同一个门禁里「建早产儿成功」和「预产期晚于生日被拒」
+# 才能长期共存不打架。现在改成相差不超过 120 天（约 4 个月）：
+# 覆盖极端早产（≤15 周）与过期产，年份看串、把生日填进预产期这类仍会被拒。
+DUE_DATE_MAX_GAP_DAYS = 120
 
 
 @bp.route("", methods=["GET"])
@@ -62,14 +75,21 @@ def add_baby():
     这里刻意用 require_not_integration 而不是 require_admin：
     家庭里的非管理员成员也是真人，本就该能添加宝宝，不该被机器凭证的规则误伤。
     """
-    data = request.get_json()
-    if not data or not data.get("name") or not data.get("birthday"):
-        return jsonify({"success": False, "message": "请填写宝宝昵称和生日"}), 400
+    data = json_body()
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "message": "请求格式错误"}), 400
+
+    # POST 此前完全绕过 _validate_baby_payload（只判了非空）：脏生日「8月20号」
+    # 能直接入库，之后 clinic-summary 的 strptime 每月都 500，昵称传 1MB 也收。
+    # 新建与更新必须过同一道闸，否则「新建松、更新严」迟早漂移。
+    err = _validate_baby_payload(data)
+    if err:
+        return jsonify({"success": False, "message": err}), 400
 
     db = get_db()
     cursor = db.execute(
         "INSERT INTO babies (name, birthday, gender, due_date) VALUES (?, ?, ?, ?)",
-        (data["name"], data["birthday"], data.get("gender", "other"), data.get("due_date")),
+        (data["name"].strip(), data["birthday"], data.get("gender", "other"), data.get("due_date")),
     )
     db.commit()
 
@@ -87,26 +107,48 @@ def _validate_baby_payload(data, partial=False, current=None):
     if not partial and (not data.get("name") or not data.get("birthday")):
         return "请填写宝宝昵称和生日"
     if "name" in data:
-        name = (data.get("name") or "").strip()
+        name = data.get("name")
+        if not isinstance(name, str):
+            return "昵称必须为文字"
+        name = name.strip()
         if not name:
             return "请填写宝宝昵称"
         if len(name) > 50:
             return "昵称不超过 50 字"
     if "birthday" in data:
-        birthday = (data.get("birthday") or "").strip()
-        if not birthday:
+        birthday = data.get("birthday")
+        if not isinstance(birthday, str) or not birthday.strip():
             return "请填写生日"
-        if len(birthday) > 20:
-            return "生日格式不正确"
+        ok, birthday_norm, berr = validate_date(birthday, "生日")
+        if not ok:
+            return berr
+        # 归一化回写：'2024-6-1' 这类能解析但不规范的值，落库一律 'YYYY-MM-DD'，
+        # 否则以后按 substr(t,1,10) 取日期、ORDER BY 排序还是会错位
+        data["birthday"] = birthday_norm
+    else:
+        birthday_norm = (current or {}).get("birthday")
     if "gender" in data and data.get("gender") not in ("boy", "girl", "other"):
         return "性别取值不正确"
-    birthday_val = data.get("birthday") or (current or {}).get("birthday") or ""
     if "due_date" in data and data.get("due_date"):
-        due = str(data["due_date"])
-        if len(due) > 20:
+        due = data["due_date"]
+        if not isinstance(due, str):
             return "预产期格式不正确"
-        if birthday_val and due > str(birthday_val):
-            return "预产期不能晚于生日"
+        ok, due_norm, derr = validate_date(due, "预产期")
+        if not ok:
+            return derr
+        data["due_date"] = due_norm
+        if birthday_norm:
+            try:
+                gap = abs(
+                    (datetime.date.fromisoformat(due_norm)
+                     - datetime.date.fromisoformat(str(birthday_norm)[:10])).days
+                )
+            except ValueError:
+                # 生日本身是历史脏数据（本次请求没带 birthday 时会发生）：
+                # 不拿它当判据，避免把「旧数据脏」误报成「这次填错」
+                gap = 0
+            if gap > DUE_DATE_MAX_GAP_DAYS:
+                return "预产期与生日相差过大，请确认是否填写正确"
     return None
 
 

@@ -136,6 +136,9 @@ class _Handler(BaseHTTPRequestHandler):
             'path': self.path,
             'model': payload.get('model'),
             'max_tokens': payload.get('max_tokens'),
+            # ollama 把回复上限放在 options.num_predict（2026-10-12：
+            # _call_ollama 曾收了 max_tokens 参数却不用，这里必须记 nested 值）
+            'num_predict': (payload.get('options') or {}).get('num_predict'),
             'temperature': payload.get('temperature'),
             'has_auth': bool(self.headers.get('Authorization')),
             'auth': self.headers.get('Authorization'),

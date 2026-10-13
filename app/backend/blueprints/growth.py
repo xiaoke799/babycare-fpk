@@ -10,56 +10,103 @@ import datetime
 from flask import Blueprint, request, jsonify
 
 from utils import get_db, json_body, row_to_dict, normalize_author
-from validators import validate_height, validate_weight, validate_bmi, validate_head_circumference, validate_text_length, NOTE_MAX_LENGTH
+from validators import (validate_height, validate_weight, validate_bmi,
+                        validate_head_circumference, validate_text_length,
+                        validate_date, NOTE_MAX_LENGTH)
 import growth_utils
 
 bp = Blueprint("growth", __name__)
+
+
+def _clean_growth_payload(data, existing=None):
+    """归一化成长写入入参。返回 (clean_dict, error_message)。
+
+    existing 非空表示「编辑」：本次没传的字段沿用原值——PUT 只改一个备注时，
+    原来的写法会把 height/weight 一起抹成 NULL 撞 NOT NULL，报「数据冲突」。
+    日期必须过 validate_date：这是纯日期列，「8月20号」原样入库会让
+    ORDER BY record_date、WHO 百分位查询全部错位（铁律：写入端必须过闸，含 PUT）。
+    """
+    src = existing or {}
+    out = {}
+
+    if 'record_date' in data or not existing:
+        ok, record_date, err = validate_date(data.get('record_date'), '记录日期')
+        if not ok:
+            return None, err
+        if not record_date:
+            return None, '请填写记录日期'
+        out['record_date'] = record_date
+    else:
+        out['record_date'] = src.get('record_date')
+
+    def num(key, fn, label):
+        if key in data or not existing:
+            ok, v, err = fn(data.get(key), label)
+            if not ok:
+                return None, err
+            return v, None
+        return src.get(key), None
+
+    height, err = num('height', validate_height, '身高')
+    if err:
+        return None, err
+    out['height'] = height
+
+    weight, err = num('weight', validate_weight, '体重')
+    if err:
+        return None, err
+    out['weight'] = weight
+
+    head_circ, err = num('head_circumference', validate_head_circumference, '头围')
+    if err:
+        return None, err
+    out['head_circumference'] = head_circ
+
+    if 'bmi' in data or not existing:
+        bmi = data.get('bmi')
+        if bmi is None and out['height'] and out['weight']:
+            try:
+                h_m = float(out['height']) / 100.0
+                bmi = round(float(out['weight']) / (h_m * h_m), 1)
+            except (ValueError, ZeroDivisionError):
+                bmi = None
+        else:
+            ok, bmi, err = validate_bmi(bmi, 'BMI')
+            if not ok:
+                return None, err
+        out['bmi'] = bmi
+    else:
+        out['bmi'] = src.get('bmi')
+
+    if 'note' in data or not existing:
+        ok, note, err = validate_text_length(data.get('note'), NOTE_MAX_LENGTH, '备注')
+        if not ok:
+            return None, err
+        out['note'] = note if note is not None else ''
+    else:
+        out['note'] = src.get('note')
+
+    return out, None
 
 
 @bp.route("/api/babies/<int:baby_id>/growth", methods=["POST"])
 def add_growth_record(baby_id):
     """添加成长记录"""
     data = json_body()
-    if not data.get("record_date"):
-        return jsonify({"success": False, "message": "请填写记录日期"}), 400
-
-    # 校验数值字段
-    ok, height, err = validate_height(data.get("height"), "身高")
-    if not ok:
-        return jsonify({"success": False, "message": err}), 400
-
-    ok, weight, err = validate_weight(data.get("weight"), "体重")
-    if not ok:
-        return jsonify({"success": False, "message": err}), 400
-
-    ok, head_circ, err = validate_head_circumference(data.get("head_circumference"), "头围")
-    if not ok:
-        return jsonify({"success": False, "message": err}), 400
-
-    bmi = data.get("bmi")
-    # 如果提供了身高和体重但没有 BMI，自动计算
-    if bmi is None and height and weight:
-        try:
-            h_m = float(height) / 100.0
-            bmi = round(float(weight) / (h_m * h_m), 1)
-        except (ValueError, ZeroDivisionError):
-            bmi = None
-    else:
-        ok, bmi, err = validate_bmi(bmi, "BMI")
-        if not ok:
-            return jsonify({"success": False, "message": err}), 400
-
-    # 校验文本长度
-    ok, note, err = validate_text_length(data.get("note"), NOTE_MAX_LENGTH, "备注")
-    if not ok:
-        return jsonify({"success": False, "message": err}), 400
-
     db = get_db()
+    baby = db.execute('SELECT id FROM babies WHERE id = ?', (baby_id,)).fetchone()
+    if not baby:
+        return jsonify({"success": False, "message": "宝宝不存在"}), 404
+
+    clean, err = _clean_growth_payload(data)
+    if err:
+        return jsonify({"success": False, "message": err}), 400
+
     db.execute(
         """INSERT INTO growth_records (baby_id, record_date, height, weight, head_circumference, bmi, note, author)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (baby_id, data["record_date"], height, weight,
-         head_circ, bmi, note, normalize_author(data)),
+        (baby_id, clean['record_date'], clean['height'], clean['weight'],
+         clean['head_circumference'], clean['bmi'], clean['note'], normalize_author(data)),
     )
     db.commit()
     return jsonify({"success": True, "message": "记录已添加"})
@@ -104,45 +151,25 @@ def get_growth_record(baby_id, record_id):
 def update_growth_record(baby_id, record_id):
     """更新成长记录"""
     data = json_body()
-    if not data:
+    if not isinstance(data, dict):
         return jsonify({"success": False, "message": "无效数据"}), 400
 
-    # 校验数值字段
-    ok, height, err = validate_height(data.get("height"), "身高")
-    if not ok:
-        return jsonify({"success": False, "message": err}), 400
-
-    ok, weight, err = validate_weight(data.get("weight"), "体重")
-    if not ok:
-        return jsonify({"success": False, "message": err}), 400
-
-    ok, head_circ, err = validate_head_circumference(data.get("head_circumference"), "头围")
-    if not ok:
-        return jsonify({"success": False, "message": err}), 400
-
-    bmi = data.get("bmi")
-    # 如果提供了身高和体重但没有 BMI，自动计算
-    if bmi is None and height and weight:
-        try:
-            h_m = float(height) / 100.0
-            bmi = round(float(weight) / (h_m * h_m), 1)
-        except (ValueError, ZeroDivisionError):
-            bmi = None
-    else:
-        ok, bmi, err = validate_bmi(bmi, "BMI")
-        if not ok:
-            return jsonify({"success": False, "message": err}), 400
-
-    # 校验文本长度
-    ok, note, err = validate_text_length(data.get("note"), NOTE_MAX_LENGTH, "备注")
-    if not ok:
-        return jsonify({"success": False, "message": err}), 400
-
     db = get_db()
+    # 记录不存在就 404（UPDATE 命中 0 行还回 200 是假成功）
+    row = db.execute("SELECT * FROM growth_records WHERE id=? AND baby_id=?",
+                     (record_id, baby_id)).fetchone()
+    if not row:
+        return jsonify({"success": False, "message": "记录不存在"}), 404
+
+    clean, err = _clean_growth_payload(data, existing=dict(row))
+    if err:
+        return jsonify({"success": False, "message": err}), 400
+
     db.execute(
         """UPDATE growth_records SET record_date=?, height=?, weight=?, head_circumference=?, bmi=?, note=?
            WHERE id=? AND baby_id=?""",
-        (data.get("record_date"), height, weight, head_circ, bmi, note, record_id, baby_id)
+        (clean['record_date'], clean['height'], clean['weight'], clean['head_circumference'],
+         clean['bmi'], clean['note'], record_id, baby_id)
     )
     db.commit()
     return jsonify({"success": True, "message": "已更新"})

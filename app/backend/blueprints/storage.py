@@ -315,20 +315,27 @@ def storage_overview():
     }
 
     # 备份
+    # 🔴 统计口径必须与 backup.py 一致：真实备份是 .zip（manual/auto 两套前缀），
+    #    且 fnOS 上落在**共享目录**（_get_backup_dir 优先 /var/apps/.../share/backups）。
+    #    此前这里 glob 的是 DATA_DIR/backups/*.json —— 既看不到 .zip，目录也可能
+    #    根本不是备份真正所在 ⇒ 存储总览恒显示「备份 0 个 / 0B」，
+    #    磁盘被备份塞满时用户无从察觉（监控工具本身失效）。
     backup_count = 0
     backup_size = 0
     last_backup = None
     try:
-        pattern = os.path.join(dirs["backups"], "*.json")
-        for fp in glob.glob(pattern):
-            try:
-                backup_size += os.path.getsize(fp)
-                backup_count += 1
-                mt = os.path.getmtime(fp)
-                if last_backup is None or mt > last_backup:
-                    last_backup = mt
-            except OSError:
-                pass
+        from blueprints.backup import _get_backup_dir, BACKUP_GLOBS
+        backup_dir = _get_backup_dir()
+        for pattern in BACKUP_GLOBS:
+            for fp in glob.glob(os.path.join(backup_dir, pattern)):
+                try:
+                    backup_size += os.path.getsize(fp)
+                    backup_count += 1
+                    mt = os.path.getmtime(fp)
+                    if last_backup is None or mt > last_backup:
+                        last_backup = mt
+                except OSError:
+                    pass
     except Exception:
         pass
     overview["backups"] = {

@@ -14,9 +14,118 @@ import csv
 import io
 from flask import Blueprint, request, jsonify, Response
 
-from utils import get_db, row_to_dict, rows_to_list, normalize_author
+from utils import get_db, row_to_dict, rows_to_list, normalize_author, json_body
+from validators import (validate_date, validate_enum, validate_text_length,
+                        NOTE_MAX_LENGTH, NAME_MAX_LENGTH)
 
 bp = Blueprint("vaccines", __name__)
+
+# 枚举与前端下拉逐值对齐（app.js: formVaccineStatus / formVaccineType /
+# formVaccineReactionSeverity 三个 select 的 option value）。
+VALID_VACCINE_TYPES = {"free", "paid"}
+VALID_VACCINE_STATUS = {"pending", "completed", "delayed", "skipped"}
+VALID_REACTION_SEVERITY = {"none", "mild", "moderate", "severe"}
+
+# 疫苗日期列（纯日期语义，走 validate_date 而不是 validate_datetime）
+_VACCINE_DATE_FIELDS = ('scheduled_date', 'actual_date', 'next_dose_date',
+                        'antibody_test_date')
+# 短文本列（名称/厂家/批号/医院/医生/部位）
+_VACCINE_SHORT_FIELDS = ('manufacturer', 'batch_number', 'hospital', 'doctor',
+                         'injection_site')
+# 长文本列（反应详情/备注）
+_VACCINE_LONG_FIELDS = ('reaction_detail', 'note')
+
+
+def _validate_vaccine_payload(data, require_name=True):
+    """校验并归一化疫苗写入入参。返回 (clean_dict, error_message)。
+
+    POST 与 PUT 共用：PUT 只校验「本次传了的字段」（key in data 才算），
+    没传的字段不碰——编辑时改个备注不该把别的字段判空。
+    此前四个端点（两条 POST + 两条 PUT）零校验：日期可存「8月20号」、
+    剂量可存 -5、状态可存「香蕉」、note 可存 10 万字，全部 200 入库，
+    而 ORDER BY scheduled_date、按月龄分组、status 统计全靠这些列。
+    """
+    if not isinstance(data, dict):
+        return None, '无效数据'
+    if require_name and not (data.get('vaccine_name') or '').strip():
+        return None, '请填写疫苗名称'
+
+    clean = {}
+
+    if 'vaccine_name' in data:
+        ok, v, err = validate_text_length(data.get('vaccine_name'), NAME_MAX_LENGTH, '疫苗名称')
+        if not ok:
+            return None, err
+        clean['vaccine_name'] = v
+
+    if 'vaccine_type' in data or require_name:
+        ok, v, err = validate_enum(data.get('vaccine_type', 'free'), VALID_VACCINE_TYPES, '疫苗类型')
+        if not ok:
+            return None, err
+        clean['vaccine_type'] = v or 'free'
+
+    if 'dose_number' in data:
+        try:
+            dose = int(data.get('dose_number'))
+        except (TypeError, ValueError):
+            return None, '剂次必须为整数'
+        if dose < 1 or dose > 20:
+            return None, '剂次需在 1-20 之间'
+        clean['dose_number'] = dose
+    elif require_name:
+        clean['dose_number'] = 1
+
+    for f in _VACCINE_DATE_FIELDS:
+        if f in data or (require_name and f in ('scheduled_date', 'actual_date')):
+            ok, v, err = validate_date(data.get(f), _DATE_LABELS[f])
+            if not ok:
+                return None, err
+            clean[f] = v
+
+    if 'status' in data or require_name:
+        ok, v, err = validate_enum(data.get('status', 'pending'), VALID_VACCINE_STATUS, '接种状态')
+        if not ok:
+            return None, err
+        clean['status'] = v or 'pending'
+
+    if 'reaction_severity' in data or require_name:
+        ok, v, err = validate_enum(data.get('reaction_severity', 'none'),
+                                   VALID_REACTION_SEVERITY, '反应严重度')
+        if not ok:
+            return None, err
+        clean['reaction_severity'] = v or 'none'
+
+    if 'has_reaction' in data or require_name:
+        clean['has_reaction'] = 1 if data.get('has_reaction') else 0
+
+    for f in _VACCINE_SHORT_FIELDS:
+        if f in data or require_name:
+            ok, v, err = validate_text_length(data.get(f), NAME_MAX_LENGTH, _DATE_LABELS.get(f, f))
+            if not ok:
+                return None, err
+            clean[f] = v if v is not None else ''
+
+    for f in _VACCINE_LONG_FIELDS:
+        if f in data or require_name:
+            ok, v, err = validate_text_length(data.get(f), NOTE_MAX_LENGTH, '备注')
+            if not ok:
+                return None, err
+            clean[f] = v if v is not None else ''
+
+    return clean, None
+
+
+_DATE_LABELS = {
+    'scheduled_date': '计划接种日期',
+    'actual_date': '实际接种日期',
+    'next_dose_date': '下次接种日期',
+    'antibody_test_date': '抗体检测日期',
+    'manufacturer': '生产厂家',
+    'batch_number': '批号',
+    'hospital': '接种单位',
+    'doctor': '医生',
+    'injection_site': '接种部位',
+}
 
 
 # ==================== 国家标准接种程序 ====================
@@ -79,11 +188,19 @@ def _compute_age_months(baby):
 @bp.route('/api/babies/<int:baby_id>/vaccines', methods=['POST'])
 def add_vaccine(baby_id):
     """添加疫苗记录（写入 vaccine_details 表）"""
-    data = request.get_json()
-    if not data or not data.get('vaccine_name'):
-        return jsonify({'success': False, 'message': '请填写疫苗名称'}), 400
+    data = json_body()
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'message': '无效数据'}), 400
 
     db = get_db()
+    baby = db.execute('SELECT id FROM babies WHERE id = ?', (baby_id,)).fetchone()
+    if not baby:
+        return jsonify({'success': False, 'message': '宝宝不存在'}), 404
+
+    clean, err = _validate_vaccine_payload(data, require_name=True)
+    if err:
+        return jsonify({'success': False, 'message': err}), 400
+
     db.execute(
         '''INSERT INTO vaccine_details
            (baby_id, vaccine_name, vaccine_type, dose_number, scheduled_date, actual_date,
@@ -91,15 +208,15 @@ def add_vaccine(baby_id):
             has_reaction, reaction_detail, reaction_severity, next_dose_date,
             antibody_test_date, antibody_result, note, author)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-        (baby_id, data['vaccine_name'], data.get('vaccine_type', 'free'),
-         data.get('dose_number', 1), data.get('scheduled_date'),
-         data.get('actual_date'), data.get('status', 'pending'),
-         data.get('manufacturer', ''), data.get('batch_number', ''),
-         data.get('hospital', ''), data.get('doctor', ''),
-         data.get('injection_site', ''), 1 if data.get('has_reaction') else 0,
-         data.get('reaction_detail', ''), data.get('reaction_severity', 'none'),
-         data.get('next_dose_date'), data.get('antibody_test_date', ''),
-         data.get('antibody_result', ''), data.get('note', ''), normalize_author(data))
+        (baby_id, clean['vaccine_name'], clean.get('vaccine_type', 'free'),
+         clean.get('dose_number', 1), clean.get('scheduled_date'),
+         clean.get('actual_date'), clean.get('status', 'pending'),
+         clean.get('manufacturer', ''), clean.get('batch_number', ''),
+         clean.get('hospital', ''), clean.get('doctor', ''),
+         clean.get('injection_site', ''), clean.get('has_reaction', 0),
+         clean.get('reaction_detail', ''), clean.get('reaction_severity', 'none'),
+         clean.get('next_dose_date'), clean.get('antibody_test_date', ''),
+         clean.get('antibody_result', ''), clean.get('note', ''), normalize_author(data))
     )
     db.commit()
     return jsonify({'success': True, 'message': '疫苗记录已添加'})
@@ -215,18 +332,29 @@ def get_vaccine_status(baby_id):
 def update_vaccine(vaccine_id):
     """更新疫苗记录"""
     db = get_db()
-    data = request.get_json()
-    if not data:
+    data = json_body()
+    if not isinstance(data, dict):
         return jsonify({'success': False, 'message': '无效数据'}), 400
+
+    # 记录不存在就别往下走：此前 UPDATE 命中 0 行也返回 200「疫苗记录已更新」，
+    # 前端弹「已更新」但库里什么都没变——与 DELETE 侧的 404 语义直接矛盾。
+    row = db.execute('SELECT id FROM vaccine_details WHERE id = ?', (vaccine_id,)).fetchone()
+    if not row:
+        return jsonify({'success': False, 'message': '疫苗记录不存在'}), 404
+
+    clean, err = _validate_vaccine_payload(data, require_name=False)
+    if err:
+        return jsonify({'success': False, 'message': err}), 400
+
     fields = []
     values = []
     for key in ('vaccine_name', 'vaccine_type', 'dose_number', 'scheduled_date', 'actual_date',
                 'status', 'manufacturer', 'batch_number', 'hospital', 'doctor',
                 'injection_site', 'has_reaction', 'reaction_detail', 'reaction_severity',
                 'next_dose_date', 'antibody_test_date', 'antibody_result', 'note'):
-        if key in data:
+        if key in clean:
             fields.append(f'{key} = ?')
-            values.append(data[key])
+            values.append(clean[key])
     if not fields:
         return jsonify({'success': False, 'message': '无更新字段'}), 400
     values.append(vaccine_id)
@@ -432,10 +560,17 @@ def export_vaccines(baby_id):
 def vaccine_detail_create(baby_id):
     """创建疫苗详细记录"""
     db = get_db()
-    data = request.get_json()
+    data = json_body()
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'message': '无效数据'}), 400
 
-    if not data or not data.get('vaccine_name'):
-        return jsonify({'success': False, 'message': '疫苗名称为必填'}), 400
+    baby = db.execute('SELECT id FROM babies WHERE id = ?', (baby_id,)).fetchone()
+    if not baby:
+        return jsonify({'success': False, 'message': '宝宝不存在'}), 404
+
+    clean, err = _validate_vaccine_payload(data, require_name=True)
+    if err:
+        return jsonify({'success': False, 'message': err}), 400
 
     db.execute(
         """INSERT INTO vaccine_details
@@ -444,13 +579,13 @@ def vaccine_detail_create(baby_id):
             has_reaction, reaction_detail, reaction_severity, next_dose_date,
             antibody_test_date, antibody_result, note)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (baby_id, data['vaccine_name'], data.get('vaccine_type', 'free'),
-         data.get('dose_number', 1), data.get('scheduled_date'), data.get('actual_date'),
-         data.get('status', 'pending'), data.get('manufacturer', ''), data.get('batch_number', ''),
-         data.get('hospital', ''), data.get('doctor', ''), data.get('injection_site', ''),
-         data.get('has_reaction', 0), data.get('reaction_detail', ''), data.get('reaction_severity', ''),
-         data.get('next_dose_date', ''), data.get('antibody_test_date', ''),
-         data.get('antibody_result', ''), data.get('note', ''))
+        (baby_id, clean['vaccine_name'], clean.get('vaccine_type', 'free'),
+         clean.get('dose_number', 1), clean.get('scheduled_date'), clean.get('actual_date'),
+         clean.get('status', 'pending'), clean.get('manufacturer', ''), clean.get('batch_number', ''),
+         clean.get('hospital', ''), clean.get('doctor', ''), clean.get('injection_site', ''),
+         clean.get('has_reaction', 0), clean.get('reaction_detail', ''), clean.get('reaction_severity', 'none'),
+         clean.get('next_dose_date', ''), clean.get('antibody_test_date', ''),
+         clean.get('antibody_result', ''), clean.get('note', ''))
     )
     db.commit()
     return jsonify({'success': True, 'message': '疫苗详细记录已添加'})
@@ -486,18 +621,27 @@ def vaccine_detail_list(baby_id):
 def vaccine_detail_update(vaccine_id):
     """更新疫苗详细记录"""
     db = get_db()
-    data = request.get_json()
-    if not data:
+    data = json_body()
+    if not isinstance(data, dict):
         return jsonify({'success': False, 'message': '无效数据'}), 400
+
+    row = db.execute('SELECT id FROM vaccine_details WHERE id = ?', (vaccine_id,)).fetchone()
+    if not row:
+        return jsonify({'success': False, 'message': '疫苗记录不存在'}), 404
+
+    clean, err = _validate_vaccine_payload(data, require_name=False)
+    if err:
+        return jsonify({'success': False, 'message': err}), 400
+
     fields = []
     values = []
     for key in ('vaccine_name', 'vaccine_type', 'dose_number', 'scheduled_date', 'actual_date',
                 'status', 'manufacturer', 'batch_number', 'hospital', 'doctor',
                 'injection_site', 'has_reaction', 'reaction_detail', 'reaction_severity',
                 'next_dose_date', 'antibody_test_date', 'antibody_result', 'note'):
-        if key in data:
+        if key in clean:
             fields.append(f'{key} = ?')
-            values.append(data[key])
+            values.append(clean[key])
     if not fields:
         return jsonify({'success': False, 'message': '无更新字段'}), 400
     values.append(vaccine_id)

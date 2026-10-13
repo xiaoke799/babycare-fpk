@@ -312,7 +312,12 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
     SESSION_COOKIE_SECURE=False,  # 允许 HTTP 下使用 cookie（fnOS 网关可能走 HTTP）
-    MAX_CONTENT_LENGTH=20 * 1024 * 1024,
+    # 全局请求体上限。此前是 20MB，而 backup.py 的上传恢复按 200MB 设计
+    # （MAX_UPLOAD_BYTES + 413 友好提示）：含相册的备份 zip 几十张照片就超 20MB，
+    # 请求在进路由前就被顶掉，200MB 那套检查成了永不可达的死代码。
+    # 各端点仍有自己的尺度：照片上传 10MB（photos.py）、备份上传 200MB
+    # （backup.py 的 413 带真实原因），全局这条只是防滥用兜底。
+    MAX_CONTENT_LENGTH=200 * 1024 * 1024,
     # permanent session 有效期（"保持登录状态"功能）
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
     # 路径必须显式写进 config：backup.py 的 _get_backup_dir/_get_db_path 读的是

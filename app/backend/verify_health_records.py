@@ -33,13 +33,28 @@ def detail(cond, yes, no):
 
 
 def main():
+    # 🔴 隔离必须走环境变量，且必须在 import server 之前：
+    # constants.DB_PATH / server.DB_PATH 都是 import 时从 BABYCARE_DB_PATH 定的，
+    # 运行时再改 app.config 屁用没有（get_db() 只认模块级 DB_PATH）。
+    # 本门禁曾用 app.config「假隔离」，实际一直在打默认库
+    # （Windows 上 cwd 在 D 盘 ⇒ D:\var\apps\babycare-fpk\var\babycare.db），
+    # 各轮测试数据全堆在那儿，还让兜底逻辑落到同一个宝宝身上撞 UNIQUE。
+    tmpdir = tempfile.mkdtemp(prefix="verify_health_")
+    os.environ["BABYCARE_DATA_DIR"] = tmpdir
+    os.environ["BABYCARE_DB_PATH"] = os.path.join(tmpdir, "verify.db")
+    os.environ["BABYCARE_LOG_DIR"] = os.path.join(tmpdir, "logs")
+
     import server  # noqa: E402
     from utils import get_db
+    import constants
 
-    tmpdir = tempfile.mkdtemp(prefix="verify_health_")
-    server.app.config["DATA_DIR"] = tmpdir
-    server.app.config["CONFIG_DIR"] = os.path.join(tmpdir, "etc")
-    server.app.config["BABYCARE_DB_PATH"] = os.path.join(tmpdir, "verify.db")
+    # 自检：真隔离了才配往下跑。曾用 app.config 假隔离（get_db 只认 import 时
+    # 从环境变量定下的模块级 DB_PATH），悄悄把各轮测试数据写进默认库。这里
+    # 直接核对 DB_PATH 落在临时目录里，不满足就红，别让假隔离复活。
+    if not os.path.abspath(constants.DB_PATH).startswith(os.path.abspath(tmpdir) + os.sep):
+        print("隔离失效：DB_PATH=%s 不在临时目录 %s 下" % (constants.DB_PATH, tmpdir))
+        return 2
+
     server.app.config["TESTING"] = True
 
     with server.app.app_context():
@@ -57,8 +72,11 @@ def main():
     today = date.today().strftime("%Y-%m-%d")
 
     def mk_baby(name="宝宝"):
+        # gender 必须是 boy/girl/other（与前端下拉一致）。这里曾写 "male"，
+        # 在 add_baby 接入共享校验前能蒙混入库，之后每次都被 400 打掉、
+        # 走兜底逻辑落到库里第一个宝宝身上——各轮测试数据互相打架。
         resp = client.post("/api/babies", json={
-            "name": name, "gender": "male",
+            "name": name, "gender": "boy",
             "birthday": "2025-01-01",
         })
         if resp.status_code >= 400:

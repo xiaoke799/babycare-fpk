@@ -98,8 +98,12 @@ def make_record(kind):
         return {"type": "diaper", "change_time": f"{date_str} {time_str}",
                 "diaper_type": "wet", "color": "", "note": "BD"}
     if kind == "growth":
+        # 数值留空发 null（与前端 growthForm 的 `.value || null` 一致）。
+        # 旧批量入口把 "" 原样插进 REAL 列（SQLite 动态类型存成文本 ""），
+        # 看着能存其实存了一堆非数值，WHO 百分位查询全乱；统一走单条校验后
+        # "" 会被 validate_height 挡下——这正是收紧的目的，别用 fixture 迁就旧行为。
         return {"type": "growth", "record_date": date_str,
-                "height": "", "weight": "", "head_circumference": "", "bmi": "",
+                "height": None, "weight": None, "head_circumference": None, "bmi": None,
                 "note": "BG"}
     raise ValueError(kind)
 

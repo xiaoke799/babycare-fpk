@@ -1077,6 +1077,66 @@ function initMascot() {
     // 对话内模型选择器（与 AI 页共享选择状态）
     fillChatModelSelect(modelSelect);
 
+    // ---- 智能分析 / 清除历史 ----
+    // 这两个子功能原本只写在已不可达的 AI 独立页（page-ai 由小萌浮窗替代，
+    // 见 NAV_HUBS 注释），后端接口和前端实现都在，唯独浮窗上没有入口。
+    const analyzeBtn = document.getElementById('xiaomengAnalyzeBtn');
+    if (analyzeBtn) {
+        analyzeBtn.addEventListener('click', () => {
+            if (!App.currentBaby) {
+                showToast.warning('请先添加宝宝');
+                return;
+            }
+            const loading = document.createElement('div');
+            loading.className = 'chat-msg bot';
+            loading.innerHTML = '<div class="chat-msg-body">正在分析数据...</div>';
+            chatBody.appendChild(loading);
+            chatBody.scrollTop = chatBody.scrollHeight;
+            api(`/api/ai/analyze/${App.currentBaby}`).then(res => {
+                loading.remove();
+                if (!res.success) {
+                    appendBotMsg(res.message || '分析失败，请稍后重试');
+                    return;
+                }
+                const insights = res.insights || [];
+                const s = res.summary || {};
+                let text = `这是小萌对宝宝近期数据的分析：\n`
+                    + `· 生长记录 ${s.total_growth_records || 0} 条\n`
+                    + `· 喂养记录 ${s.total_feeding_records || 0} 条\n`
+                    + `· 睡眠记录 ${s.total_sleep_records || 0} 条`;
+                if (insights.length > 0) {
+                    text += '\n\n' + insights.map(i => {
+                        const mark = i.type === 'warning' ? '[!] ' : i.type === 'success' ? '[OK] ' : '';
+                        return '· ' + mark + i.title + (i.content ? '：' + i.content : '');
+                    }).join('\n');
+                } else {
+                    text += '\n\n暂无更多建议，先记录几天数据再看更好。';
+                }
+                appendBotMsg(text);
+            }).catch(() => {
+                loading.remove();
+                appendBotMsg('分析失败，请稍后重试');
+            });
+        });
+    }
+
+    const clearBtn = document.getElementById('xiaomengClearBtn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            if (!App.currentBaby) return;
+            if (!confirm('确定要清除所有聊天记录吗？')) return;
+            api(`/api/ai/chat/history/${App.currentBaby}`, { method: 'DELETE' }).then(res => {
+                if (res.success) {
+                    showToast('聊天记录已清除');
+                    chatBody.innerHTML = '<div class="chat-msg bot">嗨～我是小萌，宝宝今天还好吗？有什么想记录的随时找我 </div>';
+                    renderQuickQuestions();
+                } else {
+                    showToast.error(res.message || '清除失败');
+                }
+            });
+        });
+    }
+
     // ---- 加载聊天历史 ----
     function loadChatHistory() {
         if (!App.currentBaby) return;
@@ -7235,6 +7295,8 @@ function loadClinicSummary() {
 }
 
 function getAgeText(days) {
+    // 生日解析不了时后端给 null，别把「未知」显示成「0天」——那是静默的错数据
+    if (days === null || days === undefined || isNaN(days)) return '--';
     if (days < 30) return `${days}天`;
     if (days < 365) {
         const m = Math.floor(days / 30);
@@ -17843,13 +17905,27 @@ function renderHealthAsqList(asqList) {
         const rClass = resultClass[a.result] || '';
         const rText = resultMap[a.result] || a.result;
         return `<div class="asq-mini-card ${rClass}">
-            <div class="asq-mini-header"><span class="asq-mini-age">${a.age_months}月龄</span><span class="asq-mini-date">${a.screening_date}</span><span class="asq-mini-result ${rClass}">${rText}</span>${a.interval ? `<span class="asq-interval-tag">${a.interval} 月龄问卷</span>` : ''}</div>
+            <div class="asq-mini-header"><span class="asq-mini-age">${a.age_months}月龄</span><span class="asq-mini-date">${a.screening_date}</span><span class="asq-mini-result ${rClass}">${rText}</span>${a.interval ? `<span class="asq-interval-tag">${a.interval} 月龄问卷</span>` : ''}<button class="asq-mini-delete" onclick="deleteAsqFromHealth(${a.id})" title="删除这条筛查记录">×</button></div>
             <div class="asq-mini-scores">
                 <span>沟通:${a.communication_score}</span><span>大运动:${a.gross_motor_score}</span>
                 <span>精细:${a.fine_motor_score}</span><span>解决:${a.problem_solving_score}</span><span>社交:${a.personal_social_score}</span>
             </div>
         </div>`;
     }).join('');
+}
+
+function deleteAsqFromHealth(id) {
+    // 误录/重复录入的 ASQ 记录在此删除：deleteAsq 写好后一直没有入口
+    // （成长栏刻意不渲染删除，健康档案又只渲染只读卡片），错误数据永久留存。
+    if (!confirm('确定删除这条筛查记录？')) return;
+    api(`/api/asq/${id}`, { method: 'DELETE' }).then(res => {
+        if (res.success) {
+            showToast.success('已删除');
+            loadScreenings();   // 连同筛查统计一起刷新，删完数字要跟着变
+        } else {
+            showToast.error(res.message || '删除失败');
+        }
+    });
 }
 
 function showAsqModalFromHealth() {

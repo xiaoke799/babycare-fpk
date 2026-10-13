@@ -1038,7 +1038,10 @@
         <div class="health-subsection">
             <div class="health-subsection-head">
                 <h4 class="section-subtitle">用药提醒</h4>
-                <button class="btn btn-outline btn-sm" id="addMedReminderBtn">＋ 添加用药提醒</button>
+                <div class="health-subsection-actions">
+                    <button class="btn btn-outline btn-sm" id="addMedicationBtn">＋ 记录用药</button>
+                    <button class="btn btn-outline btn-sm" id="addMedReminderBtn">＋ 添加用药提醒</button>
+                </div>
             </div>
             <div class="med-reminder-info-card">
                 <div class="med-reminder-info-title">⏰ 用药提醒说明</div>
@@ -3779,10 +3782,14 @@
         <div class="modal-body pet-chat-body" id="xiaomengChatBody">
             <div class="chat-msg bot">嗨～我是小萌，宝宝今天还好吗？有什么想记录的随时找我 </div>
         </div>
-        <div class="pet-chat-toolbar">
-            <label class="ai-model-label" for="xiaomengModelSelect">回答模型</label>
-            <select id="xiaomengModelSelect" class="ai-model-select" title="选择本次对话使用的回答模型"></select>
-        </div>
+                <div class="pet-chat-toolbar">
+                    <label class="ai-model-label" for="xiaomengModelSelect">回答模型</label>
+                    <select id="xiaomengModelSelect" class="ai-model-select" title="选择本次对话使用的回答模型"></select>
+                    <div class="pet-chat-toolbar-actions">
+                        <button class="btn btn-outline btn-sm" id="xiaomengAnalyzeBtn" type="button" title="让 AI 分析宝宝近期的生长发育数据">智能分析</button>
+                        <button class="btn btn-outline btn-sm" id="xiaomengClearBtn" type="button" title="清除与小萌的所有聊天记录">清除历史</button>
+                    </div>
+                </div>
         <div class="pet-chat-input">
             <input type="text" id="xiaomengInput" placeholder="和小萌说点什么…" autocomplete="off">
             <button class="btn btn-primary" id="xiaomengSend" type="button">发送</button>

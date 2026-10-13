@@ -9702,6 +9702,14 @@ body {
     margin-bottom: 12px;
 }
 
+/* 小节标题右侧的多个按钮（如「记录用药」+「添加用药提醒」）横排 */
+.health-subsection-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .health-subsection-head .section-subtitle {
     margin: 0;
 }
@@ -10340,6 +10348,11 @@ body {
 .asq-mini-age { font-weight: 600; }
 .asq-mini-date { font-size: 12px; color: var(--text-light); }
 .asq-mini-result { padding: 1px 8px; border-radius: 8px; font-size: 11px; margin-left: auto; }
+.asq-mini-delete {
+    border: none; background: none; cursor: pointer; color: var(--text-light);
+    font-size: 15px; line-height: 1; padding: 2px 5px; border-radius: 4px; flex-shrink: 0;
+}
+.asq-mini-delete:hover { color: var(--danger-color); background: rgba(244, 67, 54, 0.08); }
 .asq-result-normal { background: #E8F5E9; color: #2E7D32; }
 .asq-result-monitoring { background: #FFF8E1; color: #F57F17; }
 .asq-result-referral { background: #FFEBEE; color: #C62828; }
@@ -12113,6 +12126,15 @@ input:checked + .toggle-slider:before {
     gap: 8px;
     padding: 6px 14px 8px;
     border-top: 1px dashed var(--border-color);
+}
+
+/* 工具栏右侧的「智能分析 / 清除历史」：靠右排，与模型选择器同一行 */
+.pet-chat-toolbar-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
 }
 
 .pet-chat-toolbar .ai-model-label {

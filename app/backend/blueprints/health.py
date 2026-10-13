@@ -13,10 +13,16 @@ import sqlite3
 from flask import Blueprint, request, jsonify
 
 from utils import get_db, row_to_dict, rows_to_list, json_body, normalize_author
-from validators import validate_datetime, validate_date
+from validators import (validate_datetime, validate_date, validate_text_length,
+                        NOTE_MAX_LENGTH, NAME_MAX_LENGTH)
 import vaccine_utils
 
 bp = Blueprint("health", __name__)
+
+# 用药间隔上限（小时）：超过 30 天的「下次用药」没有意义。
+# 此前只挡了负数，99999999 会让下面 timedelta 相加溢出年份 >9999 直接 500，
+# 用户的手误被伪装成服务端故障，还会被记进 error_logs 当 CRITICAL。
+MAX_DOSE_INTERVAL_HOURS = 720
 
 
 def _safe_query(db, sql, params=()):
@@ -38,9 +44,14 @@ def get_clinic_summary(baby_id):
     if not baby:
         return jsonify({'success': False, 'message': '宝宝不存在'}), 404
 
-    birthday = datetime.datetime.strptime(baby['birthday'], '%Y-%m-%d').date()
+    # 历史脏数据（生日不是 YYYY-MM-DD）不能让整页 500：医生面前打不开报告
+    # 才是真尴尬。解析不了就按「未知月龄」降级，页面照常出。
+    try:
+        birthday = datetime.datetime.strptime(baby['birthday'], '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        birthday = None
     today = datetime.date.today()
-    age_days = (today - birthday).days
+    age_days = (today - birthday).days if birthday else None
 
     # 最近成长记录
     growth_history = db.execute(
@@ -257,6 +268,16 @@ def add_medication(baby_id):
         return jsonify({'success': False, 'message': '间隔时间必须为整数'}), 400
     if interval < 0:
         return jsonify({'success': False, 'message': '间隔时间不能为负数'}), 400
+    if interval > MAX_DOSE_INTERVAL_HOURS:
+        return jsonify({'success': False,
+                        'message': f'间隔时间不能超过 {MAX_DOSE_INTERVAL_HOURS} 小时（30 天）'}), 400
+
+    ok, med_name, err = validate_text_length(data.get('medication_name'), NAME_MAX_LENGTH, '药品名称')
+    if not ok:
+        return jsonify({'success': False, 'message': err}), 400
+    ok, med_note, err = validate_text_length(data.get('note'), NOTE_MAX_LENGTH, '备注')
+    if not ok:
+        return jsonify({'success': False, 'message': err}), 400
 
     ok, measure_time, terr = validate_datetime(data.get('measure_time'), '用药时间', default_now=True)
     if not ok:
@@ -271,8 +292,8 @@ def add_medication(baby_id):
     db.execute(
         '''INSERT INTO medication_records (baby_id, medication_name, dosage, dosage_unit, measure_time, next_dose_interval, next_dose_time, note)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-        (baby_id, data['medication_name'], data.get('dosage', ''), data.get('dosage_unit', 'mg'),
-         measure_time, interval, next_dose_time, data.get('note', ''))
+        (baby_id, med_name, data.get('dosage', ''), data.get('dosage_unit', 'mg'),
+         measure_time, interval, next_dose_time, med_note or '')
     )
     db.commit()
     return jsonify({'success': True, 'message': '用药记录已保存', 'next_dose_time': next_dose_time})
@@ -599,8 +620,10 @@ def update_allergy_test(test_id):
     if not fields:
         return jsonify({'success': False, 'message': '无更新字段'}), 400
     values.append(test_id)
-    db.execute(f'UPDATE allergy_tests SET {", ".join(fields)} WHERE id = ?', values)
+    cur = db.execute(f'UPDATE allergy_tests SET {", ".join(fields)} WHERE id = ?', values)
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({'success': False, 'message': '过敏测试记录不存在'}), 404
     return jsonify({'success': True, 'message': '过敏测试已更新'})
 
 
@@ -654,16 +677,27 @@ def update_medication_reminder(baby_id, record_id):
     """更新用药提醒"""
     data = json_body()
     db = get_db()
-    # 更新所有字段
-    medication_name = data.get('medication_name')
-    dosage = data.get('dosage', '')
-    frequency = data.get('frequency', '')
-    next_dose_time = data.get('next_dose_time')
+    # 先取出原记录：① 不存在就 404（此前 UPDATE 命中 0 行也回 200「成功」）；
+    # ② 本次没传的字段沿用原值——medication_name 是 NOT NULL，直接写 None
+    #    会撞「数据冲突」400，用户只想改个备注却被拒。
+    row = db.execute('SELECT * FROM medication_reminders WHERE id=? AND baby_id=?',
+                     (record_id, baby_id)).fetchone()
+    if not row:
+        return jsonify({'success': False, 'message': '用药提醒不存在'}), 404
+    existing = dict(row)
+
+    medication_name = data.get('medication_name') or existing['medication_name']
+    dosage = data.get('dosage', existing['dosage'])
+    frequency = data.get('frequency', existing['frequency'])
+    next_dose_time = data.get('next_dose_time', existing['next_dose_time'])
     if next_dose_time not in (None, ''):
         ok, next_dose_time, terr = validate_datetime(next_dose_time, '下次用药时间')
         if not ok:
             return jsonify({'success': False, 'message': terr}), 400
-    note = data.get('note', '')
+    note = data.get('note', existing['note'])
+    ok, note, nerr = validate_text_length(note, NOTE_MAX_LENGTH, '备注')
+    if not ok:
+        return jsonify({'success': False, 'message': nerr}), 400
     is_active = data.get('is_active')
 
     db.execute(

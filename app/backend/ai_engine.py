@@ -1844,9 +1844,14 @@ def _post_chat_json(url, payload, headers, trace_id=None, tag=''):
     _t0 = time.time()
     prefix = ('%s ' % tag) if tag else ''
     if trace_id:
+        # max_tokens 的落脚点随厂商而异：openai 兼容在顶层，ollama 在
+        # options.num_predict。只读顶层会让 ollama 路径的 trace 永远显示 None。
+        _mt = payload.get('max_tokens')
+        if _mt is None:
+            _mt = (payload.get('options') or {}).get('num_predict')
         llm_trace(trace_id, '⑤', '%sPOST %s model=%s max_tokens=%s timeout=%ss'
                   % (prefix, url[:120], payload.get('model'),
-                     payload.get('max_tokens'), _effective_timeout()))
+                     _mt, _effective_timeout()))
     try:
         req = urllib.request.Request(
             url, data=json.dumps(payload).encode('utf-8'), headers=headers)
@@ -1937,7 +1942,15 @@ def _call_ollama(messages, model_override=None, trace_id=None, max_tokens=None):
         'model': model_override or LLM.get('model') or PROVIDER_TEMPLATES['ollama']['default_model'],
         'messages': messages,
         'stream': False,
-        'options': {'temperature': LLM.get('temperature') or 0.7},
+        'options': {
+            'temperature': LLM.get('temperature') or 0.7,
+            # 🔴 此前这里收了 max_tokens 参数却没用：调用方（ai_writer 的
+            # extract_* 要 500、full-diary 要 2000）的预算被静默丢弃，一律按
+            # 模板默认值生成。2026-10-10 修 max_tokens 贯通时只覆盖了
+            # openai 兼容路径，ollama 这条被漏掉——同族缺陷的残留。
+            # Ollama 的对应参数是 options.num_predict。
+            'num_predict': _resolve_max_tokens(max_tokens, PROVIDER_TEMPLATES['ollama']),
+        },
     }
     ok, result = _post_chat_json(url, payload, {'Content-Type': 'application/json'},
                                  trace_id=trace_id)

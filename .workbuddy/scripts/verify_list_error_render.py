@@ -147,13 +147,27 @@ window.addEventListener('load', function () {
     return dst
 
 
-def dump_dom(site, port, label):
+class _ProbeServer(socketserver.TCPServer):
+    """探针专用静态服务。
+
+    🔴 allow_reuse_address 必须开：本机动态端口范围是 1024-15000
+    （netsh int ipv4 show dynamicport tcp 实测），旧版写死 8793+8 正好落在
+    区间内——Edge 自己发起的出网连接、机器上别的程序，随时可能占用其中某个
+    端口，随后 TCPServer.bind 撞 WSAEADDRINUSE(10048) 直接崩，
+    门禁从"探针"变成"看端口运气"（批跑与单跑都稳定复现，不是偶发）。
+    端口 0 让 OS 分配一个保证空闲的端口，从根上消除这个失败类。
+    """
+    allow_reuse_address = True
+
+
+def dump_dom(site, label):
     handler = lambda *a, **kw: http.server.SimpleHTTPRequestHandler(*a, directory=site, **kw)
     # 🔴 URL 必须带网关前缀 /app/babycare-fpk/ —— index.html 与 js/app.js
     #    都挂在这个前缀下（前者决定文档，后者决定静态资源路径）。
     #    漏掉前缀 ⇒ /index.html 404，抓回来的是 Python 的 404 错误页。
     doc = '/app/babycare-fpk/index.html'
-    httpd = socketserver.TCPServer(('127.0.0.1', port), handler)
+    httpd = _ProbeServer(('127.0.0.1', 0), handler)
+    port = httpd.server_address[1]        # OS 分配的真实端口
     th = threading.Thread(target=httpd.serve_forever, daemon=True)
     th.start()
     try:
@@ -169,6 +183,8 @@ def dump_dom(site, port, label):
         return dom
     finally:
         httpd.shutdown()
+        httpd.server_close()   # 只 shutdown 不 close，监听套接字要等 GC 才释放
+        th.join(timeout=10)
 
 
 def main():
@@ -180,12 +196,10 @@ def main():
         return 2
 
     base = tempfile.mkdtemp(prefix='list_err_probe')
-    port = 8793
     all_ok = True
     for i, (page, container, text, trigger) in enumerate(CASES):
         site = build_site(os.path.join(base, page + '-' + container), page, container, text, trigger)
-        port += 1
-        dom = dump_dom(site, port, page + '-' + container)
+        dom = dump_dom(site, page + '-' + container)
         html = open(dom, encoding='utf-8').read()
         # 🔴 不能用 `id="PROBE_RESULT"[^>]*>(.*?)</div>` —— 容器内是 innerHTML，
         #    嵌套标签会让非贪婪匹配在第一个 </div> 处截断，文本只剩个">"。

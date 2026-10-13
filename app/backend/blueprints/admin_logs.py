@@ -107,7 +107,14 @@ def admin_log_clear():
     """清理过期错误记录"""
     try:
         data = request.get_json(silent=True) or {}
-        days = data.get("days", 30)
+        # days 必须收敛成 int：此前直接把请求体的值拿进 min/max，
+        # 传 "30"（字符串）会 TypeError → 500，且 str(e) 把
+        # "'>' not supported between instances of 'int' and 'str'"
+        # 这种内部报错原文吐给前端。
+        try:
+            days = int(data.get("days", 30))
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "message": "days 必须为整数"}), 400
         days = min(max(days, 1), 365)
         count = clear_old_errors(days=days)
         logger.info("管理员清理了 %d 条错误记录（保留 %d 天）", count, days)

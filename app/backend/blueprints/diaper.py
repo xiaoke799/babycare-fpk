@@ -356,17 +356,24 @@ def batch_add_diaper_records(baby_id):
             diaper_type = rec.get("diaper_type")
             if not diaper_type:
                 raise ValueError("缺少 diaper_type")
-            ok_t, change_time, err_t = validate_datetime(
-                rec.get("change_time") or now, "更换时间"
-            )
-            if not ok_t:
-                raise ValueError(err_t)
+            # 与单条路由同一套校验（_validate_diaper_payload）：此前这里
+            # color/skin_condition 裸放行，"purple" 也能入库，前端按颜色
+            # 筛选永远查不到；note 无长度上限。批量入口不许比单条松。
+            values, err_resp = _validate_diaper_payload({
+                "diaper_type": diaper_type,
+                "change_time": rec.get("change_time") or now,
+                "color": rec.get("color"),
+                "skin_condition": rec.get("skin_condition"),
+                "brand": rec.get("brand"),
+                "note": rec.get("note", ""),
+            })
+            if err_resp:
+                raise ValueError(err_resp[0].get_json().get("message", "参数无效"))
             db.execute(
                 """INSERT INTO diaper_records
-                   (baby_id, change_time, diaper_type, color, skin_condition, brand, note)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (baby_id, change_time, diaper_type, rec.get("color"),
-                 rec.get("skin_condition"), rec.get("brand"), rec.get("note", "")),
+                   (baby_id, change_time, diaper_type, color, skin_condition, brand, note, author)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (baby_id,) + tuple(values) + (normalize_author(rec),),
             )
             inserted += 1
         except Exception as e:

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -36,6 +37,14 @@ import server  # noqa: E402
 app = server.app
 app.config["TESTING"] = True
 server.init_db()
+
+# 第 4 段要真打恢复接口，需要登录态 + 安全码
+client = app.test_client()
+with client.session_transaction() as sess:
+    sess["authenticated"] = True
+    sess["is_admin"] = True
+    sess["user_id"] = 1
+client.put("/api/settings/safety-code", json={"code": "2580"})
 
 from blueprints.backup import (  # noqa: E402
     _RESTORE_ALLOWED_TABLES, _restore_from_data, inspect_backup_archive,
@@ -229,6 +238,58 @@ chk(not failed, "恢复过程没有失败项", f"失败 {failed}")
 chk(mf['tables'].get('feeding_records') == got_feed,
     "清单声明的行数与实际恢复出的行数一致（清单可信）")
 con.close()
+
+print("\n=== 4. 恢复入口的 pre-flight：损坏备份必须被拒，且不许动现有数据 ===")
+# inspect_backup_archive 早就写好了，但 2026-10-12 审计发现三个恢复入口
+# （restore / upload-restore / restore-from-share）都没调用它 —— 而
+# _restore_from_data 对同名宝宝是「先删后插」：损坏备份只要 JSON 能解析
+# 就会通过，结果是删掉现有记录 + 写入残本后 commit，静默数据丢失。
+# 机制在、链路没接上 = 没有。这里把链路钉住。
+
+# 4a. 库里先放点真数据（恢复被拒时它们必须原样活着）
+client.post("/api/babies", json={"name": "存量宝宝", "birthday": "2025-03-01"})
+for _amt in (120, 150):        # 两条，drop_rows 删掉一条才会真的变坏
+    r_feed = client.post("/api/babies/1/feeding", json={
+        "feeding_type": "bottle", "start_time": "2026-10-01 08:00:00", "amount": _amt})
+chk(r_feed.status_code == 200, "先造两条存量喂奶记录", str(r_feed.get_json()))
+with app.app_context():
+    n_before = get_db().execute("SELECT COUNT(*) FROM feeding_records").fetchone()[0]
+chk(n_before == 2, "存量喂奶 2 条", f"实际 {n_before}")
+
+# 4b. 造一份真备份（走接口，落在真实备份目录），然后弄坏它
+r = client.post("/api/backup/create", json={"note": "pre-flight 测试"})
+j_create = r.get_json() or {}
+chk(r.status_code == 200 and j_create.get("success"), "通过接口创建备份", str(j_create))
+good_name = j_create.get("filename") or ""
+corrupt_name = good_name.replace(".zip", "") + "_corrupt.zip"
+corrupt_path = os.path.join(tmpdir, "backups", corrupt_name)
+shutil.copyfile(os.path.join(tmpdir, "backups", good_name), corrupt_path)
+drop_rows(corrupt_path)          # 复用第 2 段的破坏函数：删一行喂奶记录
+rep = inspect_backup_archive(corrupt_path)
+chk(rep['status'] == 'broken', "确认这份备份已被弄坏", f"实际 {rep['status']}")
+
+# 4c. 恢复它：必须 400 拒绝，且存量数据一条不许少
+r = client.post("/api/backup/restore",
+                json={"filename": corrupt_name, "safety_code": "2580"})
+j = r.get_json() or {}
+chk(r.status_code == 400, "损坏备份被恢复接口拒绝（400）", f"{r.status_code} {j}")
+chk("校验" in str(j.get("message") or ""), "拒绝原因说清楚是校验未通过", str(j.get("message")))
+with app.app_context():
+    n_after = get_db().execute("SELECT COUNT(*) FROM feeding_records").fetchone()[0]
+chk(n_after == n_before and n_before >= 1,
+    "被拒后存量数据原样保留（先删后插没有发生）", f"前 {n_before} 后 {n_after}")
+
+# 4d. 共享目录恢复入口同样要挡（用户手工拷进去的备份损坏概率更高）
+r = client.post("/api/backup/restore-from-share",
+                json={"filename": corrupt_name, "safety_code": "2580"})
+chk(r.status_code == 400, "restore-from-share 同样拒绝损坏备份",
+    f"{r.status_code} {r.get_json()}")
+
+# 4e. 没弄坏的同一份备份必须能正常恢复（证明不是「一律拒绝」）
+r = client.post("/api/backup/restore",
+                json={"filename": good_name, "safety_code": "2580"})
+chk(r.status_code == 200 and (r.get_json() or {}).get("success"),
+    "完好备份仍能正常恢复（pre-flight 不误伤）", str(r.get_json()))
 
 print()
 if fails:

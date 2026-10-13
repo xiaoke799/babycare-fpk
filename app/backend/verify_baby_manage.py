@@ -57,6 +57,9 @@ with client.session_transaction() as sess:
     sess["authenticated"] = True  # 会话登录恒为管理员
 
 print("\n=== 1. 创建 ===")
+# 刻意用「早产儿」fixture：预产期晚于生日 61 天。纠正月龄正是靠预产期起算的
+# （growth_utils.effective_age_basis），这类数据必须能建——旧规则「预产期不能
+# 晚于生日」方向写反，只因从前 POST 不校验才没暴露。
 r = client.post("/api/babies", json={
     "name": "冒烟宝",
     "birthday": "2024-06-01",
@@ -78,8 +81,19 @@ check("性别已改", data.get("gender") == "boy", str(data.get("gender")))
 check("未传字段保持不变", data.get("birthday") == "2024-06-01", str(data.get("birthday")))
 check("年龄字段仍在", "age" in data)
 
+# 预产期规则：与生日相差超过 120 天视为填错（年份看串、生日填进预产期）
 r = client.put(f"/api/babies/{baby_id}", json={"due_date": "2025-01-01"})
-check("预产期晚于生日被拒", r.status_code == 400, str(r.get_json()))
+check("预产期与生日相差过大被拒", r.status_code == 400, str(r.get_json()))
+
+r = client.put(f"/api/babies/{baby_id}", json={"due_date": "2023-06-01"})
+check("预产期早于生日过多也被拒", r.status_code == 400, str(r.get_json()))
+
+# 正向：早产儿预产期（晚于生日 61 天）必须能存，且落库即规范格式
+r = client.put(f"/api/babies/{baby_id}", json={"due_date": "2024-8-1"})
+j = r.get_json() or {}
+check("早产儿预产期可保存并归一化",
+      r.status_code == 200 and (j.get("data") or {}).get("due_date") == "2024-08-01",
+      f"{r.status_code} {j}")
 
 r = client.put(f"/api/babies/{baby_id}", json={})
 check("空 body 被拒", r.status_code == 400, str(r.get_json()))

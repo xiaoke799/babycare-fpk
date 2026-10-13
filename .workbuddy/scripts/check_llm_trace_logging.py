@@ -304,6 +304,14 @@ _f.flock=lambda *a,**k:None; _f.lockf=lambda *a,**k:None
 sys.modules["fcntl"]=_f
 class H(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
+        # 🔴 必须先把请求体读掉再回应：Windows 上服务端带着未读数据关闭 socket
+        # 会回 RST 而非 FIN，客户端可能连已到达的响应一起作废，报
+        # RemoteDisconnected / WinError 10053——探针就永远拿不到 404，
+        # 「404 带上状态码与响应体」这条断言时灵时不灵（实测 20 连发 12 次丢响应）。
+        # 加上读 body 后 20/20 稳定拿到 404。mock_llm_server 本来就读了，别退回去。
+        _n = int(self.headers.get('Content-Length') or 0)
+        if _n:
+            self.rfile.read(_n)
         self.send_response(404); self.send_header("Content-Type","application/json")
         self.end_headers()
         self.wfile.write(b'{"error":{"message":"The model `no-such-model` does not exist"}}')
