@@ -598,8 +598,7 @@ MILESTONE_EXTRACTION_PROMPT = """你是一位婴儿发育记录助手。根据�
   "title": "里程碑名称",
   "description": "详细描述",
   "achieved_date": "YYYY-MM-DD",
-  "category": "motor|language|social|cognitive",
-  "is_first": true|false
+  "category": "motor|language|social|cognitive"
 }}
 ```
 
@@ -827,7 +826,10 @@ def extract_milestone_record(user_input: str) -> Tuple[bool, Optional[Dict[str, 
         'description': data.get('description', ''),
         'achieved_date': data.get('achieved_date', ''),
         'category': data.get('category', 'other'),
-        'is_first': data.get('is_first', True),
+        # 不接 is_first：本端点（/api/health/milestones）的 milestone_details
+        # 表没有这一列，成长成就页的 is_first 走 /api/babies/<id>/milestones
+        # 另一套端点/表。在这里提出 is_first 只会被前端静默丢弃
+        # （没字段可显示、没列可落库）—— 宁可这里就不给。
     }
 
 

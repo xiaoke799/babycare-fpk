@@ -11,7 +11,11 @@
   2. **「带＋添加按钮 ≠ 归记录栏」这条启发式已废弃**（同日上午定、下午推翻）。
      判定标准是「这块是填表，还是看结果」，不是「有没有添加按钮」。
      出牙/囟门/飞跃期这几个页面主体就是填表（图表只是顺带看一眼），所以整个留在记录栏。
-  3. 两栏内部按小组收纳（记录栏 6 组 / 成长栏 4 组），宫格渲染时插 `.hub-group-title`。
+  3. 两栏内部按小组收纳（记录栏 7 组 / 成长栏 4 组），宫格渲染时插 `.hub-group-title`。
+     （2026-10-14：记录栏从 6 组扩到 7 组——新增「智能」组放 AI 帮写入口。
+      理由：AI 帮写主体是「一句话 → 记录」的录入入口，按规则 1 归记录栏；
+      但它横跨所有记录类型，塞进任何业务组都会误导，故单列一组。
+      同次变更同步改了本脚本第十节的分组标题断言与第十一节的落点断言。）
   4. 应用信息 / 存储 / 数据库健康 / 日志 / 异常记录，统一收在
      设置页的「系统诊断」一个板块里，不散落别处。
 
@@ -245,8 +249,8 @@ chk("桌面端图标没被按整屏均分（图标容器 flex 定宽，分组最
     and not re.search(r"\.hub-group-items\s*\{[^}]*grid-template-columns", css)
     and re.search(r"\.hub-group-items\s+\.nav-item\s*\{\s*width:\s*\d+px", css)
     is not None)
-chk("记录栏 6 个分组标题",
-    titles_in(rec) == ['喂养', '睡眠', '日常', '发育', '生活', '健康'])
+chk("记录栏 7 个分组标题",
+    titles_in(rec) == ['喂养', '睡眠', '日常', '发育', '生活', '健康', '智能'])
 chk("成长栏 4 个分组标题",
     titles_in(gro) == ['生长', '睡眠', '回顾', '发育'])
 chk("只读别名表存在", "const READONLY_ALIAS =" in js)
@@ -285,6 +289,12 @@ for p, lbl in nav_entries:
 chk("全部 %d 个入口都有 section 或别名落点%s"
     % (len(nav_entries), "" if not missing else "，缺：" + "、".join(missing)),
     not missing)
+# AI 帮写（2026-10-14 新增）：入口在记录栏「智能」组，落点是独立 section
+# #page-ai-writer（不是别名）。上面那条通用断言已覆盖 section 存在性，
+# 这里补两条它不查的：入口确实归记录栏、loadPageData 认这个 page
+# （漏认 case = 点进「AI 帮写」白屏，这正是本脚本要防的那类 bug）。
+chk("AI 帮写入口归记录栏（ai-writer 在 record hub 段内）", "ai-writer" in rec)
+chk("loadPageData 认 ai-writer（漏认 = 点进去白屏）", "case 'ai-writer':" in js)
 chk("别名页都没有独立 section（会撞 DOM id）",
     all(('id="page-%s"' % a) not in html for a in alias_keys))
 chk("switchPage / renderRelatedLinks 都做了别名换算",

@@ -14885,3 +14885,217 @@ input:checked + .toggle-slider:before {
     color: var(--text-secondary);
     font-size: 11px;
 }
+
+/* ==================== AI 帮写（page-ai-writer）==================== */
+.aiw-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.aiw-header-hint {
+    font-size: 12px;
+    color: var(--text-light);
+}
+
+.aiw-card {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 14px 16px;
+    margin-bottom: 14px;
+}
+
+.aiw-card-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.aiw-card-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 10px;
+}
+
+.aiw-type-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.aiw-chip {
+    padding: 5px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background: var(--bg-color);
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.aiw-chip.active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: #fff;
+    font-weight: 500;
+}
+
+.aiw-input {
+    width: 100%;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    font-size: 14px;
+    color: var(--text-primary);
+    background: var(--card-bg);
+    resize: vertical;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+.aiw-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.aiw-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+.aiw-actions .btn {
+    flex: 0 0 auto;
+}
+
+.aiw-actions-hint {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.aiw-fail-msg {
+    color: var(--danger-color);
+}
+
+.aiw-goto-config {
+    margin-left: 8px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--primary-strong);
+    font-size: 12px;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.aiw-confirm {
+    margin-top: 12px;
+    border-top: 1px dashed var(--border-color);
+    padding-top: 12px;
+}
+
+.aiw-confirm-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--primary-strong);
+    margin-bottom: 8px;
+}
+
+.aiw-confirm-form .form-group {
+    margin-bottom: 10px;
+}
+
+.aiw-confirm-form label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.aiw-confirm-form input,
+.aiw-confirm-form select,
+.aiw-confirm-form textarea {
+    width: 100%;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    font-size: 14px;
+    color: var(--text-primary);
+    background: var(--card-bg);
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+.aiw-confirm-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.aiw-result {
+    margin-top: 12px;
+    border-top: 1px dashed var(--border-color);
+    padding-top: 12px;
+}
+
+.aiw-result-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--primary-strong);
+    margin-bottom: 8px;
+}
+
+.aiw-result .aiw-input {
+    margin-bottom: 8px;
+}
+
+.aiw-ms-item {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    background: var(--bg-color);
+}
+
+.aiw-ms-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.aiw-ms-meta {
+    font-size: 12px;
+    color: var(--text-light);
+    margin: 2px 0 4px;
+}
+
+.aiw-ms-desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 8px;
+}
+
+.aiw-ms-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.aiw-ms-actions .btn {
+    flex: 0 0 auto;
+}
+
+.aiw-ms-saved {
+    font-size: 12px;
+    color: var(--success-color);
+}
