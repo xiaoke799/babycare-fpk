@@ -25,6 +25,8 @@
     --nav-height: 60px;
     --header-height: 56px;
     --safe-bottom: env(safe-area-inset-bottom, 0px);
+    /* 输入框聚焦环：主色半透明，柔和不抢眼；深色模式在下方覆盖 */
+    --focus-ring: 0 0 0 3px rgba(255, 134, 160, 0.18);
 }
 
 /* ==================== 深色模式 ==================== */
@@ -46,6 +48,7 @@
     --border-color: #4A3A37;
     --shadow: 0 2px 12px rgba(0,0,0,0.3);
     --shadow-lg: 0 8px 30px rgba(0,0,0,0.4);
+    --focus-ring: 0 0 0 3px rgba(255, 158, 122, 0.22);
 }
 
 [data-theme="dark"] body,
@@ -314,6 +317,90 @@ body {
     background: rgba(255, 255, 255, 0.24);
 }
 
+/* ==================== 全局排版质感微调 ====================
+   2026-10-16 UI 排版美化：只动「质感层」，不动布局结构、不动配色体系。
+   全部集中在本分节，方便整体回滚。逐条说明见各规则注释。 */
+
+/* 字体渲染：桌面端 Windows 上中文小字更细腻（仅抗锯齿，不改变字号字重） */
+body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+/* 页面切换：轻柔淡入代替生硬跳变。
+   ⚠ 只用 opacity，不用 transform —— transform 会让页面内 position:fixed
+   的子元素（浮窗等）改为相对本页定位，动画期间会闪跳。 */
+.page.active {
+    animation: pageIn 0.22s ease-out;
+}
+
+@keyframes pageIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* 弹窗投影：原本只有圆角没有投影，浮在半透明遮罩上缺层次 */
+.modal {
+    box-shadow: 0 12px 40px rgba(90, 40, 55, 0.22), 0 2px 8px rgba(90, 40, 55, 0.10);
+}
+
+[data-theme="dark"] .modal {
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* 输入框聚焦环：边框变主色之外补一圈柔和光晕，焦点位置一眼可见 */
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    box-shadow: var(--focus-ring);
+}
+
+/* 按钮按压反馈：所有 .btn 统一按下轻微缩放（transition 已有 all 0.2s） */
+.btn:active {
+    transform: scale(0.97);
+}
+
+/* 键盘可达性：Tab 导航时焦点可见（鼠标点击不触发，不影响日常观感） */
+:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+/* 统一细滚动条：桌面端内容区/弹窗里默认粗灰滚动条与整体圆角语言不搭 */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(209, 90, 122, 0.25);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(209, 90, 122, 0.4);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* 统计数字等宽：数值跳动时宽度不抖，卡片不晃 */
+.stat-value {
+    font-variant-numeric: tabular-nums;
+}
+
+/* ==================== 全局排版质感微调结束 ==================== */
+
 /* ==================== 主内容区 ==================== */
 .app-content {
     flex: 1;
@@ -379,6 +466,7 @@ body {
     font-weight: 600;
     color: var(--text-primary);
     margin-bottom: 10px;
+    letter-spacing: 0.01em;
 }
 
 .action-buttons {
@@ -1752,7 +1840,8 @@ body {
     text-align: center;
     color: var(--text-light);
     font-size: 13px;
-    padding: 20px;
+    padding: 28px 20px;
+    line-height: 1.7;
 }
 
 /* 列表接口失败的占位：与「暂无记录」区分开。
@@ -1774,7 +1863,7 @@ body {
     background: rgba(0,0,0,0.8);
     color: white;
     padding: 10px 20px;
-    border-radius: 8px;
+    border-radius: 12px;
     font-size: 13px;
     z-index: 2000;
     opacity: 0;
