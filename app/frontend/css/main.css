@@ -3336,7 +3336,7 @@ body {
 .knowledge-search input:focus {
     outline: none;
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.1);
+    box-shadow: 0 0 0 2px rgba(255, 134, 160, 0.15);
 }
 
 @media print {
@@ -3354,8 +3354,8 @@ body {
     align-items: center;
     gap: 8px;
     padding: 8px 16px;
-    background: linear-gradient(135deg, #6c5ce7, #a29bfe);
-    color: white;
+    background: linear-gradient(135deg, rgba(255, 173, 122, 0.14), rgba(255, 134, 160, 0.14));
+    color: var(--primary-strong);
     font-size: 12px;
     flex-shrink: 0;
 }
@@ -3819,7 +3819,7 @@ body {
     text-align: center;
     margin-top: 6px;
     padding: 6px;
-    background: linear-gradient(135deg, #f8f9fe, #e8eaf6);
+    background: linear-gradient(135deg, rgba(255, 173, 122, 0.08), rgba(255, 134, 160, 0.08));
     border-radius: 6px;
 }
 
@@ -4198,7 +4198,7 @@ body {
     top: 0;
     bottom: 0;
     width: 2px;
-    background: #6c5ce7;
+    background: var(--primary-strong);
 }
 
 .sleep-goal-text {
@@ -4344,7 +4344,7 @@ body {
 
 /* 本周概览 */
 .sleep-weekly-summary {
-    background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+    background: linear-gradient(135deg, rgba(255, 173, 122, 0.10) 0%, rgba(255, 134, 160, 0.10) 100%);
     border-radius: var(--radius);
     padding: 16px;
     margin-bottom: 16px;
@@ -4430,7 +4430,7 @@ body {
 }
 
 .sleep-timer-controls .btn-primary {
-    background: #6366f1;
+    background: var(--primary-color);
     color: white;
     padding: 8px 20px;
 }
@@ -5152,7 +5152,7 @@ body {
 }
 
 .pattern-insight {
-    background: linear-gradient(135deg, #f8f9fe, #e8eaf6);
+    background: linear-gradient(135deg, rgba(255, 173, 122, 0.08) 0%, rgba(255, 134, 160, 0.08) 100%);
     border-radius: var(--radius);
     padding: 12px;
     font-size: 13px;
@@ -7236,7 +7236,7 @@ body {
 
 .sound-card.playing .sound-status {
     color: var(--primary-color);
-    background: #E3F2FD;
+    background: rgba(255, 134, 160, 0.12);
 }
 
 .sounds-player {
@@ -7455,8 +7455,8 @@ body {
 .ai-badge {
     font-size: 11px;
     padding: 3px 8px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    background: rgba(255, 134, 160, 0.15);
+    color: var(--primary-strong);
     border-radius: 10px;
     font-weight: 500;
 }
@@ -7501,12 +7501,12 @@ body {
 
 .ai-quick-btn:hover {
     border-color: var(--primary-color);
-    background: rgba(74, 144, 226, 0.05);
+    background: rgba(255, 134, 160, 0.06);
 }
 
 .ai-analyze-btn {
     margin-top: 8px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
     color: white !important;
     border: none !important;
     font-weight: 600;
@@ -7564,7 +7564,7 @@ body {
 }
 
 .ai-message-bot .ai-message-avatar {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
 }
 
 .ai-message-user .ai-message-avatar {
@@ -7675,7 +7675,7 @@ body {
     align-items: center;
     padding: 16px 20px;
     border-bottom: 1px solid var(--border-color);
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
     color: white;
 }
 
@@ -7804,8 +7804,8 @@ body {
 
 /* 仪表盘 AI 洞察卡片 */
 .ai-insight-card {
-    background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
-    border: 1px solid rgba(102, 126, 234, 0.2);
+    background: linear-gradient(135deg, rgba(255, 173, 122, 0.08) 0%, rgba(255, 134, 160, 0.08) 100%);
+    border: 1px solid rgba(255, 134, 160, 0.2);
     border-radius: var(--radius);
     padding: 16px;
     margin-bottom: 16px;
@@ -8476,10 +8476,10 @@ body {
 .activities-age-badge {
     display: inline-block;
     padding: 6px 14px;
-    background: linear-gradient(135deg, #E3F2FD, #BBDEFB);
+    background: linear-gradient(135deg, rgba(255, 173, 122, 0.12), rgba(255, 134, 160, 0.12));
     border-radius: 20px;
     font-size: 13px;
-    color: #1565C0;
+    color: var(--primary-strong);
     font-weight: 500;
     margin-bottom: 12px;
 }
@@ -10856,7 +10856,7 @@ body {
 
 /* 训练目标卡片 */
 .tummytime-goal-card {
-    background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+    background: linear-gradient(135deg, rgba(255, 173, 122, 0.08) 0%, rgba(255, 134, 160, 0.08) 100%);
     border-radius: var(--radius);
     padding: 16px;
     margin-bottom: 16px;
@@ -10866,11 +10866,11 @@ body {
 }
 
 .tummytime-goal-info { flex-shrink: 0; }
-.tummytime-goal-label { font-size: 12px; color: #6366f1; font-weight: 500; }
+.tummytime-goal-label { font-size: 12px; color: var(--primary-strong); font-weight: 500; }
 .tummytime-goal-value { font-size: 20px; font-weight: 700; color: #4f46e5; }
 .tummytime-goal-progress { flex: 1; }
 .tummytime-goal-bar { height: 8px; background: #c7d2fe; border-radius: 4px; overflow: hidden; margin-bottom: 4px; }
-.tummytime-goal-fill { height: 100%; background: linear-gradient(90deg, #6366f1, #8b5cf6); border-radius: 4px; transition: width 0.5s ease; }
+.tummytime-goal-fill { height: 100%; background: linear-gradient(90deg, var(--primary-color), var(--primary-strong)); border-radius: 4px; transition: width 0.5s ease; }
 .tummytime-goal-text { font-size: 12px; color: #6b7280; }
 
 /* 图表卡片 */
@@ -11346,12 +11346,12 @@ input:checked + .toggle-slider:before {
 
 /* ==================== 睡眠预测 ==================== */
 .sleep-prediction-card {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, rgba(255, 173, 122, 0.10) 0%, rgba(255, 134, 160, 0.10) 100%);
+    border: 1px solid rgba(255, 134, 160, 0.2);
     border-radius: var(--radius);
     padding: 16px;
     margin-bottom: 16px;
-    color: white;
-    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    box-shadow: var(--shadow);
 }
 
 .prediction-header {
@@ -11390,7 +11390,7 @@ input:checked + .toggle-slider:before {
 .prediction-confidence {
     font-size: 12px;
     opacity: 0.8;
-    background: rgba(255,255,255,0.2);
+    background: rgba(255, 134, 160, 0.15);
     padding: 2px 8px;
     border-radius: 10px;
 }
@@ -11406,7 +11406,7 @@ input:checked + .toggle-slider:before {
     font-size: 12px;
     opacity: 0.85;
     padding-top: 8px;
-    border-top: 1px solid rgba(255,255,255,0.2);
+    border-top: 1px solid rgba(255, 134, 160, 0.25);
     line-height: 1.5;
 }
 
@@ -11414,11 +11414,6 @@ input:checked + .toggle-slider:before {
     text-align: center;
     opacity: 0.7;
     font-size: 13px;
-}
-
-[data-theme="dark"] .sleep-prediction-card {
-    background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
-    box-shadow: 0 4px 15rgba(0,0,0,0.3);
 }
 
 /* ==================== 报告页面 ==================== */
@@ -11454,8 +11449,8 @@ input:checked + .toggle-slider:before {
 }
 
 .report-summary-card {
-    background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
-    border: 1px solid rgba(102, 126, 234, 0.2);
+    background: linear-gradient(135deg, rgba(255, 173, 122, 0.08) 0%, rgba(255, 134, 160, 0.08) 100%);
+    border: 1px solid rgba(255, 134, 160, 0.2);
     border-radius: var(--radius);
     padding: 16px;
     margin-bottom: 16px;
@@ -11469,8 +11464,8 @@ input:checked + .toggle-slider:before {
 }
 
 .report-period-badge {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    background: rgba(255, 134, 160, 0.15);
+    color: var(--primary-strong);
     padding: 3px 10px;
     border-radius: 10px;
     font-size: 12px;
@@ -12550,7 +12545,7 @@ input:checked + .toggle-slider:before {
 .trend-bar {
     width: 100%;
     max-width: 36px;
-    background: linear-gradient(to top, #6366f1, #a5b4fc);
+    background: linear-gradient(to top, var(--primary-color), var(--primary-light));
     border-radius: 4px 4px 0 0;
     min-height: 4px;
     transition: height 0.3s;
@@ -14900,8 +14895,8 @@ input:checked + .toggle-slider:before {
     margin: 0 0 8px;
     padding: 8px 10px;
     border-radius: 8px;
-    background: rgba(102, 126, 234, 0.10);
-    border: 1px solid rgba(102, 126, 234, 0.30);
+    background: rgba(255, 134, 160, 0.10);
+    border: 1px solid rgba(255, 134, 160, 0.30);
     color: var(--text-secondary);
     font-size: 12px;
     line-height: 1.5;
@@ -14916,15 +14911,15 @@ input:checked + .toggle-slider:before {
     flex: 0 0 auto;
     padding: 4px 10px;
     border-radius: 6px;
-    border: 1px solid rgba(102, 126, 234, 0.55);
+    border: 1px solid rgba(255, 134, 160, 0.55);
     background: transparent;
-    color: #667eea;
+    color: var(--primary-strong);
     font-size: 12px;
     cursor: pointer;
 }
 
 .chat-goto-settings:hover {
-    background: rgba(102, 126, 234, 0.14);
+    background: rgba(255, 134, 160, 0.14);
 }
 
 /* 输入框禁用态：明确"这里现在不能用" */
