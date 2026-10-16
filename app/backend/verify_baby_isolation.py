@@ -21,6 +21,17 @@
 
 跑法：
   $MIMO_PYTHON app/backend/verify_baby_isolation.py
+
+负向探针：
+  BABY_ISO_PROBE_LEAK=1  取 after 快照前往 B 自己的分表插一条带标记行，
+                          模拟「B 的视图被不该出现的数据改变」，零变化断言
+                          必须转红——证明日期归一化没把真泄漏抹掉。
+
+⚠ 比对前必须过 _norm()：AI 周报/月报返回体带 generated_at（秒级）与
+date_range.end（今天），跨秒/跨午夜时 B 自己的视图就变，差分断言曾把它
+误判成跨宝宝泄漏（2026-10-17 实测：单跑也红，23 过 1 挂，挂的正是这两个
+接口）。产品显示生成时间是对的，错的是断言。归一化只抹日期/时间戳，
+标记串/计数/条数不受影响。
 """
 import os
 import re
@@ -62,6 +73,18 @@ def check(name, cond, extra=""):
     else:
         _failed += 1
         print(f"  [FAIL] {name}" + (f"  -> {extra}" if extra else ""))
+
+
+def _norm(text):
+    """比对前归一化随时间变化的内容（日期 / 秒级时间戳 → 占位符）。
+
+    存在的理由：AI 周报/月报带 generated_at 与 date_range.end，B 自己的视图
+    会跨秒/跨午夜变化，差分断言曾据此误报「A 的数据泄漏进 B」。
+    只归一化时间文本——泄漏标记串（ZQISOLATE7）、计数、记录条数原样保留。
+    """
+    text = re.sub(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", "<TS>", text)
+    text = re.sub(r"\d{4}-\d{2}-\d{2}", "<DATE>", text)
+    return text
 
 
 print("\n=== 0. 建库 ===")
@@ -112,9 +135,9 @@ def request_all(baby_id):
         url = tpl.replace("<int:baby_id>", str(baby_id))
         try:
             r = client.get(url)
-            out[tpl] = (r.status_code, r.get_data(as_text=True))
+            out[tpl] = (r.status_code, _norm(r.get_data(as_text=True)))
         except Exception as e:  # noqa: BLE001
-            out[tpl] = (0, repr(e))
+            out[tpl] = (0, _norm(repr(e)))
     return out
 
 
@@ -136,9 +159,9 @@ def request_query_scoped(baby_id):
         url = tpl % baby_id
         try:
             r = client.get(url)
-            out[tpl] = (r.status_code, r.get_data(as_text=True))
+            out[tpl] = (r.status_code, _norm(r.get_data(as_text=True)))
         except Exception as e:  # noqa: BLE001
-            out[tpl] = (0, repr(e))
+            out[tpl] = (0, _norm(repr(e)))
     return out
 
 
@@ -193,6 +216,22 @@ check(
     len(inserted) >= int(scoped_in_db * 0.9),
     f"{len(inserted)}/{scoped_in_db}",
 )
+
+if os.environ.get("BABY_ISO_PROBE_LEAK") == "1":
+    # 负向探针：取 after 快照前，往 B 自己的分表插一条带标记行，
+    # 模拟「B 的视图被不该出现的数据改变」——零变化断言必须转红，
+    # 证明 _norm() 的日期归一化没有把真泄漏一并抹掉。用完勿忘关。
+    _probe_conn = sqlite3.connect(TMP_DB)
+    try:
+        _probe_conn.execute(
+            "INSERT INTO growth_records (baby_id, record_date, height, weight, note) "
+            "VALUES (?, '2020-01-01', 1, 1, ?)", (B, MARK))
+        _probe_conn.commit()
+        print("  [探针] 已往 B 的 growth_records 插标记行（零变化断言应转红）")
+    except Exception as e:  # noqa: BLE001
+        print(f"  [警告] 泄漏探针插入失败：{e}")
+    finally:
+        _probe_conn.close()
 
 after = request_all(B)
 after_q_A = request_query_scoped(A)
