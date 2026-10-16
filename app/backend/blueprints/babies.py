@@ -149,6 +149,12 @@ def _validate_baby_payload(data, partial=False, current=None):
                 gap = 0
             if gap > DUE_DATE_MAX_GAP_DAYS:
                 return "预产期与生日相差过大，请确认是否填写正确"
+    if "is_premature" in data:
+        # 早产儿标记：健康随访规划按它决定是否展示「高危早产儿增加的随访」档
+        flag = data.get("is_premature")
+        if flag not in (0, 1, True, False, "0", "1", "true", "false"):
+            return "早产标记取值不正确"
+        data["is_premature"] = 1 if flag in (1, True, "1", "true") else 0
     return None
 
 
@@ -169,18 +175,20 @@ def update_baby(baby_id):
     err = _validate_baby_payload(data, partial=True, current=row_to_dict(existing))
     if err:
         return jsonify({"success": False, "message": err}), 400
-    if not any(k in data for k in ("name", "birthday", "gender", "due_date")):
+    if not any(k in data for k in ("name", "birthday", "gender", "due_date", "is_premature")):
         return jsonify({"success": False, "message": "没有需要更新的字段"}), 400
 
     fields = []
     values = []
-    for key in ("name", "birthday", "gender", "due_date"):
+    for key in ("name", "birthday", "gender", "due_date", "is_premature"):
         if key in data:
             fields.append(f"{key} = ?")
             if key == "name":
                 values.append(data[key].strip())
             elif key == "due_date":
                 values.append(data.get("due_date") or None)
+            elif key == "is_premature":
+                values.append(1 if data[key] in (1, True, "1", "true") else 0)
             else:
                 values.append(data[key])
     values.append(baby_id)

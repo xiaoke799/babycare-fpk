@@ -2370,6 +2370,8 @@ function loadPageData(page) {
         }
         case 'clinic':
             loadClinicSummary();
+            loadFollowupPlan();
+            loadCountdowns();
             break;
         case 'sounds':
             break;
@@ -3126,11 +3128,17 @@ function loadDashboard() {
         setText('homeFeedingCount', feeding.count != null ? feeding.count : 0);
         setText('homeSleepTime', formatHomeDuration(sleep.total_minutes));
         setText('homeDiaperCount', diaper.count != null ? diaper.count : 0);
-        // 今日奶量
-        const mlToday = feeding.ml ?? feeding.amount ?? feeding.total_ml;
-        if (mlToday != null) {
+        // 今日奶量：后端真实字段是 total_amount（此前写过 feeding.ml/amount/total_ml，
+        // 与返回体从未对上，这行等于从未生效——字段名必须对着返回体核）
+        const mlToday = feeding.total_amount;
+        if (mlToday != null && mlToday > 0) {
             setText('homeFeedingCount', `${feeding.count != null ? feeding.count : 0} · ${mlToday}ml`);
         }
+
+        // 今日奶量目标（估算不可用 → 整块隐藏，不硬编）
+        renderHomeMilkTarget(data.milk_target);
+        // 即将到来的自定义倒计时
+        renderHomeCountdowns(data.upcoming_countdowns || []);
 
         // 身体数据：显示最新一次测量值。
         // 后端 dashboard 早就返回了 latest_growth，前端一直没用它，
@@ -3162,6 +3170,51 @@ function renderHomeBodyData(growth) {
     setText('homeBodyDate', has
         ? (g.record_date ? '测量于 ' + g.record_date : '已有测量记录')
         : '还没有测量记录，点右边「记一次」');
+}
+
+/**
+ * 首页「今日奶量」卡：目标 vs 实际 + 进度条。
+ * milk_target 为 null（没生日 / 数据异常）时整块隐藏——估算不可用就留白，不硬编。
+ */
+function renderHomeMilkTarget(mt) {
+    const card = document.getElementById('homeMilkCard');
+    if (!card) return;
+    if (!mt || !mt.target_ml) {
+        card.style.display = 'none';
+        return;
+    }
+    card.style.display = 'block';
+    setText('homeMilkNow', `${mt.today_amount != null ? mt.today_amount : 0}`);
+    setText('homeMilkTarget', mt.target_ml);
+    setText('homeMilkPercent', `${mt.percent != null ? mt.percent : 0}%`);
+    // 进度条封顶 100%（达成率数字保留真实值）
+    const bar = document.getElementById('homeMilkBar');
+    if (bar) bar.style.width = `${Math.min(mt.percent || 0, 100)}%`;
+    setText('homeMilkDetail', mt.detail || '');
+}
+
+/**
+ * 首页「即将到来」倒计时条：最多显示 3 条，点击跳看诊摘要页管理。
+ */
+function renderHomeCountdowns(list) {
+    const wrap = document.getElementById('homeCountdowns');
+    if (!wrap) return;
+    if (!list.length) {
+        wrap.style.display = 'none';
+        return;
+    }
+    wrap.style.display = 'flex';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    wrap.innerHTML = list.map(cd => {
+        let days = null;
+        if (cd.target_date) {
+            const t = new Date(cd.target_date + 'T00:00:00');
+            days = Math.round((t - today) / 86400000);
+        }
+        const dayText = days == null ? '' : (days === 0 ? '今天' : days > 0 ? `${days} 天后` : '已过期');
+        return `<button type="button" class="home-cd-chip" onclick="switchPage('clinic')">⏰ ${escapeHtml(cd.title)} · ${dayText}</button>`;
+    }).join('');
 }
 
 function renderFeedingTrend(trendData) {
@@ -7314,6 +7367,183 @@ function getAgeText(days) {
     const y = Math.floor(days / 365);
     const m = Math.floor((days % 365) / 30);
     return m > 0 ? `${y}岁${m}个月` : `${y}岁`;
+}
+
+// ==================== 健康随访规划（0-6 岁随访预约卡） ====================
+
+/**
+ * 加载随访清单。早产勾选框状态变化也会重新拉取（后端按 is_premature 过滤加做档）。
+ * 失败就地渲染错误提示（与「暂无」区分，铁律：失败分支不许省）。
+ */
+function loadFollowupPlan() {
+    if (!App.currentBaby) return;
+    const container = document.getElementById('followupList');
+    if (!container) return;
+    api(`/api/health/followup/schedule/${App.currentBaby}`).then(res => {
+        if (!res.success) {
+            container.innerHTML = '<p class="empty-tip error-tip">随访清单加载失败，请重试</p>';
+            return;
+        }
+        const d = res.data || {};
+        const cb = document.getElementById('followupPremature');
+        if (cb) cb.checked = !!d.is_premature;
+        renderFollowupList(d.items || []);
+    }).catch(() => {
+        container.innerHTML = '<p class="empty-tip error-tip">随访清单加载失败，请检查网络</p>';
+    });
+}
+
+function renderFollowupList(items) {
+    const container = document.getElementById('followupList');
+    if (!container) return;
+    if (!items.length) {
+        container.innerHTML = '<p class="empty-tip">先给宝宝填写生日，才会生成随访计划</p>';
+        return;
+    }
+    container.innerHTML = items.map(it => {
+        let dayBadge = '';
+        if (it.days_left != null) {
+            if (it.days_left < 0) dayBadge = '<span class="followup-badge past">已过档期</span>';
+            else if (it.days_left <= 14) dayBadge = `<span class="followup-badge soon">${it.days_left === 0 ? '就在今天' : `还剩 ${it.days_left} 天`}</span>`;
+            else dayBadge = `<span class="followup-badge">${it.days_left} 天后</span>`;
+        }
+        const planned = it.planned_date
+            ? `<span class="followup-planned">已约 ${it.planned_date}</span>`
+            : `<span class="followup-suggest">建议 ${it.suggested_date || '--'}</span>`;
+        return `<div class="followup-item${it.premature_only ? ' is-premature' : ''}">
+            <div class="followup-info">
+                <b>${escapeHtml(it.label)}</b>${it.premature_only ? '<span class="followup-badge premature">早产加做</span>' : ''}${dayBadge}
+                <div class="followup-sub">${planned} · ${escapeHtml(it.location)}</div>
+                ${it.note ? `<div class="followup-sub">${escapeHtml(it.note)}</div>` : ''}
+            </div>
+            <div class="followup-actions">
+                <input type="date" class="followup-date" value="${it.planned_date || it.suggested_date || ''}" data-age="${it.age_months}">
+                <button type="button" class="btn btn-outline btn-sm" onclick="saveFollowupPlan(${it.age_months})">保存</button>
+                ${it.planned_date ? `<button type="button" class="btn-link" onclick="clearFollowupPlan(${it.age_months})">取消</button>` : ''}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function saveFollowupPlan(ageMonths) {
+    const input = document.querySelector(`.followup-date[data-age="${ageMonths}"]`);
+    if (!input) return;
+    api(`/api/health/followup/plan/${App.currentBaby}`, {
+        method: 'PUT',
+        body: { age_months: ageMonths, planned_date: input.value }
+    }).then(res => {
+        showToast(res.success ? '预约已保存' : (res.message || '保存失败'));
+        if (res.success) loadFollowupPlan();
+    }).catch(() => showToast('保存失败，请检查网络'));
+}
+
+function clearFollowupPlan(ageMonths) {
+    api(`/api/health/followup/plan/${App.currentBaby}?age_months=${ageMonths}`, { method: 'DELETE' })
+        .then(res => {
+            showToast(res.success ? '已取消预约' : (res.message || '操作失败'));
+            if (res.success) loadFollowupPlan();
+        }).catch(() => showToast('操作失败，请检查网络'));
+}
+
+/** 早产开关：调宝宝资料接口写 is_premature，成功后重拉清单（出现/收起早产加做档） */
+function initFollowupPrematureToggle() {
+    const cb = document.getElementById('followupPremature');
+    if (!cb || cb.dataset.bound) return;
+    cb.dataset.bound = '1';
+    cb.addEventListener('change', () => {
+        api(`/api/babies/${App.currentBaby}`, {
+            method: 'PUT',
+            body: { is_premature: cb.checked }
+        }).then(res => {
+            showToast(res.success ? (cb.checked ? '已标记早产宝宝' : '已取消早产标记') : (res.message || '操作失败'));
+            loadFollowupPlan();
+        }).catch(() => {
+            showToast('操作失败，请检查网络');
+            cb.checked = !cb.checked;
+        });
+    });
+}
+
+// ==================== 自定义倒计时 ====================
+
+function loadCountdowns() {
+    if (!App.currentBaby) return;
+    const container = document.getElementById('cdList');
+    if (!container) return;
+    api(`/api/babies/${App.currentBaby}/countdowns`).then(res => {
+        if (!res.success) {
+            container.innerHTML = '<p class="empty-tip error-tip">倒计时加载失败，请重试</p>';
+            return;
+        }
+        renderCountdowns(res.data || []);
+    }).catch(() => {
+        container.innerHTML = '<p class="empty-tip error-tip">倒计时加载失败，请检查网络</p>';
+    });
+}
+
+function renderCountdowns(items) {
+    const container = document.getElementById('cdList');
+    if (!container) return;
+    if (!items.length) {
+        container.innerHTML = '<p class="empty-tip">还没有倒计时，添加一个吧</p>';
+        return;
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    container.innerHTML = items.map(cd => {
+        let cls = 'future', dayText = '';
+        if (cd.target_date) {
+            const t = new Date(cd.target_date + 'T00:00:00');
+            const days = Math.round((t - today) / 86400000);
+            if (days < 0) { cls = 'past'; dayText = '已过期'; }
+            else if (days === 0) { cls = 'today'; dayText = '就是今天'; }
+            else { dayText = `还有 ${days} 天`; }
+        }
+        return `<div class="cd-item ${cls}">
+            <div class="cd-info">
+                <b>⏰ ${escapeHtml(cd.title)}</b>
+                <div class="cd-sub">${escapeHtml(cd.target_date || '')} · ${dayText}${cd.note ? ' · ' + escapeHtml(cd.note) : ''}</div>
+            </div>
+            <button type="button" class="btn-link" onclick="deleteCountdown(${cd.id})">删除</button>
+        </div>`;
+    }).join('');
+}
+
+function addCountdown() {
+    const title = (document.getElementById('cdTitle') || {}).value || '';
+    const date = (document.getElementById('cdDate') || {}).value || '';
+    if (!title.trim()) { showToast('请填写事件名称'); return; }
+    if (!date) { showToast('请选择目标日期'); return; }
+    api(`/api/babies/${App.currentBaby}/countdowns`, {
+        method: 'POST',
+        body: { title: title.trim(), target_date: date, note: '' }
+    }).then(res => {
+        showToast(res.success ? '倒计时已添加' : (res.message || '添加失败'));
+        if (res.success) {
+            const t = document.getElementById('cdTitle');
+            const d = document.getElementById('cdDate');
+            if (t) t.value = '';
+            if (d) d.value = '';
+            loadCountdowns();
+        }
+    }).catch(() => showToast('添加失败，请检查网络'));
+}
+
+function deleteCountdown(id) {
+    if (!confirm('删除这个倒计时？')) return;
+    api(`/api/babies/${App.currentBaby}/countdowns/${id}`, { method: 'DELETE' })
+        .then(res => {
+            showToast(res.success ? '已删除' : (res.message || '删除失败'));
+            if (res.success) loadCountdowns();
+        }).catch(() => showToast('删除失败，请检查网络'));
+}
+
+/** 绑定「添加倒计时」按钮（元素在 page-clinic 里，静态存在；绑定失败时静默会导致点了没反应，故由 mainInit safeCall 兜日志） */
+function initCountdownForm() {
+    const btn = document.getElementById('cdAddBtn');
+    if (!btn || btn.dataset.bound) return;
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', addCountdown);
 }
 
 // ==================== 应用设置 ====================
@@ -13124,6 +13354,8 @@ function mainInit() {
     safeCall(initShoppingPage, 'initShoppingPage');
     safeCall(initMedReminderPage, 'initMedReminderPage');
     safeCall(initReportsPage, 'initReportsPage');
+    safeCall(initFollowupPrematureToggle, 'initFollowupPrematureToggle');
+    safeCall(initCountdownForm, 'initCountdownForm');
     safeCall(initDarkMode, 'initDarkMode');
 
     // 返回按钮点击事件

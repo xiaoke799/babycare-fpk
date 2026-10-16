@@ -12,6 +12,7 @@ from flask import Blueprint, request, jsonify
 
 from utils import get_db, row_to_dict, rows_to_list, json_body, normalize_author
 from logger import get_logger
+from user_context import require_not_integration
 from validators import (validate_enum, validate_date, validate_text_length,
                         validate_height, validate_weight, validate_head_circumference,
                         NOTE_MAX_LENGTH, NAME_MAX_LENGTH,
@@ -932,3 +933,100 @@ def get_fontanelle_records(baby_id):
 
 
 # 成长对比照片/日记路由已迁移到 blueprints/photos.py
+
+
+# ==================== 自定义倒计时（通用事件倒数） ====================
+
+@bp.route("/api/babies/<int:baby_id>/countdowns", methods=["GET"])
+def countdowns_list(baby_id):
+    """倒计时清单：未来事件按日期升序，今天到期与已过期的排后面（前端区分渲染）。"""
+    try:
+        db = get_db()
+        rows = db.execute(
+            """SELECT * FROM countdowns WHERE baby_id = ?
+               ORDER BY target_date ASC, id ASC""",
+            (baby_id,),
+        ).fetchall()
+        return jsonify({"success": True, "data": rows_to_list(rows)})
+    except Exception as e:
+        logger.error("countdowns_list error: %s", e, exc_info=True)
+        return jsonify({"success": False, "message": "数据加载失败"}), 500
+
+
+@bp.route("/api/babies/<int:baby_id>/countdowns", methods=["POST"])
+@require_not_integration
+def countdowns_create(baby_id):
+    data = json_body()
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "message": "无效数据"}), 400
+    title = (data.get("title") or "").strip()
+    if not title or len(title) > 40:
+        return jsonify({"success": False, "message": "请填写 40 字以内的事件名称"}), 400
+    target = data.get("target_date") or ""
+    # validate_date 返回 (ok, 归一化值, 错误)——归一化回写，脏格式不落库
+    ok_d, target_norm, derr = validate_date(target, "目标日期")
+    if not ok_d:
+        return jsonify({"success": False, "message": derr}), 400
+    target = target_norm
+    note = (data.get("note") or "").strip()[:200]
+
+    db = get_db()
+    if not db.execute("SELECT 1 FROM babies WHERE id = ?", (baby_id,)).fetchone():
+        return jsonify({"success": False, "message": "宝宝不存在"}), 404
+    cur = db.execute(
+        """INSERT INTO countdowns (baby_id, title, target_date, note)
+           VALUES (?, ?, ?, ?)""",
+        (baby_id, title, target[:10], note),
+    )
+    db.commit()
+    row = db.execute("SELECT * FROM countdowns WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return jsonify({"success": True, "data": row_to_dict(row), "message": "倒计时已创建"}), 201
+
+
+@bp.route("/api/babies/<int:baby_id>/countdowns/<int:item_id>", methods=["PUT"])
+@require_not_integration
+def countdowns_update(baby_id, item_id):
+    data = json_body()
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "message": "无效数据"}), 400
+    db = get_db()
+    existing = db.execute(
+        "SELECT * FROM countdowns WHERE id = ? AND baby_id = ?", (item_id, baby_id)
+    ).fetchone()
+    if not existing:
+        return jsonify({"success": False, "message": "倒计时不存在"}), 404
+
+    title = (data.get("title") or "").strip() or existing["title"]
+    if len(title) > 40:
+        return jsonify({"success": False, "message": "事件名称 40 字以内"}), 400
+    target = (data.get("target_date") or existing["target_date"])[:10]
+    # validate_date 返回 (ok, 归一化值, 错误)
+    ok_d, target_norm, derr = validate_date(target, "目标日期")
+    if not ok_d:
+        return jsonify({"success": False, "message": derr}), 400
+    target = target_norm
+    note = (data.get("note") if data.get("note") is not None else existing["note"])
+    note = (note or "").strip()[:200]
+
+    db.execute(
+        """UPDATE countdowns SET title = ?, target_date = ?, note = ?,
+           updated_at = datetime('now', 'localtime') WHERE id = ?""",
+        (title, target, note, item_id),
+    )
+    db.commit()
+    row = db.execute("SELECT * FROM countdowns WHERE id = ?", (item_id,)).fetchone()
+    return jsonify({"success": True, "data": row_to_dict(row)})
+
+
+@bp.route("/api/babies/<int:baby_id>/countdowns/<int:item_id>", methods=["DELETE"])
+@require_not_integration
+def countdowns_delete(baby_id, item_id):
+    db = get_db()
+    cur = db.execute(
+        "DELETE FROM countdowns WHERE id = ? AND baby_id = ?", (item_id, baby_id)
+    )
+    db.commit()
+    # 假成功守卫：rowcount=0 必须如实报 404，不许返回「已删除」
+    if cur.rowcount == 0:
+        return jsonify({"success": False, "message": "倒计时不存在"}), 404
+    return jsonify({"success": True, "deleted": cur.rowcount})

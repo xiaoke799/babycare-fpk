@@ -26,6 +26,111 @@ logger = get_logger("analytics")
 SLEEP_QUALITY_LABELS = {3: "好", 2: "一般", 1: "差"}
 
 
+# ==================== 奶量目标估算（今日目标 vs 实际达成） ====================
+# 按日龄分段 × 最新体重估算每日总奶量。系数取自国内通行喂养指导的常用区间
+# （只做提示不判读——跟「本月要点」同一立场：给参考值，不给诊断结论）。
+# 达成率口径：当天有 amount 的喂养记录之和（母乳亲喂常不记量，detail 里注明）。
+_MILK_STAGE_COEFFS = [
+    # (日龄上限, ml/kg 系数或 None=固定值, 固定 ml, 说明)
+    (0, None, 60, "出生首日"),
+    (1, 60, None, "日龄 1 天"),
+    (3, 80, None, "日龄 2-3 天"),
+    (7, 100, None, "日龄 4-7 天"),
+    (14, 120, None, "日龄 8-14 天"),
+    (28, 135, None, "日龄 15-28 天"),
+    (90, 150, None, "1-3 月龄"),
+    (180, 150, None, "4-6 月龄（900ml 封顶）"),
+]
+
+_MILK_CAP_4_6 = 900
+
+
+def _estimate_milk_target(baby, latest_growth):
+    """
+    估算每日奶量目标。
+    返回 dict：target_ml / method(auto/weight-missing) / detail / percent_hint
+    没有体重也能按纯月龄给粗略档（6-12 月、1 岁+ 与体重无关）。
+    """
+    birthday = (baby.get("birthday") or "")[:10]
+    if not birthday:
+        return None
+    try:
+        birth = datetime.datetime.strptime(birthday, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+    age_days = (datetime.date.today() - birth).days
+    if age_days < 0:
+        return None
+    age_m = round(age_days / 30.44, 1)
+    weight = (latest_growth.get("weight") if latest_growth else None) or None
+
+    # 6 月龄以上：奶量随辅食占比递减，与体重脱钩
+    if age_days > 365:
+        target, detail = 500, f"1 岁以上：辅食为主，奶量约 500ml/天（月龄 {age_m:g}）"
+    elif age_days > 180:
+        target = max(800 - 30 * int(age_m - 6), 600)
+        detail = f"{int(age_m)} 月龄：辅食渐入，奶量约 {target}ml/天"
+    else:
+        if not weight or weight <= 0:
+            # 没体重按月龄给固定中位参考
+            fallback = {0: 60, 1: 300, 3: 600, 7: 750}.get(
+                min((age_days + 9) // 30, 7), 800
+            ) if age_days > 28 else {0: 60, 1: 240, 3: 420, 7: 600, 14: 700, 28: 800}.get(
+                age_days, 800
+            )
+            return {
+                "target_ml": fallback,
+                "method": "no-weight",
+                "detail": f"{_stage_label(age_days)}（未录入体重，按月龄中位参考值）",
+            }
+        for max_day, coeff, fixed, label in _MILK_STAGE_COEFFS:
+            if age_days <= max_day:
+                if fixed is not None:
+                    target, detail = fixed, f"{label}：固定 {fixed}ml/天"
+                else:
+                    target = weight * coeff
+                    detail = f"{label}：{weight:g}kg × {coeff}ml/kg"
+                break
+        else:
+            target = min(weight * 150, _MILK_CAP_4_6)
+            detail = f"4-6 月龄：{weight:g}kg × 150ml/kg（900ml 封顶）"
+        if age_days > 150:
+            target = min(target, _MILK_CAP_4_6)
+    return {"target_ml": round(target), "method": "auto", "detail": detail}
+
+
+def _stage_label(age_days):
+    if age_days <= 7:
+        return "新生儿期"
+    if age_days <= 28:
+        return "月内宝宝"
+    return f"{int(age_days // 30)} 月龄"
+
+
+def _milk_target_payload(db, baby, latest_growth, feeding):
+    """组装首页「今日奶量目标」卡的数据。估算不可用时返回 None，前端留白不硬编。"""
+    try:
+        estimate = _estimate_milk_target(row_to_dict(baby) if baby else None,
+                                         row_to_dict(latest_growth) if latest_growth else None)
+        if not estimate:
+            return None
+        today_amount = round((feeding["total"] if feeding else 0) or 0)
+        target = estimate["target_ml"]
+        percent = round(today_amount / target * 100) if target > 0 else 0
+        return {
+            "target_ml": target,
+            "method": estimate["method"],
+            "detail": estimate["detail"],
+            "today_amount": today_amount,
+            "today_count": feeding["count"] if feeding else 0,
+            "percent": percent,
+            "note": "按有奶量记录的喂养统计；母乳亲喂未记量不计入",
+        }
+    except Exception as e:
+        logger.error("milk_target error: %s", e, exc_info=True)
+        return None
+
+
 
 def _parse_datetime(value):
     """统一解析日期时间字符串，失败返回 None（P1-6: 避免裸露 strptime）"""
@@ -503,11 +608,29 @@ def get_dashboard(baby_id):
         except Exception:
             pass
 
+        # 即将到来的倒计时（未来 30 天内按日期升序取 3 条；表是 v8 新增的，老库未迁移时不炸）
+        upcoming_countdowns = []
+        try:
+            horizon = (datetime.date.today() + datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+            upcoming_countdowns = rows_to_list(
+                db.execute(
+                    """SELECT id, title, target_date, note FROM countdowns
+                       WHERE baby_id = ? AND target_date >= ?
+                       ORDER BY target_date ASC LIMIT 3""",
+                    (baby_id, today),
+                ).fetchall()
+            )
+            del horizon
+        except Exception:
+            pass
+
         data = {
             "baby_profile": _format_baby_profile(baby, latest_growth),
             "today_feeding": {"count": feeding["count"] if feeding else 0, "total_amount": feeding["total"] if feeding else 0},
             "today_sleep": {"total_minutes": sleep["total_minutes"] if sleep else 0},
             "today_diaper": {"count": diaper["count"] if diaper else 0},
+            "milk_target": _milk_target_payload(db, baby, latest_growth, feeding),
+            "upcoming_countdowns": upcoming_countdowns,
             "latest_growth": row_to_dict(latest_growth),
             "latest_milestones": rows_to_list(latest_milestones),
             "recent_records": _get_recent_records(db, baby_id, limit=6),

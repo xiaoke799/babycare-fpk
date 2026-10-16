@@ -22,6 +22,7 @@ from flask import Blueprint, request, jsonify
 
 from utils import get_db, row_to_dict, rows_to_list, normalize_author
 from validators import validate_enum as _validate_enum
+from user_context import require_not_integration
 import growth_utils
 
 bp = Blueprint("health_records", __name__)
@@ -1779,3 +1780,161 @@ def health_notice():
 # 注意：曾有一个重复注册的 POST /api/health/records/<baby_id>「增强版」实现，
 # 与上方 health_record_create 路由冲突且使用错误列名 birth_date（实际为 birthday），
 # 属于永不可达的死代码，已移除（路由冲突修复）。
+
+
+# ==================== 健康随访规划（0-6 岁儿童健康随访预约卡） ====================
+# 前瞻能力：既有的体检记录是「回顾」（去过哪），
+# 这里补「规划」（该什么时候去）。数据基于《0-6 岁儿童健康随访预约卡》的常规安排，
+# 只提示不判读：建议日期 = 出生 + 月龄 × 30.44 天，实际以社区/妇幼安排为准。
+# premature_only=True 的是「高危早产儿增加的随访」，仅 is_premature=1 的宝宝可见。
+FOLLOWUP_SCHEDULE = [
+    # 常规随访（所有儿童）
+    {'label': '1月龄', 'age_months': 1, 'premature_only': False, 'location': '社区（儿童健康管理建档）'},
+    {'label': '3月龄', 'age_months': 3, 'premature_only': False, 'location': '社区、区妇幼、市妇幼'},
+    {'label': '6月龄', 'age_months': 6, 'premature_only': False, 'location': '社区、区妇幼、市妇幼'},
+    {'label': '8月龄', 'age_months': 8, 'premature_only': False, 'location': '社区、区妇幼、市妇幼'},
+    {'label': '12月龄', 'age_months': 12, 'premature_only': False, 'location': '社区、区妇幼、市妇幼'},
+    {'label': '18月龄', 'age_months': 18, 'premature_only': False, 'location': '社区、区妇幼、市妇幼'},
+    {'label': '24月龄', 'age_months': 24, 'premature_only': False, 'location': '社区、区妇幼、市妇幼'},
+    {'label': '30月龄', 'age_months': 30, 'premature_only': False, 'location': '社区、区妇幼、市妇幼'},
+    {'label': '36月龄', 'age_months': 36, 'premature_only': False, 'location': '社区、区妇幼、市妇幼'},
+    {'label': '4岁', 'age_months': 48, 'premature_only': False, 'location': '社区'},
+    {'label': '5岁', 'age_months': 60, 'premature_only': False, 'location': '社区'},
+    {'label': '6岁', 'age_months': 72, 'premature_only': False, 'location': '社区'},
+    # 高危早产儿增加的随访（灰色行，仅早产宝宝展示）
+    {'label': '42天-2月龄(早产)', 'age_months': 1.4, 'premature_only': True, 'location': '社区、区妇幼、市妇幼'},
+    {'label': '4月龄(早产)', 'age_months': 4, 'premature_only': True, 'location': '社区、区妇幼、市妇幼'},
+    {'label': '5月龄(早产)', 'age_months': 5, 'premature_only': True, 'location': '社区、区妇幼、市妇幼'},
+    {'label': '10月龄(早产)', 'age_months': 10, 'premature_only': True, 'location': '社区、区妇幼、市妇幼'},
+    {'label': '15月龄(早产)', 'age_months': 15, 'premature_only': True, 'location': '社区、区妇幼、市妇幼'},
+    {'label': '21月龄(早产)', 'age_months': 21, 'premature_only': True, 'location': '社区、区妇幼、市妇幼'},
+]
+
+
+def _followup_suggested_date(birthday, age_months):
+    """建议日期 = 出生 + 月龄 × 30.44 天，四舍五入到日。生日无效返回 None。"""
+    try:
+        birth = datetime.datetime.strptime((birthday or '')[:10], '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return None
+    return birth + datetime.timedelta(days=round(age_months * 30.44))
+
+
+@bp.route('/api/health/followup/schedule/<int:baby_id>', methods=['GET'])
+def followup_schedule_get(baby_id):
+    """获取宝宝的随访清单：每档的建议日期 + 已设预约日期 + 距今天数。"""
+    try:
+        db = get_db()
+        baby = db.execute(
+            'SELECT birthday, is_premature FROM babies WHERE id = ?', (baby_id,)
+        ).fetchone()
+        if not baby:
+            return jsonify({'success': False, 'message': '宝宝不存在'}), 404
+
+        is_premature = bool(baby['is_premature']) if 'is_premature' in baby.keys() else False
+        plans = {
+            r['age_months']: row_to_dict(r)
+            for r in db.execute(
+                'SELECT * FROM followup_plans WHERE baby_id = ?', (baby_id,)
+            ).fetchall()
+        }
+
+        today = datetime.date.today()
+        items = []
+        for slot in FOLLOWUP_SCHEDULE:
+            if slot['premature_only'] and not is_premature:
+                continue
+            suggested = _followup_suggested_date(baby['birthday'], slot['age_months'])
+            plan = plans.get(slot['age_months']) or {}
+            planned = plan.get('planned_date') or ''
+            anchor = planned[:10] if planned else (suggested.isoformat() if suggested else '')
+            days_left = None
+            if anchor:
+                try:
+                    days_left = (
+                        datetime.datetime.strptime(anchor[:10], '%Y-%m-%d').date() - today
+                    ).days
+                except (ValueError, TypeError):
+                    days_left = None
+            items.append({
+                'label': slot['label'],
+                'age_months': slot['age_months'],
+                'location': slot['location'],
+                'premature_only': slot['premature_only'],
+                'suggested_date': suggested.isoformat() if suggested else None,
+                'planned_date': planned[:10] if planned else None,
+                'note': plan.get('note') or '',
+                'days_left': days_left,
+            })
+
+        items.sort(key=lambda x: (x['age_months']))
+        upcoming = [i for i in items if i['days_left'] is not None and i['days_left'] >= 0]
+        return jsonify({
+            'success': True,
+            'data': {
+                'is_premature': is_premature,
+                'items': items,
+                'next': upcoming[0] if upcoming else None,
+            },
+        })
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("followup_schedule_get error: %s", e, exc_info=True)
+        return jsonify({'success': False, 'message': '数据加载失败'}), 500
+
+
+@bp.route('/api/health/followup/plan/<int:baby_id>', methods=['PUT'])
+@require_not_integration
+def followup_plan_put(baby_id):
+    """设置/修改某档随访的预约日期（upsert）。"""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'message': '无效数据'}), 400
+    age_months = data.get('age_months')
+    if not isinstance(age_months, (int, float)) or age_months < 0 or age_months > 84:
+        return jsonify({'success': False, 'message': '月龄档无效'}), 400
+    known = {s['age_months'] for s in FOLLOWUP_SCHEDULE}
+    if float(age_months) not in {float(k) for k in known}:
+        return jsonify({'success': False, 'message': '不是预约卡内的随访档'}), 400
+
+    planned = data.get('planned_date') or ''
+    if planned:
+        # _validate_date 返回 (归一化值, 错误)——归一化回写，脏格式不落库
+        planned_norm, derr = _validate_date(planned, '预约日期')
+        if derr or not planned_norm:
+            return jsonify({'success': False, 'message': derr or '预约日期无效'}), 400
+        planned = planned_norm
+
+    db = get_db()
+    if not _check_baby_exists(db, baby_id):
+        return jsonify({'success': False, 'message': '宝宝不存在'}), 404
+    note = (data.get('note') or '').strip()[:200]
+    db.execute(
+        """INSERT INTO followup_plans (baby_id, age_months, planned_date, status, note)
+           VALUES (?, ?, ?, 'planned', ?)
+           ON CONFLICT(baby_id, age_months)
+           DO UPDATE SET planned_date = excluded.planned_date,
+                         note = excluded.note,
+                         updated_at = datetime('now', 'localtime')""",
+        (baby_id, float(age_months), planned, note),
+    )
+    db.commit()
+    return jsonify({'success': True, 'message': '预约已保存'})
+
+
+@bp.route('/api/health/followup/plan/<int:baby_id>', methods=['DELETE'])
+@require_not_integration
+def followup_plan_delete(baby_id):
+    """取消某档随访的预约。"""
+    age_months = request.args.get('age_months', type=float)
+    if age_months is None:
+        return jsonify({'success': False, 'message': '缺少月龄参数'}), 400
+    db = get_db()
+    if not _check_baby_exists(db, baby_id):
+        return jsonify({'success': False, 'message': '宝宝不存在'}), 404
+    cur = db.execute(
+        'DELETE FROM followup_plans WHERE baby_id = ? AND age_months = ?',
+        (baby_id, age_months),
+    )
+    db.commit()
+    return jsonify({'success': True, 'deleted': cur.rowcount})

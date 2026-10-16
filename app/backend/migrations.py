@@ -439,3 +439,57 @@ def _migration_v7(conn: sqlite3.Connection):
     if "tooth_code" not in cols:
         conn.execute("ALTER TABLE teething_records ADD COLUMN tooth_code TEXT DEFAULT ''")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_teething_baby ON teething_records(baby_id, erupt_date)")
+
+
+@migration(8, "健康随访规划表 + 自定义倒计时表 + babies.is_premature 标记")
+def _migration_v8(conn: sqlite3.Connection):
+    """
+    补三项能力：
+    1. babies.is_premature —— 早产儿标记（用户手填开关），健康随访按它决定
+       是否展示「高危早产儿增加的随访」档（0-6 岁儿童健康随访预约卡的灰色行）。
+    2. followup_plans —— 0-6 岁健康随访的预约日期管理（每次随访一条，
+       UNIQUE(baby_id, age_months) 保证同档不重复；就诊完成后仍走既有
+       health_records 记录，本表只管「约了哪天」）。
+    3. countdowns —— 通用自定义倒计时（生日旅行等任意事件）。
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(babies)").fetchall()}
+    if "is_premature" not in cols:
+        conn.execute("ALTER TABLE babies ADD COLUMN is_premature INTEGER NOT NULL DEFAULT 0")
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS followup_plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            baby_id INTEGER NOT NULL,
+            age_months REAL NOT NULL,
+            planned_date TEXT DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'planned',
+            note TEXT DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            UNIQUE(baby_id, age_months),
+            FOREIGN KEY (baby_id) REFERENCES babies(id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_followup_baby ON followup_plans(baby_id, age_months)"
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS countdowns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            baby_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            target_date TEXT NOT NULL,
+            note TEXT DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            FOREIGN KEY (baby_id) REFERENCES babies(id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_countdowns_baby ON countdowns(baby_id, target_date)"
+    )

@@ -219,6 +219,20 @@
                         </div>
                     </div>
 
+                    <!-- 今日奶量目标卡：估算不可用时整块隐藏，不硬编 -->
+                    <div class="home-milk-card" id="homeMilkCard" style="display:none">
+                        <div class="home-milk-head">
+                            <span class="home-milk-title">今日奶量</span>
+                            <span class="home-milk-percent" id="homeMilkPercent">0%</span>
+                        </div>
+                        <div class="home-milk-bar"><div class="home-milk-bar-fill" id="homeMilkBar"></div></div>
+                        <div class="home-milk-nums"><b id="homeMilkNow">0</b> / 目标 <span id="homeMilkTarget">--</span> ml</div>
+                        <div class="home-milk-detail" id="homeMilkDetail"></div>
+                    </div>
+
+                    <!-- 即将到来的倒计时（自定义事件，点进看诊摘要页管理） -->
+                    <div class="home-countdowns" id="homeCountdowns" style="display:none"></div>
+
                     <!-- 最近记录（回看某天时变成「那天的记录」） -->
                     <div class="home-recent">
                         <h3 class="home-section-title" id="homeRecentTitle">最近记录</h3>
@@ -843,6 +857,27 @@
 
                 <div class="clinic-summary" id="clinicSummary">
                     <p class="empty-tip">加载中...</p>
+                </div>
+
+                <!-- 健康随访规划（0-6 岁随访预约卡）：前瞻「该什么时候去」，与上面回顾型的摘要互补 -->
+                <div class="followup-card" id="followupCard">
+                    <div class="followup-head">
+                        <h3 class="section-title">健康随访规划</h3>
+                        <label class="followup-premature"><input type="checkbox" id="followupPremature"> 高危早产儿（显示加做的随访档）</label>
+                    </div>
+                    <p class="settings-tip">按《0-6 岁儿童健康随访预约卡》生成，建议日期仅供参考，实际以社区 / 妇幼保健院安排为准。填好预约日期后，首页会显示最近一次随访。</p>
+                    <div id="followupList"><p class="empty-tip">加载中...</p></div>
+                </div>
+
+                <!-- 自定义倒计时：生日 / 旅行 / 复查等任意事件 -->
+                <div class="countdown-card">
+                    <h3 class="section-title">自定义倒计时</h3>
+                    <div class="countdown-form">
+                        <input type="text" id="cdTitle" maxlength="40" placeholder="事件名称（如：周岁生日）">
+                        <input type="date" id="cdDate">
+                        <button class="btn btn-primary btn-sm" id="cdAddBtn" type="button">添加</button>
+                    </div>
+                    <div id="cdList"><p class="empty-tip">还没有倒计时，添加一个吧</p></div>
                 </div>
 
             </section>
