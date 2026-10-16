@@ -12,7 +12,7 @@ DEFAULT_SCAN_INTERVAL = 60
 CONF_API_KEY = "api_key"
 CONF_PATH = "path"
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH, Platform.BUTTON]
 
 ATTR_AMOUNT = "amount"
 ATTR_BABY = "baby"

@@ -38,6 +38,9 @@ async def async_setup_entry(
                 BabyCareLastSensor(coordinator, baby, "growth", "最近身高体重"),
                 BabyCareStatsSensor(coordinator, baby, "today_feeding_count", "今日喂奶次数"),
                 BabyCareStatsSensor(coordinator, baby, "today_feeding_ml", "今日奶量ml"),
+                # 今日换尿布次数：后端 today-summary 本就返回
+                # diaper_count（实测过返回体），这里只是补上实体暴露
+                BabyCareStatsSensor(coordinator, baby, "today_diaper_count", "今日换尿布次数"),
             ]
         )
     async_add_entities(entities)
@@ -120,6 +123,7 @@ class BabyCareStatsSensor(CoordinatorEntity[BabyCareCoordinator], SensorEntity):
     _FIELDS = {
         "today_feeding_count": ("feeding_count",),
         "today_feeding_ml": ("feeding_ml",),
+        "today_diaper_count": ("diaper_count",),
     }
 
     def __init__(self, coordinator, baby, kind, label) -> None:
@@ -133,10 +137,10 @@ class BabyCareStatsSensor(CoordinatorEntity[BabyCareCoordinator], SensorEntity):
         # 数值型传感器给 native_unit_of_measurement，否则曲线图无意义）
         if kind == "today_feeding_ml":
             self._attr_native_unit_of_measurement = "mL"
-        # 今日喂奶次数是「统计量」，MEASUREMENT 而非 TOTAL_INCREASING：
-        # 它每天归零，不是单调递增计数器（文档 state_class 章节明确要求
+        # 今日喂奶/换尿布次数是「统计量」，MEASUREMENT 而非 TOTAL_INCREASING：
+        # 它们每天归零，不是单调递增计数器（文档 state_class 章节明确要求
         # 累计增量才用 TOTAL_INCREASING）
-        if kind == "today_feeding_count":
+        if kind in ("today_feeding_count", "today_diaper_count"):
             self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property

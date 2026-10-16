@@ -4,12 +4,16 @@
 
 ## 功能
 
-- 传感器：每宝宝「最近喂奶 / 睡眠 / 尿布 / 身高体重」「今日喂奶次数 / 奶量」
+- 传感器：每宝宝「最近喂奶 / 睡眠 / 尿布 / 身高体重」「今日喂奶次数 / 奶量 / 换尿布次数」
+- 按钮：每宝宝「记亲喂 / 记换尿布」——按一下写一条记录（适合仪表盘卡片、NFC 贴纸、语音助手）
 - 服务：
   - `babycare.add_feeding` / `add_sleep` / `add_diaper` / `add_growth` — 写入记录
   - `babycare.start_timer` / `stop_timer` — 启停计时器（停止时可自动生成记录）
   - `babycare.delete_last_entry` — 删除最近一条记录
 - 开关：每宝宝「喂奶计时 / 睡眠计时」，开 = 启动计时器，关 = 停止并写入记录
+
+> 快捷按钮只做「无参数即完整」的记录：亲喂本无奶量、换尿布无需额外字段。
+> 奶瓶喂需要指定量，请用 `babycare.add_feeding` 服务或喂奶计时开关。
 
 ## 前置条件
 
@@ -121,6 +125,27 @@ growth.record_date  = '2026-10-03'      ← 还是纯日期
 （另外 `TIMESTAMP` 与 `state_class` 互斥，别两个一起加。）
 
 以上几条都写进了 `verify_ha_integration.py` 的断言，改坏了会立刻红。
+
+## 仪表盘卡片示例
+
+实体卡片（一行看全今日状态 + 手动记录入口）：
+
+```yaml
+type: entities
+title: 宝宝今日
+entities:
+  - sensor.babycare_today_feeding_count   # 今日喂奶次数
+  - sensor.babycare_today_feeding_ml      # 今日奶量 ml
+  - sensor.babycare_today_diaper_count    # 今日换尿布次数
+  - sensor.babycare_last_feeding          # 最近喂奶
+  - button.babycare_ji_qin_wei            # 记亲喂（按一下记录一次）
+  - button.babycare_ji_huan_niao_bu       # 记换尿布
+  - switch.babycare_wei_nai_ji_shi        # 喂奶计时
+```
+
+NFC 贴纸 + 快捷按钮：把「记换尿布」按钮绑定到 NFC 标签贴在尿布台，
+手机一碰即完成记录；语音助手说「打开 记亲喂」也可以触发（button 实体
+的 turn_on 即按下）。
 
 ## 与 Baby Buddy 集成的差异
 
