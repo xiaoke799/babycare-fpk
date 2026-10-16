@@ -428,7 +428,7 @@ body {
 .stat-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px;
+    padding: 16px;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -3837,7 +3837,7 @@ body {
 /* 首页成长数据卡片 */
 .dashboard-growth-card {
     background: var(--card-bg);
-    border-radius: 12px;
+    border-radius: var(--radius);
     padding: 16px;
     margin-top: 16px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
@@ -3883,7 +3883,7 @@ body {
 /* 今日提醒 */
 .dashboard-reminders {
     background: var(--card-bg);
-    border-radius: 12px;
+    border-radius: var(--radius);
     padding: 16px;
     margin-top: 16px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
@@ -4029,7 +4029,7 @@ body {
 .milestone-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px;
+    padding: 16px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
     display: flex;
     align-items: flex-start;
@@ -4148,7 +4148,7 @@ body {
 .sleep-goal-card {
     background: var(--card-bg);
     border-radius: var(--radius-md, 14px);
-    padding: 14px 16px;
+    padding: 16px;
     margin-bottom: 16px;
 }
 
@@ -4357,7 +4357,7 @@ body {
 .sleep-weekly-summary {
     background: linear-gradient(135deg, #6c5ce7, #a29bfe);
     border-radius: var(--radius);
-    padding: 14px 16px;
+    padding: 16px;
     margin-bottom: 16px;
     color: white;
 }
@@ -4399,7 +4399,7 @@ body {
 .sleep-timer-card {
     background: linear-gradient(135deg, #1a1a2e, #16213e);
     border-radius: var(--radius);
-    padding: 20px;
+    padding: 16px;
     margin-bottom: 16px;
     color: white;
     animation: slideDown 0.3s ease;
@@ -4457,7 +4457,7 @@ body {
 .sleep-reference-card {
     background: linear-gradient(135deg, #ecfdf5, #d1fae5);
     border-radius: var(--radius);
-    padding: 14px 16px;
+    padding: 16px;
     margin-bottom: 16px;
 }
 
@@ -5016,7 +5016,7 @@ body {
 .wiki-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px;
+    padding: 16px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
     cursor: pointer;
     transition: all 0.2s;
@@ -5195,7 +5195,7 @@ body {
 .medication-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 12px;
+    padding: 16px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
     display: flex;
     align-items: center;
@@ -5269,7 +5269,7 @@ body {
 .tummy-time-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 12px;
+    padding: 16px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
     display: flex;
     align-items: center;
@@ -5340,7 +5340,7 @@ body {
 .allergy-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 12px;
+    padding: 16px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
     display: flex;
     align-items: center;
@@ -5431,7 +5431,7 @@ body {
 .diaper-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 12px;
+    padding: 16px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
     display: flex;
     align-items: center;
@@ -5485,7 +5485,7 @@ body {
 .recipe-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px;
+    padding: 16px;
     box-shadow: 0 1px 3px rgba(0,0,0,0,0.04);
     cursor: pointer;
     transition: all 0.2s;
@@ -6572,7 +6572,7 @@ body {
 .sf-stat-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px;
+    padding: 16px;
     text-align: center;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
@@ -7019,7 +7019,7 @@ body {
 .gp-compare-panel {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px;
+    padding: 16px;
     margin-bottom: 16px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
@@ -7672,7 +7672,7 @@ body {
     max-width: 500px;
     max-height: 80vh;
     background: var(--card-bg);
-    border-radius: 16px;
+    border-radius: var(--radius);
     box-shadow: 0 20px 60px rgba(0,0,0,0.3);
     z-index: 1000;
     overflow: hidden;
@@ -7817,7 +7817,7 @@ body {
 .ai-insight-card {
     background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
     border: 1px solid rgba(102, 126, 234, 0.2);
-    border-radius: 12px;
+    border-radius: var(--radius);
     padding: 16px;
     margin-bottom: 16px;
 }
@@ -7935,7 +7935,7 @@ body {
 .recipe-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px;
+    padding: 16px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     cursor: pointer;
     transition: all 0.2s ease;
@@ -8058,8 +8058,8 @@ body {
 .cooking-step-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 20px;
+    border-radius: var(--radius);
+    padding: 16px;
     margin-bottom: 16px;
     display: flex;
     gap: 12px;
@@ -8454,9 +8454,9 @@ body {
 .activity-recommend-card {
     flex-shrink: 0;
     width: 140px;
-    padding: 12px;
+    padding: 16px;
     background: #fff;
-    border-radius: 10px;
+    border-radius: var(--radius);
     box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     cursor: pointer;
     transition: all 0.2s ease;
@@ -8533,7 +8533,7 @@ body {
     display: flex;
     align-items: center;
     gap: 14px;
-    padding: 14px;
+    padding: 16px;
     background: var(--card-bg);
     border-radius: var(--radius);
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
@@ -8834,7 +8834,7 @@ body {
     text-align: center;
     padding: 12px;
     background: var(--bg-color);
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
 }
 
 .activity-stat-value {
@@ -9379,7 +9379,7 @@ body {
 .teeth-item-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px;
+    padding: 16px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     display: flex;
     align-items: center;
@@ -9466,7 +9466,7 @@ body {
 .health-item-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px;
+    padding: 16px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     position: relative;
 }
@@ -9603,7 +9603,7 @@ body {
 .health-overview-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px;
+    padding: 16px;
     text-align: center;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
@@ -9816,7 +9816,7 @@ body {
 .checkup-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px;
+    padding: 16px;
     margin-bottom: 10px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     cursor: pointer;
@@ -10243,7 +10243,7 @@ body {
 .vaccine-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px 16px;
+    padding: 16px;
     margin-bottom: 10px;
     border: 1px solid var(--border-color);
 }
@@ -10383,7 +10383,7 @@ body {
 }
 .screening-summary-card {
     background: var(--card-bg);
-    border-radius: 8px;
+    border-radius: var(--radius);
     padding: 16px;
     text-align: center;
     border: 1px solid var(--border-color);
@@ -10394,7 +10394,7 @@ body {
 .screening-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px 16px;
+    padding: 16px;
     margin-bottom: 10px;
     border: 1px solid var(--border-color);
 }
@@ -10461,7 +10461,7 @@ body {
 .allergy-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px 16px;
+    padding: 16px;
     margin-bottom: 10px;
     border: 1px solid var(--border-color);
 }
@@ -10503,7 +10503,7 @@ body {
 .feeding-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px 16px;
+    padding: 16px;
     margin-bottom: 10px;
     border: 1px solid var(--border-color);
 }
@@ -10629,7 +10629,7 @@ body {
 .report-summary-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 12px;
+    padding: 16px;
     text-align: center;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
@@ -10746,7 +10746,7 @@ body {
 .tummytime-timer-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 20px;
+    padding: 16px;
     margin-bottom: 16px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     text-align: center;
@@ -10810,7 +10810,7 @@ body {
 .tummytime-item-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px;
+    padding: 16px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     display: flex;
     align-items: center;
@@ -10963,7 +10963,7 @@ body {
 .allergy-item-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px;
+    padding: 16px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     position: relative;
 }
@@ -11080,7 +11080,7 @@ body {
 .diaper-price-item-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px;
+    padding: 16px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     position: relative;
 }
@@ -11197,7 +11197,7 @@ body {
 .med-reminder-item-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px;
+    padding: 16px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     margin-bottom: 10px;
     position: relative;
@@ -11467,7 +11467,7 @@ input:checked + .toggle-slider:before {
 .report-summary-card {
     background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
     border: 1px solid rgba(102, 126, 234, 0.2);
-    border-radius: 12px;
+    border-radius: var(--radius);
     padding: 16px;
     margin-bottom: 16px;
 }
@@ -11509,8 +11509,8 @@ input:checked + .toggle-slider:before {
 .report-stat-card {
     background: var(--card-bg);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 14px;
+    border-radius: var(--radius-sm);
+    padding: 16px;
 }
 
 .report-stat-title {
@@ -12540,7 +12540,7 @@ input:checked + .toggle-slider:before {
 .ledger-trend-card {
     background: var(--card-bg);
     border-radius: var(--radius);
-    padding: 14px;
+    padding: 16px;
     margin-bottom: 16px;
     box-shadow: var(--shadow);
 }
@@ -12692,9 +12692,9 @@ input:checked + .toggle-slider:before {
 .ledger-summary-card {
     background: var(--card-bg);
     border: 1px solid var(--border-color);
-    border-radius: 14px;
+    border-radius: var(--radius);
     padding: 16px;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
 }
 
 .ledger-total {
@@ -12758,9 +12758,9 @@ input:checked + .toggle-slider:before {
 .ledger-trend-card {
     background: var(--card-bg);
     border: 1px solid var(--border-color);
-    border-radius: 14px;
+    border-radius: var(--radius);
     padding: 16px;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
 }
 
 .ledger-trend-title {
@@ -14593,7 +14593,7 @@ input:checked + .toggle-slider:before {
 }
 
 .mg-card {
-    margin-bottom: 14px;
+    margin-bottom: 16px;
     padding: 16px;
     border: 1px solid var(--border-color);
     border-radius: var(--radius);
@@ -14979,7 +14979,7 @@ input:checked + .toggle-slider:before {
 .aiw-header {
     display: flex;
     justify-content: space-between;
-    align-items: baseline;
+    align-items: center;
     flex-wrap: wrap;
     gap: 6px;
     margin-bottom: 12px;
@@ -14994,8 +14994,8 @@ input:checked + .toggle-slider:before {
     background: var(--card-bg);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    padding: 14px 16px;
-    margin-bottom: 14px;
+    padding: 16px;
+    margin-bottom: 16px;
 }
 
 .aiw-card-title {
