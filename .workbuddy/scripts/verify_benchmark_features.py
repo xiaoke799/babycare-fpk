@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-" " "新增功能门禁（奶量目标 / 健康随访 / 自定义倒计时）：
+"""新增功能门禁（奶量目标 / 健康随访 / 自定义倒计时）：
 迁移 v8 / dashboard.milk_target / 随访 schedule+plan / countdowns CRUD / babies PUT is_premature
 铁律：BABYCARE_DB_PATH 必须在 import server 之前设，否则静默打生产库。
 运行：C:/Users/X/.workbuddy/binaries/python/envs/babycare/Scripts/python.exe .workbuddy/scripts/verify_benchmark_features.py
