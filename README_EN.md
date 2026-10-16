@@ -20,13 +20,13 @@ BabyCare (育儿宝) is a native NAS parenting app for the fnOS platform (by fnO
 - Height, weight and head-circumference tracking with WHO growth curves (percentiles)
 - Automatic BMI calculation, growth-velocity tracking and record-correlation analysis
 - Side-by-side photo management
+- **Baby timeline**: browse every record by type and time range
 - Stage reports: sleep / feeding / diaper / growth analysis
 - **Weekly / monthly report**: key metrics for the current period plus a
   comparison against the previous one
 - Annual growth report (with an AI-generated summary)
 - **Print / save the clinic summary as PDF** — recent temperature, medication,
   allergies and vaccines on one sheet to hand to the doctor
-- Annual growth report (with an AI-generated summary)
 
 ### 🍼 Care Tracking
 - Feeding logs (breast milk / formula / solids, with intake amount and nursing side)
@@ -40,6 +40,8 @@ BabyCare (育儿宝) is a native NAS parenting app for the fnOS platform (by fnO
 - Allergy tests, allergy history, fontanelle checks, teething records
 - Lab indicators (name / value / reference range / abnormal flag)
 - Vision and hearing screening results, including referral notes
+- **Follow-up planning**: 12 routine + 6 preterm checkup slots with due
+  reminders, automatically reconciled once a checkup is logged
 - **Reminders**: feeding / diaper / medication / vaccine / checkup and custom health reminders
   (WeChat · DingTalk · Feishu · Bark · PushPlus, with do-not-disturb hours)
   ⚠️ Medication and checkup reminders are driven by the reminder configuration; the
@@ -67,16 +69,26 @@ BabyCare (育儿宝) is a native NAS parenting app for the fnOS platform (by fnO
 - Photo content description
 - Diary generation
 - Q&A
+- **AI writer**: 11 scenarios such as one-sentence logging, diary drafting,
+  weekly summaries and milestone suggestions — speak one sentence and get a
+  properly structured record
 
 ### 📚 Parenting Knowledge Base
 - Built-in articles on feeding, sleep, development, health and care
 - Solid-food recipe recommendations (difficulty / nutrition / tips)
 - Parent-child activity library (indoor/outdoor, seasonal), with favorites and completion log
+- **This month at a glance**: age-tailored highlights (development · vaccines ·
+  play · first foods · common questions · home safety · warning signs · first
+  aid) — advisory only, never a diagnosis, and never any medication dosage
 
 ### ⏱️ Tools
 - Feeding timer, sleep timer (can auto-create records on stop)
 - Soothing sounds (synthesised locally, no external audio files)
 - **Family members & recorder**: tag who logged each record
+- **Daily milk target**: estimated from age and weight, or customised to a
+  doctor's plan (30-3000 ml), with progress at a glance
+- **Custom countdowns**: pin "days remaining" (follow-ups, due dates, ...)
+  on the dashboard
 - Diaper price comparison and expense tracking
 - Data export: per-baby JSON, full JSON, vaccine CSV
 - ZIP backup / restore including photo albums, export to / restore from fnOS shared folders
@@ -92,6 +104,9 @@ BabyCare (育儿宝) is a native NAS parenting app for the fnOS platform (by fnO
 ### 🏠 Smart Home
 - Built-in Home Assistant integration (`ha-integration/`): sensors, services, timer switches
 - One baby = one device; entities are grouped under the matching baby device
+- **Quick-record buttons**: "log breastfeeding" / "log diaper change" — one tap
+  writes a record (great for dashboard cards, NFC stickers, voice assistants)
+- **Today's diaper count** sensor
 - When the token expires, HA re-authenticates in place — no need to remove and re-add
   the integration (entity IDs stay stable)
 - The integration token can read data and write records only; it cannot change settings,
@@ -197,3 +212,20 @@ versions are independent — several development milestones may be merged into a
 single release version.
 
 - v0.0.1 (2026-09-13) - First open-source release (git tag v0.0.1)
+- v0.0.2 (2026-10-03) - Content compliance and write-path hardening.
+  Removed all concrete medication dosages and medical advice from the
+  knowledge base, added the "This month at a glance" page, and fixed the
+  silently dead reminder scheduler, silently aborted DB migrations, a
+  webhook rate-limit bypass via forged X-Forwarded-For, indicator
+  ownership loss on health-record edits, plus unified time formats and
+  legacy data cleanup across all record write paths
+- v0.0.3 (2026-10-16) - Feature completeness and release hygiene. Added
+  the AI writer page (11 scenarios), daily milk target (estimated +
+  doctor-customised), follow-up planning (12 routine + 6 preterm slots)
+  with post-checkup reconciliation, custom countdowns, a next-follow-up
+  dashboard chip, and Home Assistant quick-record buttons plus a
+  today-diaper-count sensor. Fixed report charts staying empty due to
+  field-name mismatches and fabricated "healthy rhythm" conclusions with
+  no data. API failures are now visible in the UI. Global typography
+  polish and unified card layout. Documentation and version numbers
+  brought back in sync

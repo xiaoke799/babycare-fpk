@@ -2525,7 +2525,7 @@ function renderRelatedLinks(page) {
 function loadAbout() {
     // 优先从后端应用信息取版本号，失败则回退到静态版本
     const verEl = document.getElementById('aboutVersion');
-    if (verEl) verEl.textContent = '版本 0.0.1';
+    if (verEl) verEl.textContent = '版本 0.0.3';
     api('/api/storage/app-info').then(r => {
         if (r && r.success && r.version && verEl) {
             verEl.textContent = '版本 ' + r.version;
