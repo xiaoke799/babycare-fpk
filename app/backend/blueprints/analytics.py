@@ -48,9 +48,23 @@ _MILK_CAP_4_6 = 900
 def _estimate_milk_target(baby, latest_growth):
     """
     估算每日奶量目标。
-    返回 dict：target_ml / method(auto/weight-missing) / detail / percent_hint
+    返回 dict：target_ml / method(custom/auto/no-weight) / detail
+    优先级：宝宝级自定义目标（医生给定制方案时手填）> 日龄×体重自动估算。
     没有体重也能按纯月龄给粗略档（6-12 月、1 岁+ 与体重无关）。
     """
+    # 自定义目标优先：早产追重、医嘱加奶这类场景，自动公式必然算错
+    custom = baby.get("custom_milk_target") if baby else None
+    try:
+        custom = float(custom) if custom not in (None, "", 0) else None
+    except (ValueError, TypeError):
+        custom = None
+    if custom and 30 <= custom <= 3000:
+        return {
+            "target_ml": round(custom),
+            "method": "custom",
+            "detail": "自定义目标（在首页奶量卡修改）",
+        }
+
     birthday = (baby.get("birthday") or "")[:10]
     if not birthday:
         return None
@@ -615,14 +629,29 @@ def get_dashboard(baby_id):
             upcoming_countdowns = rows_to_list(
                 db.execute(
                     """SELECT id, title, target_date, note FROM countdowns
-                       WHERE baby_id = ? AND target_date >= ?
+                       WHERE baby_id = ? AND target_date >= ? AND target_date <= ?
                        ORDER BY target_date ASC LIMIT 3""",
-                    (baby_id, today),
+                    (baby_id, today, horizon),
                 ).fetchall()
             )
-            del horizon
         except Exception:
             pass
+
+        # 下一次健康随访（未完成档里最近的一个）——首页与倒计时同一条展示
+        upcoming_followup = None
+        try:
+            from blueprints.health_records import build_followup_items
+            _, _fu_items = build_followup_items(db, baby)
+            _fu_next = [i for i in _fu_items
+                        if i["status"] != "done" and i["days_left"] is not None and i["days_left"] >= 0]
+            if _fu_next:
+                upcoming_followup = {
+                    "label": _fu_next[0]["label"],
+                    "days_left": _fu_next[0]["days_left"],
+                    "date": _fu_next[0]["planned_date"] or _fu_next[0]["suggested_date"],
+                }
+        except Exception as e:
+            logger.error("upcoming_followup error: %s", e, exc_info=True)
 
         data = {
             "baby_profile": _format_baby_profile(baby, latest_growth),
@@ -631,6 +660,7 @@ def get_dashboard(baby_id):
             "today_diaper": {"count": diaper["count"] if diaper else 0},
             "milk_target": _milk_target_payload(db, baby, latest_growth, feeding),
             "upcoming_countdowns": upcoming_countdowns,
+            "upcoming_followup": upcoming_followup,
             "latest_growth": row_to_dict(latest_growth),
             "latest_milestones": rows_to_list(latest_milestones),
             "recent_records": _get_recent_records(db, baby_id, limit=6),

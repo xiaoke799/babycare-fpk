@@ -99,6 +99,35 @@ with app.test_client() as c:
     item6 = next((i for i in (r.get_json().get("data") or {}).get("items", []) if i["age_months"] == 6), None)
     check("取消后 planned 为空", item6 and item6["planned_date"] is None, json.dumps(item6, ensure_ascii=False)[:160])
 
+    # 对账：1 月龄档建议 2026-05-16，插入窗口 [05-01, 07-15] 内的体检记录 → 该档标记 done
+    r = c.post(f"/api/health/records/{bid}", json={"record_date": "2026-05-20", "title": "满月体检", "record_type": "routine"})
+    check("插入门窗内体检记录", r.status_code == 200 and r.get_json().get("success"), f"{r.status_code} {r.get_data(as_text=True)[:160]}")
+    r = c.get(f"/api/health/followup/schedule/{bid}")
+    d = r.get_json().get("data") or {}
+    item1 = next((i for i in d.get("items", []) if i["age_months"] == 1), None)
+    item3 = next((i for i in d.get("items", []) if i["age_months"] == 3), None)
+    check("1月龄档对账为已完成", item1 and item1["status"] == "done", str(item1 and item1["status"]))
+    check("3月龄档不受牵连", item3 and item3["status"] == "planned", str(item3 and item3["status"]))
+
+    # 自定义奶量目标：设置 → 优先于自动估算；越界拒绝；清除回落
+    r = c.put(f"/api/babies/{bid}", json={"custom_milk_target": 750})
+    check("设置自定义奶量目标", r.status_code == 200 and r.get_json().get("success"), f"{r.status_code} {r.get_data(as_text=True)[:160]}")
+    r = c.get(f"/api/babies/{bid}/dashboard")
+    mt = (r.get_json().get("data") or {}).get("milk_target") or {}
+    check("自定义目标优先(750)", mt.get("method") == "custom" and mt.get("target_ml") == 750, json.dumps(mt, ensure_ascii=False)[:160])
+    r = c.put(f"/api/babies/{bid}", json={"custom_milk_target": 9999})
+    check("越界目标被拒", r.status_code == 400, str(r.status_code))
+    r = c.put(f"/api/babies/{bid}", json={"custom_milk_target": None})
+    check("清除目标", r.status_code == 200, str(r.status_code))
+    r = c.get(f"/api/babies/{bid}/dashboard")
+    mt = (r.get_json().get("data") or {}).get("milk_target") or {}
+    check("清除后回落自动估算", mt.get("method") == "auto", json.dumps(mt, ensure_ascii=False)[:160])
+
+    # dashboard.upcoming_followup：早产宝的 1.4/4/5 月龄档已过，最早未完成档是 6 月龄（今天到档）
+    r = c.get(f"/api/babies/{bid}/dashboard")
+    fu = (r.get_json().get("data") or {}).get("upcoming_followup")
+    check("dashboard 带下次随访(6月龄)", fu and fu["label"] == "6月龄" and fu["days_left"] == 0, json.dumps(fu, ensure_ascii=False)[:160])
+
     # 倒计时 CRUD
     r = c.post(f"/api/babies/{bid}/countdowns", json={"title": "周岁生日", "target_date": "2027-04-16", "note": "准备蛋糕"})
     check("建倒计时", r.status_code == 201 and r.get_json().get("success"), f"{r.status_code} {r.get_data(as_text=True)[:200]}")

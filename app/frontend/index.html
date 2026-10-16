@@ -223,7 +223,10 @@
                     <div class="home-milk-card" id="homeMilkCard" style="display:none">
                         <div class="home-milk-head">
                             <span class="home-milk-title">今日奶量</span>
-                            <span class="home-milk-percent" id="homeMilkPercent">0%</span>
+                            <span class="home-milk-edit">
+                                <button type="button" class="btn-link" id="milkTargetEditBtn">目标</button>
+                                <span class="home-milk-percent" id="homeMilkPercent">0%</span>
+                            </span>
                         </div>
                         <div class="home-milk-bar"><div class="home-milk-bar-fill" id="homeMilkBar"></div></div>
                         <div class="home-milk-nums"><b id="homeMilkNow">0</b> / 目标 <span id="homeMilkTarget">--</span> ml</div>
@@ -2842,6 +2845,28 @@
     </div>
 
     <!-- 快捷记录弹窗 -->
+    <div class="modal-overlay" id="milkTargetModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>今日奶量目标</h2>
+                <button class="modal-close" id="closeMilkTargetModal">X</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="milkTargetInput">每日奶量目标 (ml)</label>
+                    <input type="number" id="milkTargetInput" min="30" max="3000" step="10"
+                           placeholder="留空则按月龄体重自动估算">
+                    <p style="margin:4px 0 0;font-size:12px;color:var(--text-light);">
+                        医生给了定制方案（早产追重、医嘱加奶）时手动填写；填写后优先于自动估算。
+                    </p>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-cancel" id="clearMilkTargetBtn">恢复自动估算</button>
+                    <button type="button" class="btn btn-primary" id="saveMilkTargetBtn">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
     <div class="modal-overlay" id="recordModal">
         <div class="modal">
             <div class="modal-header">

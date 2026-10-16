@@ -3137,8 +3137,8 @@ function loadDashboard() {
 
         // 今日奶量目标（估算不可用 → 整块隐藏，不硬编）
         renderHomeMilkTarget(data.milk_target);
-        // 即将到来的自定义倒计时
-        renderHomeCountdowns(data.upcoming_countdowns || []);
+        // 即将到来的自定义倒计时 + 下一次健康随访（同一条展示）
+        renderHomeCountdowns(data.upcoming_countdowns || [], data.upcoming_followup || null);
 
         // 身体数据：显示最新一次测量值。
         // 后端 dashboard 早就返回了 latest_growth，前端一直没用它，
@@ -3184,6 +3184,7 @@ function renderHomeMilkTarget(mt) {
         return;
     }
     card.style.display = 'block';
+    window.__homeMilkTarget = mt;  // 目标弹窗回填用
     setText('homeMilkNow', `${mt.today_amount != null ? mt.today_amount : 0}`);
     setText('homeMilkTarget', mt.target_ml);
     setText('homeMilkPercent', `${mt.percent != null ? mt.percent : 0}%`);
@@ -3193,28 +3194,98 @@ function renderHomeMilkTarget(mt) {
     setText('homeMilkDetail', mt.detail || '');
 }
 
+/** 打开目标弹窗：自定义值回填输入框，自动估算则留空 */
+function openMilkTargetModal() {
+    const input = document.getElementById('milkTargetInput');
+    const cur = window.__homeMilkTarget;
+    if (input) input.value = cur && cur.method === 'custom' ? cur.target_ml : '';
+    showModal('milkTargetModal');
+}
+
+function initMilkTargetModal() {
+    const editBtn = document.getElementById('milkTargetEditBtn');
+    if (editBtn && !editBtn.dataset.bound) {
+        editBtn.dataset.bound = '1';
+        editBtn.addEventListener('click', openMilkTargetModal);
+    }
+    const closeBtn = document.getElementById('closeMilkTargetModal');
+    if (closeBtn && !closeBtn.dataset.bound) {
+        closeBtn.dataset.bound = '1';
+        closeBtn.addEventListener('click', () => hideModal('milkTargetModal'));
+    }
+    const saveBtn = document.getElementById('saveMilkTargetBtn');
+    if (saveBtn && !saveBtn.dataset.bound) {
+        saveBtn.dataset.bound = '1';
+        saveBtn.addEventListener('click', async () => {
+            const raw = (document.getElementById('milkTargetInput') || {}).value;
+            if (raw !== '' && (isNaN(+raw) || +raw < 30 || +raw > 3000)) {
+                showToast('奶量目标应在 30-3000ml 之间');
+                return;
+            }
+            const body = raw === '' ? { custom_milk_target: null } : { custom_milk_target: +raw };
+            try {
+                const res = await api(`/api/babies/${App.currentBaby}`, { method: 'PUT', body });
+                showToast(res.success ? '目标已保存' : (res.message || '保存失败'));
+                if (res.success) {
+                    hideModal('milkTargetModal');
+                    loadDashboard();
+                }
+            } catch (e) {
+                showToast('保存失败，请检查网络');
+            }
+        });
+    }
+    const clearBtn = document.getElementById('clearMilkTargetBtn');
+    if (clearBtn && !clearBtn.dataset.bound) {
+        clearBtn.dataset.bound = '1';
+        clearBtn.addEventListener('click', async () => {
+            try {
+                const res = await api(`/api/babies/${App.currentBaby}`, {
+                    method: 'PUT', body: { custom_milk_target: null }
+                });
+                showToast(res.success ? '已恢复自动估算' : (res.message || '操作失败'));
+                if (res.success) {
+                    hideModal('milkTargetModal');
+                    loadDashboard();
+                }
+            } catch (e) {
+                showToast('操作失败，请检查网络');
+            }
+        });
+    }
+}
+
 /**
- * 首页「即将到来」倒计时条：最多显示 3 条，点击跳看诊摘要页管理。
+ * 首页「即将到来」倒计时条：自定义倒计时（最多 3 条）+ 下一次健康随访，
+ * 点击跳看诊摘要页管理。
  */
-function renderHomeCountdowns(list) {
+function renderHomeCountdowns(list, followup) {
     const wrap = document.getElementById('homeCountdowns');
     if (!wrap) return;
-    if (!list.length) {
-        wrap.style.display = 'none';
-        return;
+    const chips = [];
+    // 随访 chip 排最前（体检是日程里最不能拖的）
+    if (followup && followup.label) {
+        const d = followup.days_left;
+        const dayText = d === 0 ? '就在今天' : `${d} 天后`;
+        chips.push(`<button type="button" class="home-cd-chip is-followup" onclick="switchPage('clinic')">🩺 ${escapeHtml(followup.label)} · ${dayText}</button>`);
     }
-    wrap.style.display = 'flex';
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    wrap.innerHTML = list.map(cd => {
+    (list || []).forEach(cd => {
         let days = null;
         if (cd.target_date) {
             const t = new Date(cd.target_date + 'T00:00:00');
             days = Math.round((t - today) / 86400000);
         }
         const dayText = days == null ? '' : (days === 0 ? '今天' : days > 0 ? `${days} 天后` : '已过期');
-        return `<button type="button" class="home-cd-chip" onclick="switchPage('clinic')">⏰ ${escapeHtml(cd.title)} · ${dayText}</button>`;
-    }).join('');
+        chips.push(`<button type="button" class="home-cd-chip" onclick="switchPage('clinic')">⏰ ${escapeHtml(cd.title)} · ${dayText}</button>`);
+    });
+    if (!chips.length) {
+        wrap.style.display = 'none';
+        return;
+    }
+    wrap.style.display = 'flex';
+    wrap.innerHTML = chips.join('');
 }
 
 function renderFeedingTrend(trendData) {
@@ -7402,7 +7473,9 @@ function renderFollowupList(items) {
     }
     container.innerHTML = items.map(it => {
         let dayBadge = '';
-        if (it.days_left != null) {
+        if (it.status === 'done') {
+            dayBadge = '<span class="followup-badge done">已完成</span>';
+        } else if (it.days_left != null) {
             if (it.days_left < 0) dayBadge = '<span class="followup-badge past">已过档期</span>';
             else if (it.days_left <= 14) dayBadge = `<span class="followup-badge soon">${it.days_left === 0 ? '就在今天' : `还剩 ${it.days_left} 天`}</span>`;
             else dayBadge = `<span class="followup-badge">${it.days_left} 天后</span>`;
@@ -7410,17 +7483,21 @@ function renderFollowupList(items) {
         const planned = it.planned_date
             ? `<span class="followup-planned">已约 ${it.planned_date}</span>`
             : `<span class="followup-suggest">建议 ${it.suggested_date || '--'}</span>`;
-        return `<div class="followup-item${it.premature_only ? ' is-premature' : ''}">
+        // 已完成档收起行内操作（有预约的保留取消，其余只读展示）
+        const actions = it.status === 'done' && !it.planned_date
+            ? ''
+            : `<div class="followup-actions">
+                <input type="date" class="followup-date" value="${it.planned_date || it.suggested_date || ''}" data-age="${it.age_months}">
+                <button type="button" class="btn btn-outline btn-sm" onclick="saveFollowupPlan(${it.age_months})">保存</button>
+                ${it.planned_date ? `<button type="button" class="btn-link" onclick="clearFollowupPlan(${it.age_months})">取消</button>` : ''}
+            </div>`;
+        return `<div class="followup-item${it.premature_only ? ' is-premature' : ''}${it.status === 'done' ? ' is-done' : ''}">
             <div class="followup-info">
                 <b>${escapeHtml(it.label)}</b>${it.premature_only ? '<span class="followup-badge premature">早产加做</span>' : ''}${dayBadge}
                 <div class="followup-sub">${planned} · ${escapeHtml(it.location)}</div>
                 ${it.note ? `<div class="followup-sub">${escapeHtml(it.note)}</div>` : ''}
             </div>
-            <div class="followup-actions">
-                <input type="date" class="followup-date" value="${it.planned_date || it.suggested_date || ''}" data-age="${it.age_months}">
-                <button type="button" class="btn btn-outline btn-sm" onclick="saveFollowupPlan(${it.age_months})">保存</button>
-                ${it.planned_date ? `<button type="button" class="btn-link" onclick="clearFollowupPlan(${it.age_months})">取消</button>` : ''}
-            </div>
+            ${actions}
         </div>`;
     }).join('');
 }
@@ -13356,6 +13433,7 @@ function mainInit() {
     safeCall(initReportsPage, 'initReportsPage');
     safeCall(initFollowupPrematureToggle, 'initFollowupPrematureToggle');
     safeCall(initCountdownForm, 'initCountdownForm');
+    safeCall(initMilkTargetModal, 'initMilkTargetModal');
     safeCall(initDarkMode, 'initDarkMode');
 
     // 返回按钮点击事件

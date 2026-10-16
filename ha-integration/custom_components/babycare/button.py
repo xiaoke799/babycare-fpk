@@ -1,9 +1,8 @@
 """Quick-record buttons for BabyCare.
 
-快捷记录按钮的设计要点：
-RESTful switch 得靠「开 2 秒自动回弹」模拟瞬时动作——那是 RESTful 平台
-没有 button 实体的妥协。这里是标准 custom component，直接用原生
-ButtonEntity：async_press 触发一次记录，无状态、无需回弹计时器。
+设计要点：按钮用原生 ButtonEntity 而不是 switch —— button 的语义就是
+「瞬时动作、无状态」，不需要 switch 那种「开 2 秒自动回弹」的假状态机
+（一些纯 RESTful 集成因为没有 button 平台只能拿 switch 凑合，这里没这个限制）。
 
 两个按钮刻意选了「无参数即完整」的记录语义（不替用户编数据）：
 - 记亲喂：feeding_type=breast，亲喂本就没有奶量语义，start_time=现在

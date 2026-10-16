@@ -1783,8 +1783,8 @@ def health_notice():
 
 
 # ==================== 健康随访规划（0-6 岁儿童健康随访预约卡） ====================
-# 前瞻能力：既有的体检记录是「回顾」（去过哪），
-# 这里补「规划」（该什么时候去）。数据基于《0-6 岁儿童健康随访预约卡》的常规安排，
+# 既有的体检记录是「回顾」（去过哪），这里补「规划」（该什么时候去）。
+# 数据基于《0-6 岁儿童健康随访预约卡》的常规安排，
 # 只提示不判读：建议日期 = 出生 + 月龄 × 30.44 天，实际以社区/妇幼安排为准。
 # premature_only=True 的是「高危早产儿增加的随访」，仅 is_premature=1 的宝宝可见。
 FOLLOWUP_SCHEDULE = [
@@ -1820,55 +1820,92 @@ def _followup_suggested_date(birthday, age_months):
     return birth + datetime.timedelta(days=round(age_months * 30.44))
 
 
+def build_followup_items(db, baby):
+    """
+    构建随访清单（schedule 路由与 dashboard 共用，改口径两处一起变）。
+    baby: babies 行（需 birthday / is_premature）。
+
+    对账规则：某档的建议日期窗口 [建议-15天, 建议+60天] 内存在任何体检记录
+    （health_records，_record_types 可对上随访语义的都算）→ 该档标记 done。
+    体检通常允许前后浮动，窗口放宽到 ±，避免「晚了一周去」被标成未完成。
+    """
+    birthday = (baby['birthday'] or '') if 'birthday' in baby.keys() else ''
+    is_premature = bool(baby['is_premature']) if 'is_premature' in baby.keys() else False
+
+    plans = {
+        r['age_months']: row_to_dict(r)
+        for r in db.execute(
+            'SELECT * FROM followup_plans WHERE baby_id = ?', (baby['id'],)
+        ).fetchall()
+    }
+    # 一次拉全部体检日期，Python 内比对（体检记录量级很小，不值得按档查库）
+    checkup_dates = []
+    try:
+        checkup_dates = [
+            r[0][:10] for r in db.execute(
+                'SELECT record_date FROM health_records WHERE baby_id = ? '
+                "AND record_type IN ('routine','vaccine','other') ORDER BY record_date",
+                (baby['id'],),
+            ).fetchall()
+        ]
+    except Exception:
+        pass  # 表不可用时退化为「不对账」，清单照出
+
+    today = datetime.date.today()
+    items = []
+    for slot in FOLLOWUP_SCHEDULE:
+        if slot['premature_only'] and not is_premature:
+            continue
+        suggested = _followup_suggested_date(birthday, slot['age_months'])
+        plan = plans.get(slot['age_months']) or {}
+        planned = plan.get('planned_date') or ''
+        anchor = planned[:10] if planned else (suggested.isoformat() if suggested else '')
+        days_left = None
+        if anchor:
+            try:
+                days_left = (
+                    datetime.datetime.strptime(anchor[:10], '%Y-%m-%d').date() - today
+                ).days
+            except (ValueError, TypeError):
+                days_left = None
+
+        # 对账：窗口内有体检记录 → 已完成
+        status = plan.get('status') or 'planned'
+        if suggested and checkup_dates:
+            lo = (suggested - datetime.timedelta(days=15)).isoformat()
+            hi = (suggested + datetime.timedelta(days=60)).isoformat()
+            if any(lo <= d <= hi for d in checkup_dates):
+                status = 'done'
+
+        items.append({
+            'label': slot['label'],
+            'age_months': slot['age_months'],
+            'location': slot['location'],
+            'premature_only': slot['premature_only'],
+            'suggested_date': suggested.isoformat() if suggested else None,
+            'planned_date': planned[:10] if planned else None,
+            'note': plan.get('note') or '',
+            'days_left': days_left,
+            'status': status,
+        })
+
+    items.sort(key=lambda x: (x['age_months']))
+    return is_premature, items
+
+
 @bp.route('/api/health/followup/schedule/<int:baby_id>', methods=['GET'])
 def followup_schedule_get(baby_id):
-    """获取宝宝的随访清单：每档的建议日期 + 已设预约日期 + 距今天数。"""
+    """获取宝宝的随访清单：每档的建议日期 + 已设预约日期 + 距今天数 + 对账状态。"""
     try:
         db = get_db()
         baby = db.execute(
-            'SELECT birthday, is_premature FROM babies WHERE id = ?', (baby_id,)
+            'SELECT id, birthday, is_premature FROM babies WHERE id = ?', (baby_id,)
         ).fetchone()
         if not baby:
             return jsonify({'success': False, 'message': '宝宝不存在'}), 404
 
-        is_premature = bool(baby['is_premature']) if 'is_premature' in baby.keys() else False
-        plans = {
-            r['age_months']: row_to_dict(r)
-            for r in db.execute(
-                'SELECT * FROM followup_plans WHERE baby_id = ?', (baby_id,)
-            ).fetchall()
-        }
-
-        today = datetime.date.today()
-        items = []
-        for slot in FOLLOWUP_SCHEDULE:
-            if slot['premature_only'] and not is_premature:
-                continue
-            suggested = _followup_suggested_date(baby['birthday'], slot['age_months'])
-            plan = plans.get(slot['age_months']) or {}
-            planned = plan.get('planned_date') or ''
-            anchor = planned[:10] if planned else (suggested.isoformat() if suggested else '')
-            days_left = None
-            if anchor:
-                try:
-                    days_left = (
-                        datetime.datetime.strptime(anchor[:10], '%Y-%m-%d').date() - today
-                    ).days
-                except (ValueError, TypeError):
-                    days_left = None
-            items.append({
-                'label': slot['label'],
-                'age_months': slot['age_months'],
-                'location': slot['location'],
-                'premature_only': slot['premature_only'],
-                'suggested_date': suggested.isoformat() if suggested else None,
-                'planned_date': planned[:10] if planned else None,
-                'note': plan.get('note') or '',
-                'days_left': days_left,
-            })
-
-        items.sort(key=lambda x: (x['age_months']))
-        upcoming = [i for i in items if i['days_left'] is not None and i['days_left'] >= 0]
+        is_premature, items = build_followup_items(db, baby)
+        upcoming = [i for i in items if i['status'] != 'done' and i['days_left'] is not None and i['days_left'] >= 0]
         return jsonify({
             'success': True,
             'data': {

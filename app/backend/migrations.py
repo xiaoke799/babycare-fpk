@@ -493,3 +493,15 @@ def _migration_v8(conn: sqlite3.Connection):
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_countdowns_baby ON countdowns(baby_id, target_date)"
     )
+
+
+@migration(9, "babies.custom_milk_target：宝宝级自定义每日奶量目标（空 = 自动估算）")
+def _migration_v9(conn: sqlite3.Connection):
+    """
+    自动估算（日龄分段 × 体重）覆盖不了医生给了定制方案的宝宝（早产追重、
+    医嘱加奶等）。加一列宝宝级自定义目标：有值时优先于自动估算，
+    空则回落自动 —— 无需另建配置表，宝宝资料跟着宝宝走。
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(babies)").fetchall()}
+    if "custom_milk_target" not in cols:
+        conn.execute("ALTER TABLE babies ADD COLUMN custom_milk_target REAL DEFAULT NULL")

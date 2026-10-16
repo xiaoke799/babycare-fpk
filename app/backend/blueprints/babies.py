@@ -155,6 +155,19 @@ def _validate_baby_payload(data, partial=False, current=None):
         if flag not in (0, 1, True, False, "0", "1", "true", "false"):
             return "早产标记取值不正确"
         data["is_premature"] = 1 if flag in (1, True, "1", "true") else 0
+    if "custom_milk_target" in data:
+        # 宝宝级自定义每日奶量目标：空/None = 清除，回到自动估算
+        mt = data.get("custom_milk_target")
+        if mt in (None, "", "null"):
+            data["custom_milk_target"] = None
+        else:
+            try:
+                mt = float(mt)
+            except (ValueError, TypeError):
+                return "奶量目标必须是数字"
+            if not (30 <= mt <= 3000):
+                return "奶量目标应在 30-3000ml 之间"
+            data["custom_milk_target"] = mt
     return None
 
 
@@ -175,12 +188,12 @@ def update_baby(baby_id):
     err = _validate_baby_payload(data, partial=True, current=row_to_dict(existing))
     if err:
         return jsonify({"success": False, "message": err}), 400
-    if not any(k in data for k in ("name", "birthday", "gender", "due_date", "is_premature")):
+    if not any(k in data for k in ("name", "birthday", "gender", "due_date", "is_premature", "custom_milk_target")):
         return jsonify({"success": False, "message": "没有需要更新的字段"}), 400
 
     fields = []
     values = []
-    for key in ("name", "birthday", "gender", "due_date", "is_premature"):
+    for key in ("name", "birthday", "gender", "due_date", "is_premature", "custom_milk_target"):
         if key in data:
             fields.append(f"{key} = ?")
             if key == "name":

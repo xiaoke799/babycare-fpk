@@ -15440,3 +15440,19 @@ input:checked + .toggle-slider:before {
     font-size: 11.5px;
     color: var(--text-light);
 }
+
+/* 奶量卡右上角「目标」编辑入口 + 已完成随访档 */
+.home-milk-edit {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 10px;
+}
+
+.followup-badge.done {
+    background: rgba(76, 175, 132, 0.15);
+    color: var(--success-color);
+}
+
+.followup-item.is-done {
+    opacity: 0.72;
+}

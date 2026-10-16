@@ -38,8 +38,8 @@ async def async_setup_entry(
                 BabyCareLastSensor(coordinator, baby, "growth", "最近身高体重"),
                 BabyCareStatsSensor(coordinator, baby, "today_feeding_count", "今日喂奶次数"),
                 BabyCareStatsSensor(coordinator, baby, "today_feeding_ml", "今日奶量ml"),
-                # 今日换尿布次数：后端 today-summary 本就返回
-                # diaper_count（实测过返回体），这里只是补上实体暴露
+                # 今日换尿布次数：后端 today-summary 本就返回 diaper_count（实测过返回体），
+                # 这里只是补上实体暴露
                 BabyCareStatsSensor(coordinator, baby, "today_diaper_count", "今日换尿布次数"),
             ]
         )
