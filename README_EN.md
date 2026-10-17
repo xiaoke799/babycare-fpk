@@ -249,7 +249,12 @@ single release version.
   and the record / growth / knowledge / system grids use three columns instead
   of two 500px ones where each group's 1~3 icons hugged the left edge and left
   a hole in the middle and on the right. Summary cards lose three colour bars
-  that carried no meaning, and block spacing is now a single step.
+  that carried no meaning, and block spacing is now a single step. The install
+  wizard's agreement step now uses a fixed-height scrollable terms box with the
+  "I accept the terms" checkbox always visible underneath — previously the
+  checkbox was pushed below the fold, so "Next" silently did nothing and the
+  terms looked like they ended after section five. The About page version now
+  comes only from the backend instead of being hard-coded.
   **Information architecture**: the health follow-up plan moved out of the
   clinic summary into Health Record → Follow-up (right after Checkups), and the
   custom countdown moved out of the summary into its own page under a new

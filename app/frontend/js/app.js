@@ -2633,9 +2633,11 @@ function renderRelatedLinks(page) {
 
 // ==================== 关于页面 ====================
 function loadAbout() {
-    // 优先从后端应用信息取版本号，失败则回退到静态版本
+    // 版本号只认后端 /api/storage/app-info（它读 manifest 真值），这里**不写死数字**。
+    // 写过一次 '版本 0.0.1' 就出过事：manifest 早升到 0.0.5，页面还一直显示 0.0.1，
+    // 用户按版本号排查问题时被带偏（constants.py 里记的是同一类坑）。
+    // 接口没回来就保持 HTML 里的占位「版本 —」，宁缺毋错。
     const verEl = document.getElementById('aboutVersion');
-    if (verEl) verEl.textContent = '版本 0.0.8';
     api('/api/storage/app-info').then(r => {
         if (r && r.success && r.version && verEl) {
             verEl.textContent = '版本 ' + r.version;
