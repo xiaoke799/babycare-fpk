@@ -258,3 +258,18 @@ single release version.
   column" layout for a name-on-top + icons-below one, which removes the
   ragged gap at the right of each row. Summary cards lose three colour bars
   that carried no meaning, and block spacing is now a single step
+- v0.0.7 (2026-10-17) - The health follow-up plan moved out of the clinic
+  summary into Health Record → Follow-up (right after Checkups). It used to
+  sit on the same page as the summary: the summary is a retrospective report
+  you take to the doctor, while the follow-up plan is the parent's own future
+  schedule — opposite directions, so it read wrong and was also printed along
+  with the summary. The home page's "checkup in N days" chip now jumps
+  straight to the follow-up tab. Print output is narrowed too: the clinic
+  summary now whitelists only the summary body
+- v0.0.8 (2026-10-17) - New "Tools" group in the Record tab. Soothing sounds
+  moved out of System (it is neither a record nor a report, nor a setting);
+  the custom countdown moved out of the clinic summary into its own page —
+  birthdays and trips are private plans, unrelated to a report for the doctor.
+  The home page's countdown chip now jumps to that page. Also fixed the list
+  ordering: it was sorted by date ascending only, so already-past events sat
+  at the very top; past ones now sink to the bottom.

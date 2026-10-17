@@ -2026,7 +2026,7 @@ const NAV_HUBS = [
     { hub: 'home', label: '首页', icon: 'icon-home', page: 'dashboard' },
     {
         hub: 'record', label: '记录', icon: 'icon-clipboard', page: 'record',
-        // 15 个入口按 6 组收纳：宫格加了小组标题，找东西不用一格格扫
+        // 17 个入口按 7 组收纳：宫格加了小组标题，找东西不用一格格扫
         groups: [
             { title: '喂养', items: [
                 { page: 'feeding', label: '喂奶', icon: 'icon-bottle' },
@@ -2057,8 +2057,15 @@ const NAV_HUBS = [
                 { page: 'teeth', label: '出牙记录', icon: 'icon-tooth' },
                 { page: 'fontanelle', label: '囟门', icon: 'icon-circle' },
                 // 体温 / 用药提醒 / 疫苗 / 过敏测试都在「健康档案」的 Tab 里，不单列
-                // 安抚音效既不是记录也不是报表，属于工具，已移到「系统」栏
                 { page: 'health', label: '健康档案', icon: 'icon-heart2' },
+            ]},
+            // 工具组（2026-10-17 用户提出）：把「功能型小工具」收在一起。
+            // 在此之前安抚音效是塞在「系统」栏的 —— 那条注释的原话是
+            // 「既不是记录也不是报表，属于工具，已移到系统栏」，本身就是没地方放的妥协。
+            // 倒计时原来挂在「看诊摘要」页底部，更不对：生日 / 旅行跟看诊毫无关系。
+            { title: '工具', items: [
+                { page: 'sounds', label: '安抚音效', icon: 'icon-wave' },
+                { page: 'countdowns', label: '事件倒计时', icon: 'icon-hourglass' },
             ]},
         ]
     },
@@ -2103,8 +2110,7 @@ const NAV_HUBS = [
         items: [
             { page: 'settings', label: '设置', icon: 'icon-gear' },
             { page: 'clinic', label: '看诊摘要', icon: 'icon-stethoscope' },
-            // 安抚音效是「用」的工具，跟记录/报表都无关，放系统栏更顺
-            { page: 'sounds', label: '安抚音效', icon: 'icon-wave' },
+            // 安抚音效已移到记录栏的「工具」组：它跟设置/关于不是一类
             { page: 'about', label: '关于', icon: 'icon-info' }
             // AI 助手由小萌浮窗承担，不单列页面
         ]
@@ -2472,7 +2478,10 @@ function loadPageData(page) {
         }
         case 'clinic':
             loadClinicSummary();
-            loadFollowupPlan();
+            // 随访已搬到「健康档案 → 随访」Tab，倒计时已搬到「工具 → 事件倒计时」，
+            // 这一页只剩摘要本体（打印件也只打它）
+            break;
+        case 'countdowns':
             loadCountdowns();
             break;
         case 'sounds':
@@ -2572,6 +2581,8 @@ NAV_HUBS.forEach(g => {
     hubItems(g).forEach(it => { PAGE_LABELS[it.page] = it.label; });
 });
 PAGE_LABELS['clinic'] = '看诊摘要';
+// 随访规划是健康档案的 Tab（虚拟页 id），「相关功能」里若引用它不能显示成英文
+PAGE_LABELS['followup'] = '随访规划';
 
 // 已并入「健康档案」Tab 的页：它们不在 NAV_HUBS 里（不单列入口），
 // 但「相关功能」条还会链过去。不补中文名，按钮上就会直接显示英文 page id
@@ -2624,7 +2635,7 @@ function renderRelatedLinks(page) {
 function loadAbout() {
     // 优先从后端应用信息取版本号，失败则回退到静态版本
     const verEl = document.getElementById('aboutVersion');
-    if (verEl) verEl.textContent = '版本 0.0.5';
+    if (verEl) verEl.textContent = '版本 0.0.8';
     api('/api/storage/app-info').then(r => {
         if (r && r.success && r.version && verEl) {
             verEl.textContent = '版本 ' + r.version;
@@ -3374,18 +3385,21 @@ function initMilkTargetModal() {
 }
 
 /**
- * 首页「即将到来」倒计时条：自定义倒计时（最多 3 条）+ 下一次健康随访，
- * 点击跳看诊摘要页管理。
+ * 首页「即将到来」倒计时条：自定义倒计时（最多 3 条）+ 下一次健康随访。
+ * 两类 chip 落在两个不同的页：随访 → 健康档案的「随访」Tab，
+ * 倒计时 → 记录栏「工具 → 事件倒计时」（2026-10-17 都从看诊摘要页搬走了）。
  */
 function renderHomeCountdowns(list, followup) {
     const wrap = document.getElementById('homeCountdowns');
     if (!wrap) return;
     const chips = [];
-    // 随访 chip 排最前（体检是日程里最不能拖的）
+    // 随访 chip 排最前（体检是日程里最不能拖的）。
+    // 跳转目标是「健康档案 → 随访」Tab（虚拟页 id = followup），
+    // 不是看诊摘要 —— 随访规划 2026-10-17 从那儿搬走了。
     if (followup && followup.label) {
         const d = followup.days_left;
         const dayText = d === 0 ? '就在今天' : `${d} 天后`;
-        chips.push(`<button type="button" class="home-cd-chip is-followup" onclick="switchPage('clinic')">🩺 ${escapeHtml(followup.label)} · ${dayText}</button>`);
+        chips.push(`<button type="button" class="home-cd-chip is-followup" onclick="switchPage('followup')">🩺 ${escapeHtml(followup.label)} · ${dayText}</button>`);
     }
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -3396,7 +3410,7 @@ function renderHomeCountdowns(list, followup) {
             days = Math.round((t - today) / 86400000);
         }
         const dayText = days == null ? '' : (days === 0 ? '今天' : days > 0 ? `${days} 天后` : '已过期');
-        chips.push(`<button type="button" class="home-cd-chip" onclick="switchPage('clinic')">⏰ ${escapeHtml(cd.title)} · ${dayText}</button>`);
+        chips.push(`<button type="button" class="home-cd-chip" onclick="switchPage('countdowns')">⏰ ${escapeHtml(cd.title)} · ${dayText}</button>`);
     });
     if (!chips.length) {
         wrap.style.display = 'none';
@@ -6813,7 +6827,13 @@ const HEALTH_TAB_PAGES = {
     'temperature': { host: 'health', tab: 'temperature' },
     'med-reminder': { host: 'health', tab: 'reminders' },
     'allergy-detail': { host: 'health', tab: 'allergy' },
+    // 首页那个「儿保复诊 · N 天后」的 chip 点进来落这里
+    'followup': { host: 'health', tab: 'followup' },
 };
+
+// 并进 Tab 的虚拟页也要有归属栏，否则底部 tab 会按 HUB_OF 的兜底 'home' 高亮 ——
+// 从首页点「随访」chip 进去，底部却亮着「首页」，人以为没跳页（见 2298 行的 aliasHub）
+HUB_OF['followup'] = 'record';
 
 /** 切到宿主页面（growth / health）的某个 Tab */
 function activatePageTab(host, tab) {
@@ -17121,6 +17141,8 @@ function loadHealthTabData(tab) {
         case 'milestone': loadMilestones(); break;
         case 'screening': loadScreenings(); break;
         case 'growth': loadGrowthChart('weight'); break;
+        // 随访规划：从「看诊摘要」页搬来的（2026-10-17），数据源没变
+        case 'followup': loadFollowupPlan(); break;
         case 'indicators': loadIndicators(); break;
         case 'feeding': loadFeedingSummary(); break;
     }

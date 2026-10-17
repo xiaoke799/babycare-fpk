@@ -10,6 +10,14 @@
     --warning-color: #F5B971;
     --danger-color: #FF7A7A;
     --bg-color: #FFF7F2;
+    /* 桌面端「画布」：应用列浮在它上面，两侧留白因此看得出来是有意留的，
+       而不是内容没排满。移动端应用满宽，画布根本不可见，所以只在 ≥768 生效。 */
+    --canvas-color: #F7E7DE;
+    /* 应用列宽度与两侧留白。只写 max-width 时，窗口窄到刚好过断点
+       （比如 1100）列会贴死窗口边 —— 「两边一点空隙都没有」就是这么来的。
+       宽度统一走 min(max, 100% - gutter)，任何时候都留得出可见边距。 */
+    --shell-max: 768px;
+    --shell-gutter: 32px;
     --card-bg: #ffffff;
     --text-primary: #3A2B2B;
     --text-secondary: #8A8A8A;
@@ -41,6 +49,7 @@
     --warning-color: #F5B971;
     --danger-color: #FF7A7A;
     --bg-color: #2A1F1E;
+    --canvas-color: #191110;
     --card-bg: #362B29;
     --text-primary: #F5EDE8;
     --text-secondary: #B5A8A0;
@@ -51,7 +60,11 @@
     --focus-ring: 0 0 0 3px rgba(255, 158, 122, 0.22);
 }
 
-[data-theme="dark"] body,
+/* 深色下画布比应用再深一档：两者同色的话，两侧留白等于没留 */
+[data-theme="dark"] body {
+    background: var(--canvas-color);
+}
+
 [data-theme="dark"] #app {
     background: var(--bg-color);
 }
@@ -127,7 +140,7 @@ body {
     display: flex;
     flex-direction: column;
     height: 100vh;
-    max-width: 768px;
+    max-width: var(--shell-max);
     margin: 0 auto;
     background: var(--bg-color);
 }
@@ -1915,28 +1928,50 @@ body {
 
 /* ==================== 响应式 ==================== */
 @media (min-width: 768px) {
+    /* 平板起：应用是一张浮在画布上的列。宽度写 min()，窗口窄时不贴边。 */
+    body {
+        background: var(--canvas-color);
+    }
+
     #app {
+        /* 宽度写 min()，窗口窄到刚过断点时也不会贴死窗口边 */
+        width: min(var(--shell-max), 100% - var(--shell-gutter));
         border-left: 1px solid var(--border-color);
         border-right: 1px solid var(--border-color);
+        box-shadow: 0 0 44px rgba(209, 90, 122, 0.07);
     }
 
     .app-nav {
-        max-width: 768px;
+        /* 底栏是 fixed 的，宽度不跟着 #app 走就会比列宽出来一截 */
+        width: min(var(--shell-max), 100% - var(--shell-gutter));
+        max-width: var(--shell-max);
         left: 50%;
         transform: translateX(-50%);
     }
+
+    /* 平板：宫格两列，别让 6 组全挤成一竖列（右侧会空掉半屏） */
+    .hub-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 24px;
+        padding: 10px 2px 18px;
+    }
+
+    /* 不分组的 hub（知识 / 系统）只有一个「组」，里面装着全部图标。
+       不铺满整行的话它只占第一列，5 个图标挤在 345px 里排成 3+2，
+       右边整列全空 —— 比改之前更难看。 */
+    .hub-grid > .hub-group:only-child { grid-column: 1 / -1; }
 }
 
 /* ==================== 桌面端：左侧竖排侧边栏 ==================== */
 @media (min-width: 1024px) {
-    /* 桌面端与手机端统一：内容居中加宽，底部 tab + 宫格抽屉保持一致 */
-    #app {
-        max-width: 1080px;
+    :root {
+        --shell-max: 1080px;
+        --shell-gutter: 64px;
     }
 
     .app-nav {
-        width: 100%;
-        max-width: 1080px;
+        max-width: var(--shell-max);
         left: 50%;
         right: auto;
         transform: translateX(-50%);
@@ -1960,19 +1995,29 @@ body {
         font-size: 13px;
     }
 
-    /* 宫格在桌面更舒展：两组并排、组内图标略大。
-       这里只给「列数」，别把 grid-template-columns 写到图标上 ——
-       图标排布由组内 flex 负责，指定网格列会把它拉回「按整屏宽度均分」，
-       组内图标少时右侧就又空一片。 */
+    /* 桌面宫格：内容块居中收窄 + 三列均分。
+       旧写法是两列 1fr：每组只有 1~3 个 84px 图标，列宽却有 500px，
+       图标全挤在每列左端 —— 中间空一大片、右边再空一片，
+       1024~1439（窗口没最大化）时最明显，就是「中间分得太开」的来源。
+       收窄到 940 后三列各约 297px，正好装下 3 个图标（84×3 + 10×2 = 272），
+       组间只剩 20px；组名与宫格同宽，标题也跟着对齐，不再各自贴边。 */
+    #page-record,
+    #page-growth-hub,
+    #page-knowledge-hub,
+    #page-system {
+        max-width: 940px;
+        margin: 0 auto;
+    }
+
     .hub-grid {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 24px 40px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 26px 20px;
         padding: 12px 4px 20px;
     }
     .hub-group { gap: 12px; }
     .hub-group-title { font-size: 14px; }
-    .hub-group-items { gap: 12px; }
+    .hub-group-items { gap: 10px; }
     .hub-group-items .nav-item { width: 84px; }
 
     /* 内容区留白舒适 */
@@ -11781,10 +11826,24 @@ input:checked + .toggle-slider:before {
     box-shadow: 3px 3px 6px rgba(209, 90, 122, 0.1);
 }
 
-/* 桌面端：主内容区右下角，避开侧边栏 */
+/* 平板起：浮窗贴回应用列内侧。
+   .pet-mascot 的基础规则（right: 18px）在本文件更靠后，写在前面的媒体查询
+   会被它盖掉（媒体查询不加权重），所以这条必须排在基础规则之后。
+   18px 不变，只是把「列外侧的画布留白」先让出来：
+   = 画布留白 + 18px，窄窗口（列贴着窗口）时画布留白退化为 gutter/2。 */
+@media (min-width: 768px) {
+    .pet-mascot {
+        right: calc(
+            max(calc(var(--shell-gutter) / 2), calc((100vw - var(--shell-max)) / 2)) + 18px
+        );
+    }
+}
+
+/* 桌面端：主内容区右下角，避开侧边栏。
+   right 不在这里写死 —— 桌面列是居中的，写死 28px 会把浮窗扔到窗口角、
+   落在应用列外面的画布上。统一交给上面那条（列内侧 + 18px）。 */
 @media (min-width: 1024px) {
     .pet-mascot {
-        right: 28px;
         bottom: 28px;
     }
 }
@@ -13891,11 +13950,8 @@ input:checked + .toggle-slider:before {
 
 /* 超宽桌面：双栏更舒展，避免内容被无限拉伸 */
 @media (min-width: 1440px) {
-    #app {
-        max-width: 1200px;
-    }
-    .app-nav {
-        max-width: 1200px;
+    :root {
+        --shell-max: 1200px;
     }
     #page-dashboard {
         grid-template-columns: minmax(340px, 0.95fr) minmax(420px, 1.2fr);
@@ -14346,13 +14402,26 @@ input:checked + .toggle-slider:before {
         background: #fff !important;
     }
 
+    /* 屏幕上是「居中的浮起列」（带宽度上限、边框、投影），纸面上不需要：
+       这三样留着会把摘要挤到 768px 里、还在纸边印出一条竖线。
+       打印一律占满纸宽，由 @page 的页边距负责留白。 */
+    #app {
+        width: auto;
+        max-width: none;
+        border: 0;
+        box-shadow: none;
+    }
+
     /* 界面外壳一概不打印 */
     .app-header,
     .app-nav,
     .modal,
     .no-print,
     .btn,
-    .toast {
+    .toast,
+    /* 小萌浮窗是 position: fixed —— 打印时它会跟着第一页落到纸上，
+       看诊摘要递出去是给医生的，不该带个卡通头像。 */
+    .pet-mascot {
         display: none !important;
     }
 
@@ -14362,6 +14431,15 @@ input:checked + .toggle-slider:before {
     }
     #page-clinic {
         display: block !important;
+    }
+    /* 但这一页里不止摘要本身：下面还挂着「健康随访规划」和「自定义倒计时」。
+       随访是家长自己排的长期日程（带「高危早产儿」勾选和预约日期），
+       倒计时是生日 / 旅行这类私事 —— 医生看诊都不需要，
+       跟着摘要打出来既多占两三页，也把家里的私事印到给医生的纸上。
+       用白名单（只留 .clinic-summary）而不是逐个给它们补 no-print：
+       以后 clinic 页再加块，默认不进打印件，不会重犯。 */
+    #page-clinic > :not(.clinic-summary) {
+        display: none !important;
     }
     .app-content {
         padding: 0 !important;

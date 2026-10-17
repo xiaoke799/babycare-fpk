@@ -11,12 +11,14 @@
   2. **「带＋添加按钮 ≠ 归记录栏」这条启发式已废弃**（同日上午定、下午推翻）。
      判定标准是「这块是填表，还是看结果」，不是「有没有添加按钮」。
      出牙/囟门/飞跃期这几个页面主体就是填表（图表只是顺带看一眼），所以整个留在记录栏。
-  3. 两栏内部按小组收纳（记录栏 6 组 / 成长栏 4 组），宫格渲染时插 `.hub-group-title`。
+  3. 两栏内部按小组收纳（记录栏 7 组 / 成长栏 4 组），宫格渲染时插 `.hub-group-title`。
      （历史：2026-10-14 曾从 6 组扩到 7 组——新增「智能」组放 AI 帮写入口；
       2026-10-17 用户拍板撤掉独立入口与页面，记录统一走小萌对话框里的
       「记下来」确认卡——记录栏回到 6 组。第十节分组断言同步改回 6 组，
       第十一节原来的「AI 帮写落点」三条断言随页面一并删除，换成一条
-      反向断言：入口不得复活。）
+      反向断言：入口不得复活。
+      同日再变：新增第 7 组「工具」，收安抚音效（原塞在系统栏）与事件倒计时
+      （原挂在看诊摘要页底部）。两个都是「用的小功能」，既不是记录也不是报表。）
   4. 应用信息 / 存储 / 数据库健康 / 日志 / 异常记录，统一收在
      设置页的「系统诊断」一个板块里，不散落别处。
 
@@ -80,7 +82,10 @@ rec = hub_block("record")
 rec_pages = pages_in(rec)
 chk("记录栏含身高体重的「录」入口 (growth)", "growth" in rec_pages)
 chk("记录栏不含成长栏的曲线形态 (growth-chart)", "growth-chart" not in rec_pages)
-chk("记录栏不再是安抚音效的入口 (sounds)", "sounds" not in rec_pages)
+# 安抚音效 2026-10-17 从「系统」栏移到记录栏的「工具」组：
+# 它既不是记录也不是报表，但也不是设置 —— 归「工具」才顺
+chk("安抚音效在记录栏的「工具」组 (sounds)", "sounds" in rec_pages)
+chk("事件倒计时在记录栏 (countdowns)", "countdowns" in rec_pages)
 # 成长成就拆两半：带表单的「录」这半归记录栏，只读的「回顾」那半在成长栏
 chk("记录栏含「成长成就」录入入口 (milestones)", "milestones" in rec_pages)
 chk("记录栏不含只读回顾页 (milestone-review)", "milestone-review" not in rec_pages)
@@ -142,8 +147,10 @@ print()
 print("=== 三、系统栏：工具与设置 ===")
 sysb = hub_block("system")
 sys_pages = pages_in(sysb)
-chk("系统栏含 设置/看诊摘要/安抚音效",
-    all(p in sys_pages for p in ["settings", "clinic", "sounds"]))
+chk("系统栏含 设置/看诊摘要/关于",
+    all(p in sys_pages for p in ["settings", "clinic", "about"]))
+# 安抚音效搬去记录栏「工具」组之后，系统栏不该再留一份（两处入口 = 用户不知道哪个是正主）
+chk("系统栏不再留安抚音效（已移到记录栏工具组）", "sounds" not in sys_pages)
 
 print()
 print("=== 四、「第一次」独立页面已彻底并入里程碑 ===")
@@ -236,23 +243,27 @@ chk("组名独立成行、图标排在下一行（.hub-group 纵向 flex）",
     and re.search(r"^\.hub-group\s*\{[^}]*flex-direction:\s*column", css, re.M) is not None)
 # 桌面端真正要防的是「图标被按整屏宽度拉伸」：
 #   - 图标容器 .hub-group-items 必须是 flex 且图标定宽（一旦写网格列就会被拉宽）
-#   - 分组容器 .hub-grid 允许分两栏并排（把整页宽度用起来），但列数不得超过 2
+#   - 分组容器 .hub-grid 允许并排（把整页宽度用起来）
 # 旧判据是「hub-grid 出现 grid-template-columns 就报错」，会把上面这种
-# 「分组两栏 + 图标仍定宽」的合理布局误判成回归（2026-09-29 实测）。
+# 「分组并排 + 图标仍定宽」的合理布局误判成回归（2026-09-29 实测）。
 # 判「允许」而不是判「禁止」：写成负向前瞻 `(?!repeat\(\s*[12]\s*,)` 会被正则回溯绕过
 # （`\s*` 少吞一个空格，前瞻就在空白处成立，于是合法写法也被判违规）。
+#
+# 列数上限 2026-10-17 从 2 放宽到 3：记录栏新增「工具」组后共 7 组，
+# 两列要排 4 行、三列 3 行，且每组只有 2~3 个定宽图标，三列并不挤。
+# 真正该守的仍然是「组内图标定宽」——列数变了不该报红。
 _HUB_GRID_BLOCKS = re.findall(r"\.hub-grid\s*\{([^}]*)\}", css)
-_HUB_GRID_OK = re.compile(r"grid-template-columns\s*:\s*repeat\(\s*[12]\s*,")
+_HUB_GRID_OK = re.compile(r"grid-template-columns\s*:\s*repeat\(\s*[123]\s*,")
 _HUB_GRID_BAD = [
     b for b in _HUB_GRID_BLOCKS
     if "grid-template-columns" in b and not _HUB_GRID_OK.search(b)]
-chk("桌面端图标没被按整屏均分（图标容器 flex 定宽，分组最多两栏）",
+chk("桌面端图标没被按整屏均分（图标容器 flex 定宽，分组 2~3 栏）",
     not _HUB_GRID_BAD
     and not re.search(r"\.hub-group-items\s*\{[^}]*grid-template-columns", css)
     and re.search(r"\.hub-group-items\s+\.nav-item\s*\{\s*width:\s*\d+px", css)
     is not None)
-chk("记录栏 6 个分组标题",
-    titles_in(rec) == ['喂养', '睡眠', '日常', '发育', '生活', '健康'])
+chk("记录栏 7 个分组标题",
+    titles_in(rec) == ['喂养', '睡眠', '日常', '发育', '生活', '健康', '工具'])
 chk("成长栏 4 个分组标题",
     titles_in(gro) == ['生长', '睡眠', '回顾', '发育'])
 chk("只读别名表存在", "const READONLY_ALIAS =" in js)

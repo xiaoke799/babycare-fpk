@@ -939,13 +939,20 @@ def get_fontanelle_records(baby_id):
 
 @bp.route("/api/babies/<int:baby_id>/countdowns", methods=["GET"])
 def countdowns_list(baby_id):
-    """倒计时清单：未来事件按日期升序，今天到期与已过期的排后面（前端区分渲染）。"""
+    """倒计时清单：未来事件按日期升序，今天到期与已过期的排后面（前端区分渲染）。
+
+    ⚠ 排序不能只写 target_date ASC —— 那样日期最小的「已过期」反而排最前面，
+    跟本 docstring 的说法正好相反（前端把它们标成灰色 past，却顶在清单最上方，
+    用户第一眼看到的是已经过去的事）。先按「是否到期」分组，再各自按日期升序。
+    """
     try:
         db = get_db()
+        today = datetime.date.today().strftime("%Y-%m-%d")
         rows = db.execute(
             """SELECT * FROM countdowns WHERE baby_id = ?
-               ORDER BY target_date ASC, id ASC""",
-            (baby_id,),
+               ORDER BY CASE WHEN target_date >= ? THEN 0 ELSE 1 END,
+                        target_date ASC, id ASC""",
+            (baby_id, today),
         ).fetchall()
         return jsonify({"success": True, "data": rows_to_list(rows)})
     except Exception as e:

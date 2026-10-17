@@ -203,9 +203,14 @@ def run_checks(html, css, js):
         "display: flex" in _hgi and "grid-template-columns" not in _hgi)
     chk("宫格图标定宽（宽度随内容走，不被容器拉伸）",
         re.search(r"\.hub-group-items\s+\.nav-item\s*\{[^}]*width:\s*\d+px", css_nc) is not None)
+    # 「桌面宫格保持两栏」原来写的是 any(repeat(2))，被平板块命中就算过 ——
+    # 桌面真改成单列 / 四列时它照样绿（2026-10-17 桌面改三列时发现这条是假绿）。
+    # 判据改成两件事：没有任何一块塌成单列，且至少一块是 2~3 列。
     _desk_grids = re.findall(r"^\s+\.hub-grid\s*\{([^}]*)\}", css_nc, re.M)
-    chk("桌面宫格保持两栏（单列长条会把 6 组拉得很长）",
-        any("grid-template-columns: repeat(2" in b for b in _desk_grids))
+    _single = [b for b in _desk_grids if re.search(r"repeat\(\s*1\s*,", b)]
+    chk("桌面宫格不是单列长条（2~3 列均可）%s"
+        % ("" if not _single else "，出现单列：" + _single[0].strip()[:60]),
+        not _single and any(re.search(r"repeat\(\s*[23]\s*,", b) for b in _desk_grids))
 
     # ---------- 六、首页关键 DOM id 都在 ----------
     IDS = ["homeGreetingLabel", "homeBabyName", "homeBabyCard", "homeBabyInitial",
