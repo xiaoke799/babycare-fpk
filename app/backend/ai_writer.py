@@ -929,8 +929,8 @@ AUTO_RECORD_TYPES = (
 def extract_auto_record(user_input: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
     """从一句自然语言里自动识别记录类型并提取字段（小萌对话内直接记录用）。
 
-    与 11 个 extract_*_record 的区别：那些要先知道类型（用户在帮写页选了 chip），
-    这个不知道——用户在小萌对话框里随口说，类型也要一起认。
+    与 11 个 extract_*_record 的区别：那些要先知道类型（调用方先定类型，
+    再调对应端点），这个不知道——用户在小萌对话框里随口说，类型也要一起认。
 
     Args:
         user_input: 用户自然语言描述，如"刚喝了 120ml 奶粉"

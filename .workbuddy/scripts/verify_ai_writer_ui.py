@@ -349,6 +349,28 @@ def static_checks(js, html, css):
     ok("extract-auto 端点校验授权（not_authorized）") if \
         "not_authorized" in ai_py and "ai_record_authorized" in ai_py \
         else bad("端点没有授权校验")
+    # 设置页开关三件套（缺一件 = 开关是摆设：看不见 / 改不了 / 不生效）
+    ok("设置页授权开关接线完整（显隐/收集/回填）") if \
+        ("recordAuthRow.style.display" in js
+         and "config.ai_record_authorized = recordAuth.checked" in js
+         and "ra.checked = status.ai_record_authorized !== false" in js) else \
+        bad("设置页「允许在小萌对话里直接记录」开关接线不完整")
+
+    # S13 类型清单双端一致：后端 AUTO_RECORD_TYPES 与前端 AIW_TYPES 的键必须
+    # 一一对应——否则后端认得出、前端 AIW_TYPES[type] 取不到，确认卡静默不出现
+    # （renderRecordConfirmCard 第一行就 return），用户只会觉得「说了没反应」。
+    writer_py = open(os.path.join(BACKEND, "ai_writer.py"), encoding="utf-8").read()
+    m_auto = re.search(r"AUTO_RECORD_TYPES = \(([^)]*)\)", writer_py)
+    if not m_auto:
+        bad("ai_writer.py 里没找到 AUTO_RECORD_TYPES")
+    else:
+        backend_types = set(re.findall(r"'([a-z_]+)'", m_auto.group(1)))
+        front_types = set(types.keys())
+        ok("AUTO_RECORD_TYPES 与 AIW_TYPES 键一致（%d 类）" % len(front_types)) if \
+            backend_types == front_types else \
+            bad("两端记录类型不一致（后端认得、前端渲染不了 = 静默丢卡）",
+                {"后端多": sorted(backend_types - front_types),
+                 "前端多": sorted(front_types - backend_types)})
 
     # S12 老通道关闭（2026-10-17 用户拍板）：对话 chat 不再注入 create_* 写工具——
     # 模型自主直写没有确认框，与「每次记录前都要弹框」冲突，还会和确认卡
@@ -381,7 +403,7 @@ def e2e_checks(types):
             sess["authenticated"] = True
             sess["is_admin"] = True
             sess["user_id"] = 1
-        r = client.post("/api/babies", json={"name": "帮写UI", "birthday": "2026-04-01"})
+        r = client.post("/api/babies", json={"name": "对话记录UI", "birthday": "2026-04-01"})
         BID = (r.get_json() or {}).get("data", {}).get("id")
 
         ALL_EPS = ["/api/ai/write/extract-feeding", "/api/ai/write/extract-sleep",
@@ -400,7 +422,7 @@ def e2e_checks(types):
         for ep in ALL_EPS:
             r = client.post(ep, json={"input": "测试", "age_months": 6,
                                       "gender": "boy", "recent_performance": "",
-                                      "baby_id": BID, "baby_name": "帮写UI",
+                                      "baby_id": BID, "baby_name": "对话记录UI",
                                       "weekly_data": {"feeding_count": 3}})
             j = r.get_json() or {}
             if r.status_code != 400 or "配置" not in str(j.get("message") or ""):
@@ -473,11 +495,11 @@ def e2e_checks(types):
         # E3 5 个生成端点成功
         gen = {"/api/ai/write/diary": {"input": "今天很开心", "baby_id": BID},
                "/api/ai/write/full-diary": {"input": "今天很开心", "baby_id": BID},
-               "/api/ai/write/weekly-summary": {"baby_name": "帮写UI", "age_months": 6,
+               "/api/ai/write/weekly-summary": {"baby_name": "对话记录UI", "age_months": 6,
                                                 "weekly_data": {"feeding_count": 3}},
                "/api/ai/write/suggest-milestones": {"age_months": 6, "gender": "boy",
                                                     "recent_performance": ""},
-               "/api/ai/write/photo-description": {"baby_name": "帮写UI", "age_months": 6,
+               "/api/ai/write/photo-description": {"baby_name": "对话记录UI", "age_months": 6,
                                                    "photo_time": "", "location": "",
                                                    "notes": ""}}
         gen_bad = []
@@ -570,6 +592,61 @@ def e2e_checks(types):
                 else bad("对话仍把 create_* 工具发了出去", got_create or names)
             ok("E8：查询类工具仍在（不是把工具全关了）") if "query_baby_info" in names \
                 else bad("查询工具也没了（过滤过头）", names)
+
+        # E9 「记下来」最后一公里：11 类 save 请求体逐类落库（2026-10-17）
+        # body 照 AIW_TYPES.save 1:1 复刻（含「记录者未设置」的空 author 场景），
+        # 定的是「确认卡点记下来之后端真的收得下」——字段漂移/校验收紧在这里红。
+        # ⚠ 本表是手工复刻而非解析生成：改 app.js 的 save 时要同步这一张表。
+        SAVE_CASES = [
+            ("feeding", "/api/babies/%d/feeding" % BID, {
+                "start_time": "2026-10-17 08:00:00", "feeding_type": "bottle",
+                "amount": 120, "side": None, "note": "", "author": ""}),
+            ("sleep", "/api/babies/%d/sleep" % BID, {
+                "baby_id": BID, "start_time": "2026-10-17 13:00:00",
+                "end_time": "2026-10-17 14:30:00", "sleep_quality": "normal",
+                "is_nap": 1, "duration_minutes": 90, "note": "", "author": ""}),
+            ("diaper", "/api/babies/%d/diaper" % BID, {
+                "baby_id": BID, "change_time": "2026-10-17 08:30:00",
+                "diaper_type": "wet", "color": None, "note": "", "author": ""}),
+            ("growth", "/api/babies/%d/growth" % BID, {
+                "baby_id": BID, "record_date": "2026-10-17", "height": 68,
+                "weight": 8.2, "bmi": None, "head_circumference": 44,
+                "note": "", "author": ""}),
+            ("temperature", "/api/babies/%d/temperatures" % BID, {
+                "temperature": 37.8, "measure_method": "armpit",
+                "measure_time": "2026-10-17 09:00:00", "note": "", "author": ""}),
+            ("medication", "/api/babies/%d/medications" % BID, {
+                "medication_name": "布洛芬", "dosage": "5", "dosage_unit": "",
+                "measure_time": "2026-10-17 20:00:00", "next_dose_interval": 0,
+                "note": "发烧"}),
+            ("vaccine", "/api/health/vaccines/%d" % BID, {
+                "vaccine_name": "乙肝疫苗", "dose_number": 3, "vaccine_type": "free",
+                "status": "completed", "actual_date": "2026-10-17",
+                "injection_site": "左臂", "batch_number": "A123", "note": ""}),
+            ("pumping", "/api/babies/%d/pumping" % BID, {
+                "baby_id": BID, "pump_time": "2026-10-17 10:00:00",
+                "pump_type": "electric", "side": "both", "duration_minutes": 20,
+                "left_amount": 80, "right_amount": 90, "total_amount": 170,
+                "note": ""}),
+            ("milestone", "/api/health/milestones/%d" % BID, {
+                "milestone_name": "自己坐稳", "category": "motor",
+                "expected_age_months": None, "status": "achieved",
+                "achieved_date": "2026-10-17", "note": ""}),
+            ("teething", "/api/babies/%d/teething" % BID, {
+                "tooth_code": "51", "tooth_name": "下中切牙",
+                "erupt_date": "2026-10-17", "note": ""}),
+            ("allergy", "/api/babies/%d/allergy-tests" % BID, {
+                "food_name": "鸡蛋", "test_date": "2026-10-17", "has_reaction": 1,
+                "reaction_detail": "AI 提取测试结果：阳性", "note": ""}),
+        ]
+        save_bad = []
+        for _name, _url, _body in SAVE_CASES:
+            r = client.post(_url, json=_body)
+            j = r.get_json() or {}
+            if r.status_code != 200 or j.get("success") is not True:
+                save_bad.append((_name, r.status_code, str(j.get("message"))[:40]))
+        ok("E9：11 类「记下来」请求体全部落库成功") if not save_bad \
+            else bad("有类型的保存请求被后端拒绝（点了记下来会失败）", save_bad)
     finally:
         srv.shutdown()
 
