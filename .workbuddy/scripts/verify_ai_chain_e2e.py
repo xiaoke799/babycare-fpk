@@ -11,11 +11,11 @@ AI 的缺陷（错误分类、超时、空响应、工具循环、max_tokens、�
 
 本门禁起一个本地 OpenAI 兼容服务（.workbuddy/scripts/mock_llm_server.py），
 按场景返回正常/401/404/429/500/超时/空响应/工具调用/合法 JSON，
-再把两条链路（对话页 + AI 帮写）都真跑一遍。
+再把两条链路（对话页 + AI 提取端点）都真跑一遍。
 
 覆盖：
   A. 两条对话链路（带工具 / 不带工具）+ 工具调用闭环
-  B. AI 帮写：成功提取 / 不可解析 / 401 / 超时 —— 失败必须带**真实原因**
+  B. AI 提取端点：成功提取 / 不可解析 / 401 / 超时 —— 失败必须带**真实原因**
   C. 错误分类不串味：401 / 404 / 429 / 500 / 空响应 的原因必须互不相同
   D. 陈旧原因不串台：先 401 再空响应，展示的必须是后者的原因
   E. 写路径确实在韧性层内（连续失败会被熔断短路，说明共用同一个熔断器）
@@ -122,7 +122,7 @@ else:
     bad("工具调用闭环没跑通", {"used": r_tool.get("llm_used"),
                                "events": len(r_tool.get("tool_events") or [])})
 
-print("\n=== B. AI 帮写：成功 / 不可解析 / 真实故障 ===")
+print("\n=== B. AI 提取端点：成功 / 不可解析 / 真实故障 ===")
 w_ok = write("json-ok")
 rec = w_ok.get("record") or {}
 if w_ok.get("success") and rec.get("amount") == 180:
@@ -140,15 +140,15 @@ else:
 for mode, key in (("err401", "HTTP 401"), ("err500", "HTTP 500")):
     m = str(write(mode).get("message") or "")
     if "大模型调用失败" in m and key in m:
-        ok(f"AI 帮写 {mode}：把真实原因带给了用户（含 {key}）")
+        ok(f"AI 提取端点 {mode}：把真实原因带给了用户（含 {key}）")
     else:
-        bad(f"AI 帮写 {mode}：没带真实原因", m[:120])
+        bad(f"AI 提取端点 {mode}：没带真实原因", m[:120])
 
 m_to = str(write("timeout").get("message") or "")
 if "大模型调用失败" in m_to and ("超时" in m_to or "不可达" in m_to):
-    ok("AI 帮写超时：把真实原因带给了用户")
+    ok("AI 提取端点超时：把真实原因带给了用户")
 else:
-    bad("AI 帮写超时：没带真实原因", m_to[:120])
+    bad("AI 提取端点超时：没带真实原因", m_to[:120])
 
 print("\n=== C. 错误分类不串味 ===")
 reasons = {}

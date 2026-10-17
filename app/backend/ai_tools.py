@@ -83,9 +83,17 @@ HEALTH_TYPE_NAMES = {
 HEALTH_TYPE_LIST = list(HEALTH_TYPE_NAMES)
 
 
-def get_tool_definitions(baby_id: Optional[int] = None) -> List[Dict[str, Any]]:
-    """返回当前可用工具的 JSON Schema 列表。"""
-    return [
+def get_tool_definitions(baby_id: Optional[int] = None,
+                         include_create_records: bool = True) -> List[Dict[str, Any]]:
+    """返回当前可用工具的 JSON Schema 列表。
+
+    include_create_records=False 时不注入 create_* 五个「新增记录」工具
+    （2026-10-17 用户拍板：对话内记录统一走确认卡——模型自主直写没有确认框，
+    与「每次记录前都要弹框」的要求冲突，还会和确认卡重复写入同一条；
+    用户在对话框描述一件事，由 extract-auto 识别 → 确认卡 → 点「记下来」落库）。
+    查询/分析/update/delete 工具不受影响。
+    """
+    tools = [
         {
             "name": "query_baby_info",
             "description": "查询宝宝的基本信息（姓名、生日、月龄、性别）以及最近的统计摘要（总喂养次数、总睡眠时长、总如厕次数）。",
@@ -488,6 +496,9 @@ def get_tool_definitions(baby_id: Optional[int] = None) -> List[Dict[str, Any]]:
             },
         },
     ]
+    if not include_create_records:
+        tools = [t for t in tools if not t["name"].startswith("create_")]
+    return tools
 
 
 # ---------------------------------------------------------------------------

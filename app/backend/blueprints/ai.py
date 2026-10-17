@@ -350,8 +350,12 @@ def ai_chat():
                     return result
 
                 # 调用 LLM（带韧性层：重试 + 熔断 + 缓存；支持对话内选择模型）
-                # 当 enable_tools=True 且存在 baby_id 时注入工具
-                tools = get_tool_definitions(baby_id) if enable_tools and baby_id else None
+                # 当 enable_tools=True 且存在 baby_id 时注入工具。
+                # 2026-10-17：不再注入 create_* 写工具——模型自主直写没有确认框，
+                # 与「每次记录前都要弹框」冲突，还会和确认卡重复写入；记录统一走
+                # extract-auto → 确认卡 → 用户点「记下来」。查询/分析照旧。
+                tools = get_tool_definitions(baby_id, include_create_records=False) \
+                    if enable_tools and baby_id else None
                 try:
                     ok, answer = call_llm_with_resilience(
                         question,

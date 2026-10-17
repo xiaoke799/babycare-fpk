@@ -2013,7 +2013,7 @@
         </div>
         <div class="about-logo-text">
             <div class="about-app-name">育儿宝</div>
-            <div class="about-version" id="aboutVersion">版本 0.0.4</div>
+            <div class="about-version" id="aboutVersion">版本 0.0.5</div>
         </div>
     </div>
 
@@ -2157,66 +2157,6 @@
     </div>
     <div class="fontanelle-list" id="fontanelleList">
         <p class="empty-tip">暂无囟门记录</p>
-    </div>
-</section>
-
-<!-- AI 帮写页面 -->
-<section class="page" id="page-ai-writer">
-    <div class="aiw-header">
-        <h3 class="section-title">AI 帮写</h3>
-        <span class="aiw-header-hint">需要先在「设置 → AI 大模型」里配置模型</span>
-    </div>
-
-    <!-- 一句话记录 -->
-    <div class="aiw-card">
-        <div class="aiw-card-title">一句话记录</div>
-        <p class="aiw-card-desc">用自然语言描述刚发生的事，AI 提取成记录，你确认后再保存。</p>
-        <div class="aiw-type-chips" id="aiwTypeChips"></div>
-        <textarea class="aiw-input" id="aiwInput" rows="3" maxlength="500"
-            placeholder="如：刚喝了 120ml 奶粉，上午 10 点睡了 40 分钟"></textarea>
-        <div class="aiw-actions">
-            <button class="btn btn-primary btn-sm" id="aiwIdentifyBtn" type="button">AI 识别</button>
-            <span class="aiw-actions-hint" id="aiwActionsHint"></span>
-        </div>
-        <div class="aiw-confirm" id="aiwConfirmBox"></div>
-    </div>
-
-    <!-- 日记帮写 -->
-    <div class="aiw-card">
-        <div class="aiw-card-title">日记帮写</div>
-        <p class="aiw-card-desc">输入今天想记的几件事，AI 扩写成一篇日记，可编辑后填入日记。</p>
-        <textarea class="aiw-input" id="aiwDiaryInput" rows="3" maxlength="500"
-            placeholder="如：今天第一次自己坐稳了，很开心"></textarea>
-        <div class="aiw-actions">
-            <button class="btn btn-primary btn-sm" id="aiwDiaryBtn" type="button">生成日记</button>
-            <button class="btn btn-outline btn-sm" id="aiwDiaryBodyBtn" type="button" title="只生成正文，不要标题">仅正文</button>
-            <span class="aiw-actions-hint" id="aiwDiaryHint"></span>
-        </div>
-        <div class="aiw-result" id="aiwDiaryResult"></div>
-    </div>
-
-    <!-- 本周总结 -->
-    <div class="aiw-card">
-        <div class="aiw-card-title">本周总结</div>
-        <p class="aiw-card-desc">基于本周的喂养、睡眠、尿布数据，生成一段文字总结。</p>
-        <div class="aiw-actions">
-            <button class="btn btn-primary btn-sm" id="aiwWeeklyBtn" type="button">生成本周总结</button>
-            <span class="aiw-actions-hint" id="aiwWeeklyHint"></span>
-        </div>
-        <div class="aiw-result" id="aiwWeeklyResult"></div>
-    </div>
-
-    <!-- 里程碑建议 -->
-    <div class="aiw-card">
-        <div class="aiw-card-title">里程碑建议</div>
-        <p class="aiw-card-desc">按月龄给出接下来可留意的发育里程碑，可一键添加为待达成。</p>
-        <textarea class="aiw-input" id="aiwMsInput" rows="2" maxlength="300"
-            placeholder="近期表现（可选），如：最近很爱翻身"></textarea>
-        <div class="aiw-actions">
-            <button class="btn btn-primary btn-sm" id="aiwMsBtn" type="button">获取建议</button>
-            <span class="aiw-actions-hint" id="aiwMsHint"></span>
-        </div>
-        <div class="aiw-result" id="aiwMsResult"></div>
     </div>
 </section>
 

@@ -151,6 +151,10 @@ class _Handler(BaseHTTPRequestHandler):
             'has_auth': bool(self.headers.get('Authorization')),
             'auth': self.headers.get('Authorization'),
             'has_tools': bool(payload.get('tools')),
+            # 工具名单（2026-10-17 新增）：验证「对话不再注入 create_* 写工具」。
+            # 兼容两种结构：本项目的扁平 {name: ...} 与 OpenAI 嵌套 {function: {name}}。
+            'tool_names': [((t.get('function') or {}).get('name') or t.get('name'))
+                           for t in (payload.get('tools') or [])],
             'n_messages': len(payload.get('messages') or []),
             'stream': payload.get('stream'),
         })

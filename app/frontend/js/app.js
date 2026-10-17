@@ -593,14 +593,14 @@ function initMascot() {
     }
 
     // ---- 对话内直接记录：AI 识别出记录后的「是/否」确认卡 ----
-    // 形态是用户定的：展示解析结果 + 是/否，不做可编辑表单
-    // （要改字段请去 AI 帮写页，那边有完整表单）。点「记下来」才写入——
-    // AI 提的只是草稿，落库永远经过用户点头，这与帮写页是同一条纪律。
+    // 形态是用户定的：展示解析结果 + 是/否，不做可编辑表单。
+    // 点「记下来」才写入——AI 提的只是草稿，落库永远经过用户点头；
+    // 要改具体数值，记完后去对应记录页改。
     function renderRecordConfirmCard(type, record) {
         const cfg = AIW_TYPES[type];
         if (!cfg) return;
         if (!App.currentBaby) { showToast.warning('请先选择宝宝'); return; }
-        // 与帮写页同一套兜底（teething 要把牙位区域预选成编码）
+        // 沿用 AIW_TYPES 各类型的 prepare 兜底（teething 要把牙位区域预选成编码）
         const rec = cfg.prepare ? cfg.prepare(record) : record;
         // 摘要与最终写入用同一份取值（fallback、时间默认值都在这儿算），
         // 保证「卡上显示的」就是「点确认后落库的」——两处各算一遍必然漂移。
@@ -2026,7 +2026,7 @@ const NAV_HUBS = [
     { hub: 'home', label: '首页', icon: 'icon-home', page: 'dashboard' },
     {
         hub: 'record', label: '记录', icon: 'icon-clipboard', page: 'record',
-        // 16 个入口按 7 组收纳：宫格加了小组标题，找东西不用一格格扫
+        // 15 个入口按 6 组收纳：宫格加了小组标题，找东西不用一格格扫
         groups: [
             { title: '喂养', items: [
                 { page: 'feeding', label: '喂奶', icon: 'icon-bottle' },
@@ -2059,11 +2059,6 @@ const NAV_HUBS = [
                 // 体温 / 用药提醒 / 疫苗 / 过敏测试都在「健康档案」的 Tab 里，不单列
                 // 安抚音效既不是记录也不是报表，属于工具，已移到「系统」栏
                 { page: 'health', label: '健康档案', icon: 'icon-heart2' },
-            ]},
-            // AI 帮写主体是「一句话 → 记录」的录入入口，归记录栏；
-            // 横跨所有记录类型，不塞进任何业务组，单列一组
-            { title: '智能', items: [
-                { page: 'ai-writer', label: 'AI 帮写', icon: 'icon-robot' },
             ]},
         ]
     },
@@ -2506,9 +2501,6 @@ function loadPageData(page) {
         case 'allergy-detail':
             loadAllergyTests();
             break;
-        case 'ai-writer':
-            initAIWriterPage();
-            break;
         case 'solidfood':
             loadSolidFoodRecords();
             loadSolidFoodStats();
@@ -2632,7 +2624,7 @@ function renderRelatedLinks(page) {
 function loadAbout() {
     // 优先从后端应用信息取版本号，失败则回退到静态版本
     const verEl = document.getElementById('aboutVersion');
-    if (verEl) verEl.textContent = '版本 0.0.4';
+    if (verEl) verEl.textContent = '版本 0.0.5';
     api('/api/storage/app-info').then(r => {
         if (r && r.success && r.version && verEl) {
             verEl.textContent = '版本 ' + r.version;
@@ -9943,8 +9935,8 @@ function initPhotoModal() {
     document.getElementById('cancelPhotoForm').addEventListener('click', () => hideModal('photoModal'));
     document.getElementById('closePhotoViewModal').addEventListener('click', () => hideModal('photoViewModal'));
 
-    // 相册大图里的「AI 描述」：绑在这里（而不是 AI 帮写页的 init），
-    // 否则用户没进过帮写页时这个按钮就是死的
+    // 相册大图里的「AI 描述」：绑在相册自己的 init 里。
+    // （历史教训：按钮曾挂靠 AI 帮写页的 init，用户没进过那个页时按钮就是死的）
     const aiDescBtn = document.getElementById('aiPhotoDescBtn');
     if (aiDescBtn && !aiDescBtn.dataset.bound) {
         aiDescBtn.dataset.bound = '1';
@@ -21024,19 +21016,21 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(bindLegalSettings, 0);
 });
 
-// ==================== AI 帮写（page-ai-writer）====================
-// 后端 /api/ai/write/* 系列端点自 v0.0.1（3af0607）就存在，前端从未接线
-// （2026-10-14 全量链路核查发现后补 UI）。分四块：
-//   ① 一句话记录：11 个 extract 端点 → 确认表单（可改）→ 落库
-//   ② 日记帮写：full-diary（含标题）/ diary（仅正文）→ 填入日记编辑器
-//   ③ 本周总结：weekly-summary（统计数据复用 periodic-report，不重复采集）
-//   ④ 里程碑建议：suggest-milestones → 一键加为待达成/已达成
-// 另在相册大图弹窗挂「AI 描述」（photo-description）。
+// ==================== 对话内直接记录（原 AI 帮写）====================
+// 后端 /api/ai/write/* 系列端点自 v0.0.1（3af0607）就存在。2026-10-14 曾把它
+// 接成一个独立页面（记录栏「智能」组 → page-ai-writer）；2026-10-17 用户
+// 拍板撤掉独立入口与页面——记录统一由小萌对话框里的确认卡承担（说话 →
+// 识别 → 是/否 → 落库），本模块只留两块：
+//   ① 对话内直接记录：AIW_TYPES（11 类配置）+ aiwChat*（取值/摘要/保存），
+//      供小萌 sendMsg 的确认卡使用；后端 extract-auto 一次调用自动认类型。
+//   ② 相册大图弹窗的「AI 描述」（photo-description）。
+// 11 个 extract-* 与 diary / full-diary / weekly-summary / suggest-milestones
+// 端点保留在后端（能力储备，前端不再接线）。
 //
 // ⚠ 两个门禁口径决定了下方的写法：
 //  · check_frontend_api_exists 只认 api() 第一参的**字面 URL**，
 //    动态拼的 `/api/ai/write/extract-${type}` 会被判「后端没这条路由」
-//    ⇒ 宁可写 11 个一字提取函数，也不拼路径。
+//    ⇒ 宁写字面 URL，也不拼路径。
 //  · verify_event_bindings 要求 getElementById(id)?.addEventListener 的 id
 //    有产地（静态 html ∪ app.js 字面 id）⇒ 动态控件一律用 data 属性 +
 //    事件委托，不做逐元素绑定。
@@ -21057,8 +21051,8 @@ function aiwNum(v) {
 }
 
 // ---- 对话内直接记录（小萌浮窗）专用取值/摘要/保存 ----
-// 帮写页的 aiwCollectValues 读的是帮写页表单 DOM（aiwF_*），对话里没有那些控件，
-// 所以这里从 LLM 返回的 record 直接取值，兜底规则与帮写页逐条对齐
+// 从 LLM 返回的 record 直接取值（对话里没有表单控件可读），
+// 兜底规则与 AIW_TYPES 各类型的字段定义逐条对齐
 // （时间默认 now/今天、select 落 fallback、extraTime 可空）。
 function aiwChatCollectValues(cfg, rec) {
     const v = Object.assign({}, rec);
@@ -21107,12 +21101,12 @@ function aiwChatSummaryHtml(cfg, v) {
         }
         push(f.label, val);
     });
-    if (!rows.length) return '<p>没有提取到具体字段，建议去 AI 帮写页手动补充。</p>';
+    if (!rows.length) return '<p>没有提取到具体内容，可以补充时间、数量后再试一次。</p>';
     return '<div class="card-grid">' + rows.join('') + '</div>';
 }
 
-// 保存：cfg.save 内部用 readAuthor('aiwAuthor') 读「谁记的」——那是帮写页的下拉，
-// 对话里不存在。临时挂一个隐藏下拉（值取上次记录人），保存完就摘掉，
+// 保存：cfg.save 内部用 readAuthor('aiwAuthor') 读「谁记的」——对话里没有这个下拉。
+// 临时挂一个隐藏下拉（值取上次记录人），保存完就摘掉，
 // 这样 11 个 save 实现一行不用改，也不会在页面上多出任何可见控件。
 function aiwChatSave(cfg, v) {
     const sel = document.createElement('select');
@@ -21530,426 +21524,8 @@ const AIW_TYPES = {
     },
 };
 
-// 当前选中的类型 + 待确认的提取结果
-let aiwActiveType = 'feeding';
-let aiwPendingRecord = null;
-
 function aiwCurrentBaby() {
     return (App.babies || []).find(b => b.id === App.currentBaby) || null;
-}
-
-// —— 类型 chips（data 属性 + 委托，不做逐元素绑定）——
-function aiwRenderTypeChips() {
-    const box = document.getElementById('aiwTypeChips');
-    if (!box) return;
-    box.innerHTML = Object.keys(AIW_TYPES).map(k =>
-        `<button type="button" class="aiw-chip${k === aiwActiveType ? ' active' : ''}" data-aiw-type="${k}">${AIW_TYPES[k].label}</button>`
-    ).join('');
-}
-
-function aiwBindChips() {
-    const box = document.getElementById('aiwTypeChips');
-    if (!box || box.dataset.bound) return;
-    box.dataset.bound = '1';
-    box.addEventListener('click', (e) => {
-        const chip = e.target.closest('[data-aiw-type]');
-        if (!chip) return;
-        aiwActiveType = chip.dataset.aiwType;
-        aiwRenderTypeChips();
-        aiwSetPlaceholder();
-        document.getElementById('aiwConfirmBox').innerHTML = '';
-        aiwPendingRecord = null;
-    });
-}
-
-function aiwSetPlaceholder() {
-    const cfg = AIW_TYPES[aiwActiveType];
-    const input = document.getElementById('aiwInput');
-    if (cfg && input) input.placeholder = cfg.placeholder || '描述刚刚发生的事';
-}
-
-// —— 失败提示：给真实原因；提示缺配置时给「去配置」入口 ——
-function aiwFail(hintId, msg) {
-    const hint = document.getElementById(hintId);
-    if (hint) {
-        hint.innerHTML = '';
-        const span = document.createElement('span');
-        span.className = 'aiw-fail-msg';
-        span.textContent = msg || '操作失败';
-        hint.appendChild(span);
-        if (String(msg).indexOf('配置') >= 0) {
-            const link = document.createElement('button');
-            link.type = 'button';
-            link.className = 'aiw-goto-config';
-            link.textContent = '去配置';
-            link.addEventListener('click', gotoAISettings);
-            hint.appendChild(link);
-        }
-    }
-    showToast.error(msg || '操作失败');
-}
-function aiwClearHint(hintId) {
-    const hint = document.getElementById(hintId);
-    if (hint) hint.innerHTML = '';
-}
-
-// —— 确认表单渲染 ——
-function aiwFieldHtml(f) {
-    const id = 'aiwF_' + f.key;
-    const val = aiwPendingRecord && aiwPendingRecord[f.key] !== undefined && aiwPendingRecord[f.key] !== null
-        ? aiwPendingRecord[f.key] : '';
-    let ctrl = '';
-    if (f.type === 'select') {
-        const opts = f.options || [];
-        let sel = '';
-        if (val !== '') {
-            sel = opts.some(o => String(o[0]) === String(val)) ? String(val) : (f.fallback || String(opts[0][0]));
-        } else if (f.fallback) {
-            sel = f.fallback;
-        }
-        ctrl = `<select id="${id}">` + opts.map(o =>
-            `<option value="${o[0]}"${String(o[0]) === sel ? ' selected' : ''}>${o[1]}</option>`).join('') + '</select>';
-    } else if (f.type === 'textarea') {
-        ctrl = `<textarea id="${id}" rows="2">${escapeHtml(String(val))}</textarea>`;
-    } else if (f.type === 'date') {
-        ctrl = `<input type="date" id="${id}" value="${escapeHtml(String(val))}">`;
-    } else if (f.type === 'datetime') {
-        ctrl = `<input type="datetime-local" id="${id}" value="${escapeHtml(toLocalDatetime(String(val)) || '')}">`;
-    } else if (f.type === 'number') {
-        ctrl = `<input type="number" id="${id}" value="${val === '' ? '' : escapeHtml(String(val))}">`;
-    } else {
-        ctrl = `<input type="text" id="${id}" value="${escapeHtml(String(val))}">`;
-    }
-    return `<div class="form-group"><label>${f.label}</label>${ctrl}</div>`;
-}
-
-function aiwTimeFieldHtml(f, defaultNow) {
-    const id = 'aiwF_' + f.key;
-    let val = '';
-    if (aiwPendingRecord && aiwPendingRecord[f.key]) {
-        val = f.type === 'date'
-            ? String(aiwPendingRecord[f.key]).slice(0, 10)
-            : toLocalDatetime(String(aiwPendingRecord[f.key]));
-    } else if (defaultNow) {
-        val = f.type === 'date' ? getToday() : aiwNowLocal();
-    }
-    const ctrl = f.type === 'date'
-        ? `<input type="date" id="${id}" value="${val}">`
-        : `<input type="datetime-local" id="${id}" value="${val}">`;
-    return `<div class="form-group"><label>${f.label}</label>${ctrl}</div>`;
-}
-
-function aiwRenderConfirm() {
-    const box = document.getElementById('aiwConfirmBox');
-    if (!box) return;
-    const cfg = AIW_TYPES[aiwActiveType];
-    if (!aiwPendingRecord) { box.innerHTML = ''; return; }
-    const timeHtml = cfg.timeField ? aiwTimeFieldHtml(cfg.timeField, cfg.timeField.defaultNow) : '';
-    const extraTimeHtml = cfg.extraTimeField ? aiwTimeFieldHtml(cfg.extraTimeField, cfg.extraTimeField.defaultNow) : '';
-    const fieldsHtml = (cfg.fields || []).map(aiwFieldHtml).join('');
-    box.innerHTML = `
-        <div class="aiw-confirm-title">确认${cfg.label}记录</div>
-        <form id="aiwConfirmForm" class="aiw-confirm-form">
-            ${timeHtml}
-            ${extraTimeHtml}
-            ${fieldsHtml}
-            ${authorSelectHtml('aiwAuthor')}
-            <div class="aiw-confirm-actions">
-                <button type="button" class="btn btn-cancel btn-sm" id="aiwCancelBtn">取消</button>
-                <button type="submit" class="btn btn-primary btn-sm" id="aiwSaveBtn">保存记录</button>
-            </div>
-        </form>`;
-    document.getElementById('aiwCancelBtn')?.addEventListener('click', () => {
-        box.innerHTML = '';
-        aiwPendingRecord = null;
-    });
-    document.getElementById('aiwConfirmForm')?.addEventListener('submit', (e) => {
-        e.preventDefault();
-        aiwSavePending();
-    });
-}
-
-function aiwCollectValues() {
-    const cfg = AIW_TYPES[aiwActiveType];
-    const v = {};
-    const keys = [];
-    if (cfg.timeField) keys.push(cfg.timeField.key);
-    if (cfg.extraTimeField) keys.push(cfg.extraTimeField.key);
-    (cfg.fields || []).forEach(f => keys.push(f.key));
-    keys.forEach(k => {
-        const el = document.getElementById('aiwF_' + k);
-        v[k] = el ? el.value : '';
-    });
-    return v;
-}
-
-function aiwSavePending() {
-    const cfg = AIW_TYPES[aiwActiveType];
-    if (!cfg || !aiwPendingRecord) return;
-    if (!App.currentBaby) { showToast.warning('请先选择宝宝'); return; }
-    const btn = document.getElementById('aiwSaveBtn');
-    if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
-    cfg.save(aiwCollectValues()).then(res => {
-        if (res && res.success) {
-            showToast.success(cfg.label + '记录已保存');
-            document.getElementById('aiwConfirmBox').innerHTML = '';
-            document.getElementById('aiwInput').value = '';
-            aiwPendingRecord = null;
-        } else {
-            showToast.error((res && res.message) || '保存失败');
-            if (btn) { btn.disabled = false; btn.textContent = '保存记录'; }
-        }
-    }).catch(() => {
-        showToast.error('网络错误，请重试');
-        if (btn) { btn.disabled = false; btn.textContent = '保存记录'; }
-    });
-}
-
-// —— 识别入口 ——
-function aiwIdentify() {
-    const input = document.getElementById('aiwInput');
-    const cfg = AIW_TYPES[aiwActiveType];
-    const text = input ? input.value.trim() : '';
-    if (!text) { showToast.warning('先描述一下要记录什么'); return; }
-    if (!App.currentBaby) { showToast.warning('请先选择宝宝'); return; }
-    const btn = document.getElementById('aiwIdentifyBtn');
-    if (btn) { btn.disabled = true; btn.textContent = '识别中…'; }
-    aiwClearHint('aiwActionsHint');
-    cfg.extract(text).then(res => {
-        if (btn) { btn.disabled = false; btn.textContent = 'AI 识别'; }
-        if (res && res.success && res.record) {
-            aiwPendingRecord = cfg.prepare ? cfg.prepare(res.record) : res.record;
-            aiwRenderConfirm();
-        } else {
-            aiwFail('aiwActionsHint', (res && res.message) || '识别失败');
-        }
-    }).catch(() => {
-        if (btn) { btn.disabled = false; btn.textContent = 'AI 识别'; }
-        aiwFail('aiwActionsHint', '网络错误，请稍后重试');
-    });
-}
-
-// —— 日记帮写 ——
-function aiwDiaryGenerate(full) {
-    const input = document.getElementById('aiwDiaryInput');
-    const text = input ? input.value.trim() : '';
-    if (!text) { showToast.warning('先写几件今天想记的事'); return; }
-    if (!App.currentBaby) { showToast.warning('请先选择宝宝'); return; }
-    const btn = document.getElementById(full ? 'aiwDiaryBtn' : 'aiwDiaryBodyBtn');
-    if (btn) btn.disabled = true;
-    aiwClearHint('aiwDiaryHint');
-    const call = full
-        ? api('/api/ai/write/full-diary', { method: 'POST', body: JSON.stringify({ input: text, baby_id: App.currentBaby }) })
-        : api('/api/ai/write/diary', { method: 'POST', body: JSON.stringify({ input: text, baby_id: App.currentBaby }) });
-    call.then(res => {
-        if (btn) btn.disabled = false;
-        if (res && res.success) {
-            const title = full && res.diary ? (res.diary.title || '') : '';
-            const content = full && res.diary ? (res.diary.content || '') : (res.content || '');
-            aiwRenderDiaryResult(title, content);
-        } else {
-            aiwFail('aiwDiaryHint', (res && res.message) || '生成失败');
-        }
-    }).catch(() => {
-        if (btn) btn.disabled = false;
-        aiwFail('aiwDiaryHint', '网络错误，请稍后重试');
-    });
-}
-
-function aiwRenderDiaryResult(title, content) {
-    const box = document.getElementById('aiwDiaryResult');
-    if (!box) return;
-    box.innerHTML = `
-        <div class="aiw-result-title">生成结果（可编辑）</div>
-        <input type="text" id="aiwDiaryTitle" class="aiw-input" value="${escapeHtml(title)}" placeholder="日记标题" maxlength="100">
-        <textarea id="aiwDiaryContent" class="aiw-input" rows="8" maxlength="5000">${escapeHtml(content)}</textarea>
-        <div class="aiw-actions">
-            <button class="btn btn-primary btn-sm" id="aiwDiaryFillBtn" type="button">填入日记编辑器</button>
-            <button class="btn btn-outline btn-sm" id="aiwDiaryCopyBtn" type="button">复制正文</button>
-        </div>`;
-    document.getElementById('aiwDiaryFillBtn')?.addEventListener('click', () => {
-        // showDiaryModal 会 reset 表单，必须在它之后回填
-        showDiaryModal();
-        document.getElementById('diaryTitle').value = document.getElementById('aiwDiaryTitle').value;
-        document.getElementById('diaryContent').value = document.getElementById('aiwDiaryContent').value;
-        showToast.success('已填入日记，检查后点保存');
-    });
-    document.getElementById('aiwDiaryCopyBtn')?.addEventListener('click', () => {
-        aiwCopyText(document.getElementById('aiwDiaryContent').value);
-    });
-}
-
-// 复制：http 站点（非安全上下文）没有 navigator.clipboard，回退 execCommand
-function aiwCopyText(text) {
-    if (!text) { showToast.warning('没有可复制的内容'); return; }
-    const done = () => showToast.success('已复制');
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(done).catch(() => aiwCopyFallback(text, done));
-    } else {
-        aiwCopyFallback(text, done);
-    }
-}
-function aiwCopyFallback(text, done) {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    let ok = false;
-    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
-    document.body.removeChild(ta);
-    if (ok) done(); else showToast.error('复制失败，请手动选择复制');
-}
-
-// —— 本周总结（统计数据复用 periodic-report，不前端重复采集）——
-function aiwWeeklyGenerate() {
-    if (!App.currentBaby) { showToast.warning('请先选择宝宝'); return; }
-    const btn = document.getElementById('aiwWeeklyBtn');
-    if (btn) btn.disabled = true;
-    aiwClearHint('aiwWeeklyHint');
-    const baby = aiwCurrentBaby();
-    api(`/api/babies/${App.currentBaby}/periodic-report?period=week`).then(res => {
-        if (!res || !res.success) {
-            if (btn) btn.disabled = false;
-            aiwFail('aiwWeeklyHint', (res && res.message) || '读取本周数据失败');
-            return;
-        }
-        const d = res.data || {};
-        const cur = d.current || {};
-        const feedingCount = cur.feeding_count || 0;
-        const weeklyData = {
-            feeding_count: feedingCount,
-            avg_amount: feedingCount ? Math.round((cur.feeding_ml || 0) / feedingCount) : 0,
-            total_sleep_hours: Math.round((cur.sleep_minutes || 0) / 36) / 10,
-            avg_night_sleep: 0,
-            diaper_count: cur.diaper_count || 0,
-            weight_change: (d.growth && d.growth.weight) ? ('最近体重 ' + d.growth.weight + 'kg') : '无数据',
-        };
-        return api('/api/ai/write/weekly-summary', {
-            method: 'POST',
-            body: JSON.stringify({
-                baby_name: baby ? baby.name : '宝宝',
-                age_months: baby ? calcAgeMonths(baby.birthday) : 0,
-                weekly_data: weeklyData,
-            })
-        });
-    }).then(res => {
-        if (btn) btn.disabled = false;
-        if (res === undefined) return;   // 上一步已经失败并提示过
-        if (res && res.success && res.content) {
-            aiwRenderTextResult('aiwWeeklyResult', res.content, '本周总结');
-        } else {
-            aiwFail('aiwWeeklyHint', (res && res.message) || '生成失败');
-        }
-    }).catch(() => {
-        if (btn) btn.disabled = false;
-        aiwFail('aiwWeeklyHint', '网络错误，请稍后重试');
-    });
-}
-
-function aiwRenderTextResult(boxId, content, label) {
-    const box = document.getElementById(boxId);
-    if (!box) return;
-    box.innerHTML = `
-        <div class="aiw-result-title">${label}（可编辑）</div>
-        <textarea class="aiw-input" rows="8" maxlength="5000">${escapeHtml(content)}</textarea>
-        <div class="aiw-actions">
-            <button class="btn btn-outline btn-sm" id="${boxId}CopyBtn" type="button">复制</button>
-        </div>`;
-    document.getElementById(boxId + 'CopyBtn')?.addEventListener('click', () => {
-        const ta = box.querySelector('textarea');
-        aiwCopyText(ta ? ta.value : '');
-    });
-}
-
-// —— 里程碑建议 ——
-function aiwMilestoneSuggest() {
-    if (!App.currentBaby) { showToast.warning('请先选择宝宝'); return; }
-    const input = document.getElementById('aiwMsInput');
-    const btn = document.getElementById('aiwMsBtn');
-    if (btn) btn.disabled = true;
-    aiwClearHint('aiwMsHint');
-    const baby = aiwCurrentBaby();
-    api('/api/ai/write/suggest-milestones', {
-        method: 'POST',
-        body: JSON.stringify({
-            age_months: baby ? calcAgeMonths(baby.birthday) : 0,
-            gender: baby ? baby.gender : '',
-            recent_performance: input ? input.value.trim() : '',
-        })
-    }).then(res => {
-        if (btn) btn.disabled = false;
-        if (res && res.success && Array.isArray(res.suggestions)) {
-            aiwRenderMsSuggestions(res.suggestions);
-        } else {
-            aiwFail('aiwMsHint', (res && res.message) || '获取建议失败');
-        }
-    }).catch(() => {
-        if (btn) btn.disabled = false;
-        aiwFail('aiwMsHint', '网络错误，请稍后重试');
-    });
-}
-
-function aiwRenderMsSuggestions(list) {
-    const box = document.getElementById('aiwMsResult');
-    if (!box) return;
-    if (!list.length) {
-        box.innerHTML = '<p class="empty-tip">暂无建议</p>';
-        return;
-    }
-    box.innerHTML = '<div class="aiw-result-title">建议里程碑</div>' + list.map((s, i) => `
-        <div class="aiw-ms-item" data-aiw-ms="${i}">
-            <div class="aiw-ms-title">${escapeHtml(s.title || '')}</div>
-            <div class="aiw-ms-meta">典型月龄：${escapeHtml(String(s.typical_age || '?'))} 个月</div>
-            <div class="aiw-ms-desc">${escapeHtml(s.description || '')}</div>
-            <div class="aiw-ms-actions">
-                <button type="button" class="btn btn-outline btn-sm" data-aiw-ms-add="pending">加为待达成</button>
-                <button type="button" class="btn btn-primary btn-sm" data-aiw-ms-add="achieved">加为已达成</button>
-            </div>
-        </div>`).join('');
-    box.dataset.suggestions = JSON.stringify(list);
-}
-
-function aiwBindMsResult() {
-    const box = document.getElementById('aiwMsResult');
-    if (!box || box.dataset.bound) return;
-    box.dataset.bound = '1';
-    box.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-aiw-ms-add]');
-        if (!btn) return;
-        if (!App.currentBaby) { showToast.warning('请先选择宝宝'); return; }
-        const item = btn.closest('[data-aiw-ms]');
-        const idx = parseInt(item.dataset.aiwMs, 10);
-        let list = [];
-        try { list = JSON.parse(box.dataset.suggestions || '[]'); } catch (err) { list = []; }
-        const s = list[idx];
-        if (!s) return;
-        const status = btn.dataset.aiwMsAdd;
-        btn.disabled = true;
-        api(`/api/health/milestones/${App.currentBaby}`, {
-            method: 'POST',
-            body: JSON.stringify({
-                milestone_name: s.title || '',
-                category: s.category || 'motor',
-                expected_age_months: null,
-                status: status,
-                achieved_date: status === 'achieved' ? getToday() : null,
-                note: s.description || '',
-            })
-        }).then(res => {
-            if (res && res.success) {
-                showToast.success('已添加：' + (s.title || ''));
-                item.querySelector('.aiw-ms-actions').innerHTML = '<span class="aiw-ms-saved">已添加</span>';
-            } else {
-                btn.disabled = false;
-                showToast.error((res && res.message) || '添加失败');
-            }
-        }).catch(() => {
-            btn.disabled = false;
-            showToast.error('网络错误，请重试');
-        });
-    });
 }
 
 // —— 相册「AI 描述」（photoViewModal 里的按钮）——
@@ -21980,27 +21556,5 @@ function aiwGeneratePhotoDesc() {
     }).catch(() => {
         if (btn) { btn.disabled = false; btn.textContent = 'AI 描述'; }
         showToast.error('网络错误，请稍后重试');
-    });
-}
-
-// —— 页面初始化（loadPageData case 'ai-writer' 调它）——
-function initAIWriterPage() {
-    aiwRenderTypeChips();
-    aiwBindChips();
-    aiwSetPlaceholder();
-    aiwBindMsResult();
-    const bindings = [
-        ['aiwIdentifyBtn', aiwIdentify],
-        ['aiwDiaryBtn', () => aiwDiaryGenerate(true)],
-        ['aiwDiaryBodyBtn', () => aiwDiaryGenerate(false)],
-        ['aiwWeeklyBtn', aiwWeeklyGenerate],
-        ['aiwMsBtn', aiwMilestoneSuggest],
-    ];
-    bindings.forEach(pair => {
-        const el = document.getElementById(pair[0]);
-        if (el && !el.dataset.bound) {
-            el.dataset.bound = '1';
-            el.addEventListener('click', pair[1]);
-        }
     });
 }
