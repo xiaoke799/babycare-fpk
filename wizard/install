@@ -3,22 +3,25 @@
     "stepTitle": "用户协议与隐私政策 / Terms & Privacy",
     "items": [
       {
-        "type": "tips",
-        "helpText": "<div style='display:flex;flex-direction:column;gap:8px'><div tabindex='0' style='height:210px;max-height:45vh;overflow-y:auto;border:1px solid #d0d7de;border-radius:10px;background:#fafbfc;padding:12px 14px;line-height:1.7;font-size:12.5px;color:#24292f;box-shadow:inset 0 -16px 14px -16px rgba(36,41,47,.35)'><p style='margin:0 0 4px;font-size:15px'><b>育儿宝（BabyCare）用户协议与隐私政策</b></p><p style='margin:0 0 14px;color:#57606a;font-size:12px'>适用：飞牛 fnOS 原生育儿记录应用　·　最后更新：2026-10-03</p><p style='margin:0 0 10px'><b>一、服务性质</b><br>本应用是育儿记录工具，<b>不是医疗器械</b>，不提供医疗诊断、治疗或用药建议。应用内的曲线解读、体温提示、疫苗排程、筛查结论等均为信息展示与记录参考，不构成医疗意见。</p><p style='margin:0 0 10px'><b>二、儿童个人信息</b><br>本应用处理婴幼儿信息，属于不满十四周岁未成年人的敏感个人信息（医疗健康类）。依据《个人信息保护法》，须由父母或其他监护人同意后使用。</p><p style='margin:0 0 10px'><b>三、数据与隐私</b><br>所有数据均存储在您设备本地的 SQLite 数据库中，不会自动上传至任何服务器。若您主动启用联网 AI 或推送通知（企业微信 / 钉钉 / 飞书 / Bark / PushPlus），相关数据会发送至您选择的第三方服务；其中境外服务商的接收构成数据出境，请自行评估并履行相应合规程序。</p><p style='margin:0 0 10px'><b>四、免责声明</b><br>本应用按「现状」提供，不保证无错误或中断。生长曲线、百分位、体温是否发热、疫苗接种排程、辅食过敏与发育评估等均仅供参考，不构成医疗诊断；请以当地预防接种门诊与医疗人员的判断为准，并注意 3 月龄以下婴儿出现发热时应立即就医。</p><p style='margin:0 0 10px'><b>五、条款查阅与撤回</b><br>安装后可随时在「设置 → 隐私与协议」中查阅完整版《用户协议》与《隐私政策》，并可随时撤回同意。</p><hr style='border:none;border-top:1px solid #d0d7de;margin:14px 0'><p style='margin:0 0 8px'><b>English</b></p><p style='margin:0 0 8px'>Welcome to BabyCare, a native Feiniu fnOS parenting record tool. It is a record-keeping utility, <b>NOT a medical device</b>, and provides no diagnosis, treatment or medication advice. Growth curves, percentiles, fever assessment, vaccination schedules, food-allergy and developmental assessments are for reference only and do not constitute medical diagnosis — consult your local vaccination clinic or a qualified physician.</p><p style='margin:0 0 8px'>This app processes infant information — sensitive personal information of minors under fourteen (medical/health category). Under China's Personal Information Protection Law, consent from a parent or guardian is required.</p><p style='margin:0 0 8px'>All data is stored in a local SQLite database on your device and is not automatically uploaded. If you enable an online AI service or push notifications, the relevant data is sent to the third-party service you choose; data received by providers outside mainland China constitutes data export.</p><p style='margin:0'>The full Terms and Privacy Policy are available under Settings, and consent can be withdrawn at any time.</p><p style='margin:14px 0 0;text-align:center;color:#8c959f;font-size:12px'>—— 条款到此结束 ——</p></div><p style='margin:0;font-size:12px;line-height:1.6;color:#57606a'>框内可上下滚动阅读全文（中文条款之后是英文摘要）。确认您是宝宝的父母或其他监护人后，勾选下方「我接受许可条款」，「下一步」才会生效。</p></div>"
-      },
-      {
         "type": "checkbox",
         "field": "wizard_agreement",
         "label": "同意声明",
         "options": [
           {
             "value": "agreed",
-            "label": "我接受许可条款（我是该宝宝的父母或其他监护人）"
+            "label": "我接受下列许可条款（我是该宝宝的父母或其他监护人）"
           }
         ],
         "rules": [
-          { "required": true, "message": "请先勾选「我接受许可条款」再点下一步" }
+          {
+            "required": true,
+            "message": "请先勾选「我接受许可条款」再点下一步"
+          }
         ]
+      },
+      {
+        "type": "tips",
+        "helpText": "<p style='margin:0 0 12px;color:#57606a;font-size:12px'>以下是完整的《用户协议》与《隐私政策》，可上下滚动阅读；安装后在「设置 → 隐私与协议」中可随时查阅、随时撤回同意。</p><p style='margin:0 0 4px;font-size:14px'><b>育儿宝（BabyCare）用户协议与隐私政策</b></p><p style='margin:0 0 12px;color:#57606a;font-size:12px'>适用：飞牛 fnOS 原生育儿记录应用　·　最后更新：2026-10-03</p><p style='margin:0 0 10px'><b>一、服务性质</b><br>本应用是育儿记录工具，<b>不是医疗器械</b>，不提供医疗诊断、治疗或用药建议。应用内的曲线解读、体温提示、疫苗排程、筛查结论等均为信息展示与记录参考，不构成医疗意见。</p><p style='margin:0 0 10px'><b>二、儿童个人信息</b><br>本应用处理婴幼儿信息，属于不满十四周岁未成年人的敏感个人信息（医疗健康类）。依据《个人信息保护法》，须由父母或其他监护人同意后使用。</p><p style='margin:0 0 10px'><b>三、数据与隐私</b><br>所有数据均存储在您设备本地的 SQLite 数据库中，不会自动上传至任何服务器。若您主动启用联网 AI 或推送通知（企业微信 / 钉钉 / 飞书 / Bark / PushPlus），相关数据会发送至您选择的第三方服务；其中境外服务商的接收构成数据出境，请自行评估并履行相应合规程序。</p><p style='margin:0 0 10px'><b>四、免责声明</b><br>本应用按「现状」提供，不保证无错误或中断。生长曲线、百分位、体温是否发热、疫苗接种排程、辅食过敏与发育评估等均仅供参考，不构成医疗诊断；请以当地预防接种门诊与医疗人员的判断为准，并注意 3 月龄以下婴儿出现发热时应立即就医。</p><p style='margin:0 0 10px'><b>五、条款查阅与撤回</b><br>安装后可随时在「设置 → 隐私与协议」中查阅完整版《用户协议》与《隐私政策》，并可随时撤回同意。</p><hr style='border:none;border-top:1px solid #d0d7de;margin:14px 0'><p style='margin:0 0 8px'><b>English</b></p><p style='margin:0 0 8px'>Welcome to BabyCare, a native Feiniu fnOS parenting record tool. It is a record-keeping utility, <b>NOT a medical device</b>, and provides no diagnosis, treatment or medication advice. Growth curves, percentiles, fever assessment, vaccination schedules, food-allergy and developmental assessments are for reference only and do not constitute medical diagnosis — consult your local vaccination clinic or a qualified physician.</p><p style='margin:0 0 8px'>This app processes infant information — sensitive personal information of minors under fourteen (medical/health category). Under China's Personal Information Protection Law, consent from a parent or guardian is required.</p><p style='margin:0 0 8px'>All data is stored in a local SQLite database on your device and is not automatically uploaded. If you enable an online AI service or push notifications, the relevant data is sent to the third-party service you choose; data received by providers outside mainland China constitutes data export.</p><p style='margin:0'>The full Terms and Privacy Policy are available under Settings, and consent can be withdrawn at any time.</p>"
       }
     ]
   },

@@ -250,11 +250,12 @@ single release version.
   of two 500px ones where each group's 1~3 icons hugged the left edge and left
   a hole in the middle and on the right. Summary cards lose three colour bars
   that carried no meaning, and block spacing is now a single step. The install
-  wizard's agreement step now uses a fixed-height scrollable terms box with the
-  "I accept the terms" checkbox always visible underneath — previously the
-  checkbox was pushed below the fold, so "Next" silently did nothing and the
-  terms looked like they ended after section five. The About page version now
-  comes only from the backend instead of being hard-coded.
+  wizard's agreement step now puts the "I accept the terms" checkbox above the
+  terms text so it is always visible, with the full text scrollable underneath
+  (and still available in Settings → Privacy & Terms) — the fnOS wizard drops
+  container border/scroll styles, so a checkbox below the long text was pushed
+  below the fold and "Next" silently did nothing. The About page version now comes only from the backend
+  instead of being hard-coded.
   **Information architecture**: the health follow-up plan moved out of the
   clinic summary into Health Record → Follow-up (right after Checkups), and the
   custom countdown moved out of the summary into its own page under a new
