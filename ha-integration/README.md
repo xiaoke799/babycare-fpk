@@ -96,7 +96,7 @@ Token 仅存哈希；泄露后请在育儿宝重新生成或吊销。
 ## 按官方开发文档核对过的点
 
 本集成对照 Home Assistant 官方开发文档（`developers.home-assistant.io`
-的文档源码，见 `D:\育儿板块\developers.home-assistant-master`）核对过：
+的文档源码本地镜像 developers.home-assistant-master）核对过：
 
 | 项目 | 文档依据 | 现状 |
 |------|---------|------|
