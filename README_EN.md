@@ -237,39 +237,33 @@ single release version.
   result with yes/no; nothing is written unless you tap "Save". New
   authorization toggle in Settings → AI LLM (on by default); unauthorized
   requests are rejected with HTTP 403
-- v0.0.5 (2026-10-17) - Logging entry consolidated into the chat. Removed
-  the standalone AI writer page and the "Smart" nav group (one-sentence
-  logging is now handled by the in-chat confirmation card; diary drafting,
-  weekly summaries and milestone suggestions went with the page, backend AI
-  endpoints are kept for future use). The AI tool-calling path no longer
-  writes records directly: previously the model could silently log a
-  sentence without confirmation and duplicate the confirmation card, now
-  all new records go through detect → yes/no card → tap "Save", with no
-  bypass. Queries and analysis are unaffected
-- v0.0.6 (2026-10-17) - Layout rework. The home page is now built from rows:
-  greeting → search & date → 5 quick-log buttons → "on this day" →
-  today's summary beside the milk target → body measurements beside upcoming
-  reminders → recent records. Three structural bugs fixed along the way: on
-  desktop the quick buttons were too narrow and wrapped "Feeding" onto two
-  lines; the two-column layout left roughly 150px of dead space at the
-  bottom left; and on mobile the search bar jumped above the greeting
-  because it was never given a place in the reading order. The record,
-  growth, knowledge and system grids drop the "group name in a fixed left
-  column" layout for a name-on-top + icons-below one, which removes the
-  ragged gap at the right of each row. Summary cards lose three colour bars
-  that carried no meaning, and block spacing is now a single step
-- v0.0.7 (2026-10-17) - The health follow-up plan moved out of the clinic
-  summary into Health Record → Follow-up (right after Checkups). It used to
-  sit on the same page as the summary: the summary is a retrospective report
-  you take to the doctor, while the follow-up plan is the parent's own future
-  schedule — opposite directions, so it read wrong and was also printed along
-  with the summary. The home page's "checkup in N days" chip now jumps
-  straight to the follow-up tab. Print output is narrowed too: the clinic
-  summary now whitelists only the summary body
-- v0.0.8 (2026-10-17) - New "Tools" group in the Record tab. Soothing sounds
-  moved out of System (it is neither a record nor a report, nor a setting);
-  the custom countdown moved out of the clinic summary into its own page —
-  birthdays and trips are private plans, unrelated to a report for the doctor.
-  The home page's countdown chip now jumps to that page. Also fixed the list
-  ordering: it was sorted by date ascending only, so already-past events sat
-  at the very top; past ones now sink to the bottom.
+- v0.0.5 (2026-10-17) - UI and information-architecture pass (cumulative
+  since v0.0.4). **UI**: the home page is built from rows (greeting → search &
+  date → 5 quick-log buttons → "on this day" → today's summary beside the milk
+  target → body measurements beside upcoming reminders → recent records),
+  fixing three structural bugs: desktop quick buttons were too narrow and
+  wrapped "Feeding" onto two lines, the two-column layout left ~150px of dead
+  space at the bottom left, and on mobile the search bar jumped above the
+  greeting. On desktop the app column is now a centred panel floating on a
+  canvas — it keeps visible side margins even when the window is not maximised —
+  and the record / growth / knowledge / system grids use three columns instead
+  of two 500px ones where each group's 1~3 icons hugged the left edge and left
+  a hole in the middle and on the right. Summary cards lose three colour bars
+  that carried no meaning, and block spacing is now a single step.
+  **Information architecture**: the health follow-up plan moved out of the
+  clinic summary into Health Record → Follow-up (right after Checkups), and the
+  custom countdown moved out of the summary into its own page under a new
+  "Tools" group in the Record tab (soothing sounds moved there from System as
+  well) — the clinic summary is a retrospective report for the doctor, while
+  follow-ups and countdowns are the parent's own future schedule and private
+  events. Print output now whitelists only the summary body.
+  **Logging entry**: removed the standalone AI writer page and the "Smart" nav
+  group (one-sentence logging is now handled by the in-chat confirmation card;
+  diary drafting, weekly summaries and milestone suggestions went with the
+  page, backend AI endpoints are kept for future use). The AI tool-calling path
+  no longer writes records directly: previously the model could silently log a
+  sentence without confirmation and duplicate the confirmation card, now all
+  new records go through detect → yes/no card → tap "Save", with no bypass.
+  Queries and analysis are unaffected. Also fixed countdown ordering: it was
+  sorted by date ascending only, so already-past events sat at the very top;
+  past ones now sink to the bottom
