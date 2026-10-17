@@ -592,6 +592,71 @@ function initMascot() {
         return card;
     }
 
+    // ---- 对话内直接记录：AI 识别出记录后的「是/否」确认卡 ----
+    // 形态是用户定的：展示解析结果 + 是/否，不做可编辑表单
+    // （要改字段请去 AI 帮写页，那边有完整表单）。点「记下来」才写入——
+    // AI 提的只是草稿，落库永远经过用户点头，这与帮写页是同一条纪律。
+    function renderRecordConfirmCard(type, record) {
+        const cfg = AIW_TYPES[type];
+        if (!cfg) return;
+        if (!App.currentBaby) { showToast.warning('请先选择宝宝'); return; }
+        // 与帮写页同一套兜底（teething 要把牙位区域预选成编码）
+        const rec = cfg.prepare ? cfg.prepare(record) : record;
+        // 摘要与最终写入用同一份取值（fallback、时间默认值都在这儿算），
+        // 保证「卡上显示的」就是「点确认后落库的」——两处各算一遍必然漂移。
+        const values = aiwChatCollectValues(cfg, rec);
+
+        const card = document.createElement('div');
+        card.className = 'chat-msg bot chat-record-card';
+        card.innerHTML =
+            '<div class="chat-record-title">要记录这条吗？</div>' +
+            '<div class="chat-record-type">' + escapeHtml(cfg.label) + ' · 来自刚说的这句话</div>' +
+            '<div class="chat-record-summary">' + aiwChatSummaryHtml(cfg, values) + '</div>' +
+            '<div class="chat-record-actions">' +
+            '<button type="button" class="btn btn-cancel btn-sm" data-act="no">不了</button>' +
+            '<button type="button" class="btn btn-primary btn-sm" data-act="yes">记下来</button>' +
+            '</div>';
+        chatBody.appendChild(card);
+        chatBody.scrollTop = chatBody.scrollHeight;
+        setMascotState('happy');
+
+        const yesBtn = card.querySelector('[data-act="yes"]');
+        const noBtn = card.querySelector('[data-act="no"]');
+        noBtn.addEventListener('click', () => {
+            card.remove();
+            setMascotState(null);
+        });
+        yesBtn.addEventListener('click', () => {
+            yesBtn.disabled = true;
+            noBtn.disabled = true;
+            yesBtn.textContent = '记录中…';
+            aiwChatSave(cfg, values).then(res => {
+                if (res && res.success) {
+                    const actions = card.querySelector('.chat-record-actions');
+                    if (actions) actions.remove();
+                    const done = document.createElement('div');
+                    done.className = 'chat-record-done';
+                    done.textContent = '已记录：' + cfg.label + '（可在对应记录页查看/修改）';
+                    card.appendChild(done);
+                    showToast.success(cfg.label + '记录已保存');
+                    setMascotState('happy');
+                    setTimeout(() => setMascotState(null), 2000);
+                } else {
+                    yesBtn.disabled = false;
+                    noBtn.disabled = false;
+                    yesBtn.textContent = '记下来';
+                    // 失败必须把真实原因给出来（保存失败 vs 没选宝宝 vs 网络断）
+                    showToast.error((res && res.message) || '保存失败');
+                }
+            }).catch(() => {
+                yesBtn.disabled = false;
+                noBtn.disabled = false;
+                yesBtn.textContent = '记下来';
+                showToast.error('网络错误，请重试');
+            });
+        });
+    }
+
     // ---- 点击查询：卡片全部由本地快照渲染，不经过 AI / LLM ----
     // 标签取值与后端 validators 保持一致：喂养 breast/bottle/solid/mixed、尿布 wet/dirty/both/dry
     const FEEDING_LABELS = { breast: '母乳', bottle: '配方奶', solid: '辅食', mixed: '混合' };
@@ -858,9 +923,21 @@ function initMascot() {
         const typingEl = showTyping();
         setMascotState('thinking');
 
+        // 对话内直接记录：授权开启（默认开）且有宝宝时，并行让 AI 判断
+        // 这句话是不是一条待记录的育儿事件。与聊天回答各发各的、互不阻塞；
+        // 确认卡等聊天这条链渲染完再插，避免卡片跑到回答前面去。
+        // 没授权/没选宝宝/没配大模型时不发这个请求——后端也会拒绝，没必要浪费一次调用。
+        const recordReq = (App.aiRecordAuthorized !== false && App.currentBaby)
+            ? api('/api/ai/write/extract-auto', {
+                method: 'POST',
+                body: JSON.stringify({ input: val })
+            }).catch(() => null)
+            : null;
+        const afterChat = (req) => req.then(() => {}, () => {});
+
         // 调用后端 AI API（携带对话内选择的回答模型 + 工具调用开关）
         // 注意：api() 返回的是已解析的 JSON 对象，不能链式再调 res.json()
-        api('/api/ai/chat', {
+        const chatReq = api('/api/ai/chat', {
             method: 'POST',
             body: JSON.stringify({
                 message: val,
@@ -869,7 +946,8 @@ function initMascot() {
                 enable_tools: !!App.currentBaby,
                 max_tool_rounds: 5
             })
-        })
+        });
+        chatReq
         .then(data => {
             typingEl.remove();
             activeTypingEl = null;
@@ -898,6 +976,25 @@ function initMascot() {
             setMascotState(null);
             appendBotMsg('网络好像有问题，等一下再试试吧～', '');
         });
+
+        // 聊天链告一段落后（不管答上没答上）再处理记录识别结果：
+        // 识别出记录 → 弹「是/否」确认卡；没识别出 → 什么都不做（这句话就是普通对话）；
+        // 授权被关 → 如实说一句并缓存起来，后续发送不再重试。
+        if (recordReq) {
+            afterChat(chatReq).then(() => {
+                recordReq.then(rec => {
+                    if (!rec || !rec.success) return;
+                    if (rec.not_authorized) {
+                        App.aiRecordAuthorized = false;
+                        appendBotMsg('对话内直接记录当前没授权（可在 设置 → AI 大模型 里开启），这句话我就当聊天回答了。', '');
+                        return;
+                    }
+                    if (rec.type && rec.type !== 'none' && rec.record) {
+                        renderRecordConfirmCard(rec.type, rec.record);
+                    }
+                });
+            });
+        }
     }
 
     // 安全渲染 bot 回复：转义 HTML 后把换行转为 <br>、**加粗**转为 <b>
@@ -1203,6 +1300,16 @@ function initMascot() {
 
     // 启动后先刷一次快照，给出第一条上下文问候（延迟等宝宝加载完成）
     setTimeout(() => refreshMascotSnapshot().catch(() => {}), 1200);
+
+    // 预热「对话内直接记录」授权位：小萌不一定等用户去过 AI 页/设置页，
+    // 这个缓存不热，发送时就不知道能不能尝试识别记录（默认按开启处理，
+    // 但用户关过的话要等到下一次 loadLLMStatus 才生效，体验不一致）。
+    // 失败不锁任何功能——后端 extract-auto 自己会再校验一次授权。
+    api('/api/ai/llm/status').then(res => {
+        if (res && res.success) {
+            App.aiRecordAuthorized = (res.status || {}).ai_record_authorized !== false;
+        }
+    }).catch(() => {});
 }
 
 // 页面就绪后初始化小萌宠物
@@ -2525,7 +2632,7 @@ function renderRelatedLinks(page) {
 function loadAbout() {
     // 优先从后端应用信息取版本号，失败则回退到静态版本
     const verEl = document.getElementById('aboutVersion');
-    if (verEl) verEl.textContent = '版本 0.0.3';
+    if (verEl) verEl.textContent = '版本 0.0.4';
     api('/api/storage/app-info').then(r => {
         if (r && r.success && r.version && verEl) {
             verEl.textContent = '版本 ' + r.version;
@@ -7975,6 +8082,11 @@ if (saveBtn) {
             vision_enabled: document.getElementById('llmVisionEnabled')?.checked || false,
             vision_model: document.getElementById('llmVisionModel')?.value || '',
         };
+        // 对话内直接记录授权：只在开关真的在页面上时才带这个字段——
+        // 不带 = 后端保持原值（configure_llm 只收已存在的 key），
+        // 而写死 false 会把用户没看到开关时的授权悄悄关掉。
+        const recordAuth = document.getElementById('llmRecordAuth');
+        if (recordAuth) config.ai_record_authorized = recordAuth.checked;
 
         saveLLMConfig(config);
     });
@@ -8214,6 +8326,7 @@ function onProviderChange(providerId) {
     const modelHintText = document.getElementById('llmModelHintText');
     const getKeyLink = document.getElementById('getKeyLink');
     const consentRow = document.getElementById('llmConsentRow');
+    const recordAuthRow = document.getElementById('llmRecordAuthRow');
     const visionModelRow = document.getElementById('llmVisionModelRow');
     const visionSelectRow = document.getElementById('llmVisionSelectRow');
     const visionModelSelect = document.getElementById('llmVisionModel');
@@ -8229,6 +8342,7 @@ function onProviderChange(providerId) {
         urlRow.style.display = 'none';
         if (baseUrlRow) baseUrlRow.style.display = 'none';
         if (consentRow) consentRow.style.display = 'none';
+        if (recordAuthRow) recordAuthRow.style.display = 'none';
         if (visionModelRow) visionModelRow.style.display = 'none';
         if (visionSelectRow) visionSelectRow.style.display = 'none';
         if (customModelRow) customModelRow.style.display = 'none';
@@ -8346,6 +8460,9 @@ function onProviderChange(providerId) {
     if (consentRow) {
         consentRow.style.display = isLocal ? 'none' : '';
     }
+    // 对话内直接记录授权：本地/云端厂商都显示（本地模型同样能记录，
+    // 没有不外发的理由）；后端默认开启，回填时按"未配置=开启"处理。
+    if (recordAuthRow) recordAuthRow.style.display = '';
 
     // 显示自定义模型输入区域
     if (customModelRow) {
@@ -8391,6 +8508,9 @@ function loadLLMSettings() {
             if (sp && status.system_prompt != null) sp.value = status.system_prompt;
             const cs = document.getElementById('llmConsent');
             if (cs) cs.checked = !!status.consent_cloud;
+            // 对话内直接记录授权回填：undefined（旧配置升级上来的）按开启算
+            const ra = document.getElementById('llmRecordAuth');
+            if (ra) ra.checked = status.ai_record_authorized !== false;
             const ve = document.getElementById('llmVisionEnabled');
             if (ve) ve.checked = !!status.vision_enabled;
 
@@ -8738,6 +8858,9 @@ function loadLLMStatus() {
     api('/api/ai/llm/status').then(res => {
         if (!res.success) return;
         const status = res.status || {};
+        // 对话内直接记录授权位：小萌发送前读它决定要不要尝试识别记录。
+        // 缓存在 App 上（默认开启），设置页改完后 refreshChatAvailability 会刷新。
+        App.aiRecordAuthorized = status.ai_record_authorized !== false;
         const badge = document.getElementById('aiLLMBadge');
         if (!badge) return;
 
@@ -20931,6 +21054,81 @@ function aiwNum(v) {
     if (v === '' || v === null || v === undefined) return null;
     const n = Number(v);
     return isNaN(n) ? null : n;
+}
+
+// ---- 对话内直接记录（小萌浮窗）专用取值/摘要/保存 ----
+// 帮写页的 aiwCollectValues 读的是帮写页表单 DOM（aiwF_*），对话里没有那些控件，
+// 所以这里从 LLM 返回的 record 直接取值，兜底规则与帮写页逐条对齐
+// （时间默认 now/今天、select 落 fallback、extraTime 可空）。
+function aiwChatCollectValues(cfg, rec) {
+    const v = Object.assign({}, rec);
+    const fillTime = (f) => {
+        const k = f.key;
+        if (f.type === 'date') {
+            // 日期类：LLM 可能给 'YYYY-MM-DD HH:MM:SS'，只取日期段
+            v[k] = v[k] ? String(v[k]).slice(0, 10) : getToday();
+        } else if (v[k]) {
+            v[k] = toLocalDatetime(String(v[k])) || aiwNowLocal();
+        } else {
+            v[k] = f.defaultNow ? aiwNowLocal() : '';
+        }
+    };
+    if (cfg.timeField) fillTime(cfg.timeField);
+    if (cfg.extraTimeField) fillTime(cfg.extraTimeField);
+    (cfg.fields || []).forEach(f => {
+        if (f.type === 'select' && (v[f.key] === '' || v[f.key] === null || v[f.key] === undefined) && f.fallback) {
+            v[f.key] = f.fallback;
+        }
+    });
+    return v;
+}
+
+// 确认卡摘要：字段标签 + 人类可读值（select 显示选项文字，不显示枚举值）
+function aiwChatSummaryHtml(cfg, v) {
+    const rows = [];
+    const push = (label, val) => {
+        if (val === '' || val === null || val === undefined) return;
+        rows.push('<div class="card-row"><span>' + escapeHtml(String(label)) + '</span><b>' +
+            escapeHtml(String(val)) + '</b></div>');
+    };
+    const fmtTime = (val) => String(val).replace('T', ' ');
+    if (cfg.timeField) {
+        push(cfg.timeField.label, fmtTime(v[cfg.timeField.key]));
+    }
+    if (cfg.extraTimeField && v[cfg.extraTimeField.key]) {
+        push(cfg.extraTimeField.label, fmtTime(v[cfg.extraTimeField.key]));
+    }
+    (cfg.fields || []).forEach(f => {
+        let val = v[f.key];
+        if (val === '' || val === null || val === undefined) return;
+        if (f.type === 'select') {
+            const opt = (f.options || []).find(o => String(o[0]) === String(val));
+            if (opt) val = opt[1];
+        }
+        push(f.label, val);
+    });
+    if (!rows.length) return '<p>没有提取到具体字段，建议去 AI 帮写页手动补充。</p>';
+    return '<div class="card-grid">' + rows.join('') + '</div>';
+}
+
+// 保存：cfg.save 内部用 readAuthor('aiwAuthor') 读「谁记的」——那是帮写页的下拉，
+// 对话里不存在。临时挂一个隐藏下拉（值取上次记录人），保存完就摘掉，
+// 这样 11 个 save 实现一行不用改，也不会在页面上多出任何可见控件。
+function aiwChatSave(cfg, v) {
+    const sel = document.createElement('select');
+    sel.id = 'aiwAuthor';
+    sel.style.display = 'none';
+    const last = getLastAuthor();
+    const opt = document.createElement('option');
+    opt.value = last || '';
+    opt.textContent = last || '不指定';
+    sel.appendChild(opt);
+    document.body.appendChild(sel);
+    const cleanup = () => sel.remove();
+    return cfg.save(v).then(
+        res => { cleanup(); return res; },
+        err => { cleanup(); throw err; }
+    );
 }
 
 // 出牙：20 颗乳牙的 FDI 编码（与 TEETH_DATA 同源，避免两处各写一份）

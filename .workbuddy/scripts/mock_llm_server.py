@@ -87,6 +87,14 @@ def _reply_for(model: str, payload: dict):
                 '"duration_minutes": null, "note": "假厂商返回"}\n```')
         return 200, {'id': 'x', 'choices': [{'index': 0, 'message': {
             'role': 'assistant', 'content': body}}]}
+    if m == 'json-auto':
+        # 对话内直接记录（/api/ai/write/extract-auto）的合法响应：
+        # 带 type + record 两层（与 11 个 extract-* 的单层 record 不同）
+        body = ('```json\n'
+                '{"type": "feeding", "record": {"feeding_type": "bottle", '
+                '"amount": 180, "duration_minutes": null, "note": "假厂商返回"}}\n```')
+        return 200, {'id': 'x', 'choices': [{'index': 0, 'message': {
+            'role': 'assistant', 'content': body}}]}
     # 默认 / ok-*
     return 200, {'id': 'x', 'choices': [{'index': 0, 'message': {
         'role': 'assistant', 'content': '这是来自假厂商的正常回答。'}}]}

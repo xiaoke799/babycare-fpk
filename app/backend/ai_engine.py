@@ -1512,6 +1512,10 @@ LLM = {
     'timeout': 30,       # 请求超时（秒）
     'system_prompt': '', # 自定义系统提示词，空表示使用内置育儿顾问提示词
     'consent_cloud': False,   # 云端厂商数据外发同意开关
+    # 对话内直接记录授权（小萌浮窗里说话就能记）：默认开启。
+    # 关掉后 /api/ai/write/extract-auto 直接拒绝（403）——授权不能只靠前端不弹框，
+    # 前端状态是可以被绕过的（直接 POST 该端点即可）。
+    'ai_record_authorized': True,
     'custom_models': {}, # 按提供商持久化的自定义模型列表 {provider: [models]}
 }
 
@@ -2099,6 +2103,9 @@ def get_llm_status():
         'timeout': LLM.get('timeout', 30),
         'system_prompt': LLM.get('system_prompt', ''),
         'consent_cloud': LLM.get('consent_cloud', False),
+        # 对话内直接记录授权（默认开启）：设置页回填开关 + 小萌发送前读这一位。
+        # 旧配置（升级上来的）没有这个 key 时按开启算——新功能默认就是要用的。
+        'ai_record_authorized': LLM.get('ai_record_authorized', True),
         'vision_enabled': LLM.get('vision_enabled', False),
         'api_url': LLM.get('api_url', ''),
         'base_url': LLM.get('base_url', ''),

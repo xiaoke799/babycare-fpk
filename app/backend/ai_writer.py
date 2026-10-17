@@ -652,6 +652,53 @@ ALLERGY_TEST_EXTRACTION_PROMPT = """你是一位婴儿过敏测试记录助手�
 请提取："""
 
 
+AUTO_RECORD_PROMPT = """你是一位育儿记录分类助手。用户在育儿应用的对话框里随口说一句话，你要判断它是否在记录一件已经发生的育儿事件，并提取结构化信息。
+
+记录类型（必须从下面选一个；都不像就填 "none"）：
+- feeding 喂奶/吃辅食（奶量、时长）
+- sleep 睡觉（入睡/醒来、时长、质量）
+- diaper 换尿布（类型、颜色）
+- growth 量身高体重头围
+- temperature 测体温
+- medication 吃药/用药
+- vaccine 打疫苗
+- pumping 吸奶
+- milestone 发育里程碑（会翻身、会叫妈妈等）
+- teething 长牙
+- allergy 过敏原测试
+
+判断规则：
+1. 只有"陈述已经发生的事实"才算记录；提问、求助、闲聊、计划一律 type=none
+2. 时间按用户说的取；用户没说时间，日期类填当天、时间类填当前时间
+3. 数值保持原样，不知道的填 null，不要编造
+
+用户描述：{user_input}
+当前时间：{current_time}
+
+返回格式：
+```json
+{{
+  "type": "记录类型或 none",
+  "record": 对应类型的字段字典；type 为 none 时填 null
+}}
+```
+
+各类型字段（只返回该类型的字段）：
+- feeding: {{"start_time":"YYYY-MM-DD HH:MM:SS","feeding_type":"breast|bottle|solid","amount":数字,"duration_minutes":数字,"note":"备注"}}
+- sleep: {{"start_time":"YYYY-MM-DD HH:MM:SS","end_time":"YYYY-MM-DD HH:MM:SS或空","duration_minutes":数字,"sleep_quality":"good|normal|poor","is_nap":true或false,"note":"备注"}}
+- diaper: {{"change_time":"YYYY-MM-DD HH:MM:SS","diaper_type":"wet|dirty|both|dry","color":"black|brown|green|yellow|other或空","note":"备注"}}
+- growth: {{"record_date":"YYYY-MM-DD","height":数字,"weight":数字,"head_circumference":数字,"note":"备注"}}
+- temperature: {{"measure_time":"YYYY-MM-DD HH:MM:SS","temperature":数字,"measure_location":"ear|armpit|oral|rectal","note":"备注"}}
+- medication: {{"administered_time":"YYYY-MM-DD HH:MM:SS","medication_name":"药名","dose":"剂量","reason":"原因","note":"备注"}}
+- vaccine: {{"vaccination_date":"YYYY-MM-DD","vaccine_name":"疫苗名","dose_number":数字,"vaccination_site":"部位","batch_number":"批号","note":"备注"}}
+- pumping: {{"pump_time":"YYYY-MM-DD HH:MM:SS","left_amount":数字,"right_amount":数字,"total_amount":数字,"duration_minutes":数字,"note":"备注"}}
+- milestone: {{"achieved_date":"YYYY-MM-DD","title":"名称","description":"描述","category":"motor|language|social|cognitive"}}
+- teething: {{"eruption_date":"YYYY-MM-DD","tooth_position":"upper_front|lower_front|upper_molar|lower_molar|upper_canine|lower_canine","tooth_name":"牙名","note":"备注"}}
+- allergy: {{"test_date":"YYYY-MM-DD","allergen":"过敏原","test_result":"positive|negative|uncertain","test_method":"方法","note":"备注"}}
+
+请提取："""
+
+
 DIARY_FULL_GENERATION_PROMPT = """你是一位育儿日记助手。根据用户提供的素材，生成一篇完整的育儿日记。
 
 要求：
@@ -868,6 +915,59 @@ def extract_allergy_test_record(user_input: str) -> Tuple[bool, Optional[Dict[st
         'test_method': data.get('test_method', ''),
         'note': data.get('note', ''),
     }
+
+
+# 对话内直接记录（小萌浮窗）支持的记录类型 —— 与前端 AIW_TYPES 的键名一一对应。
+# 端点与前端都只认这 11 个；模型冒出别的类型一律按"不是记录"处理，
+# 否则前端无从渲染确认卡，只会静默丢失。
+AUTO_RECORD_TYPES = (
+    'feeding', 'sleep', 'diaper', 'growth', 'temperature', 'medication',
+    'vaccine', 'pumping', 'milestone', 'teething', 'allergy',
+)
+
+
+def extract_auto_record(user_input: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    """从一句自然语言里自动识别记录类型并提取字段（小萌对话内直接记录用）。
+
+    与 11 个 extract_*_record 的区别：那些要先知道类型（用户在帮写页选了 chip），
+    这个不知道——用户在小萌对话框里随口说，类型也要一起认。
+
+    Args:
+        user_input: 用户自然语言描述，如"刚喝了 120ml 奶粉"
+
+    Returns:
+        (success, {'type': 11 类之一或 'none', 'record': 字段字典或 None})
+        type='none' 表示这句话不像一条记录（提问/闲聊），调用方不该弹确认卡。
+        识别失败（LLM 挂了/JSON 解析不了）返回 (False, None)，与"不是记录"区分开——
+        前者可以让前端如实告知，后者就该安静放过。
+    """
+    current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    prompt = AUTO_RECORD_PROMPT.format(user_input=user_input, current_time=current_time)
+
+    ok, content = _call_llm_for_generation(prompt, max_tokens=600)
+    if not ok or not content:
+        return False, None
+
+    data = _parse_json_response(content)
+    if not data or not isinstance(data, dict):
+        return False, None
+
+    rtype = str(data.get('type') or '').strip().lower()
+    record = data.get('record')
+
+    if rtype == 'none':
+        return True, {'type': 'none', 'record': None}
+    if rtype not in AUTO_RECORD_TYPES:
+        # 模型给了个不认识的类型：当"不是记录"处理（记一笔日志），
+        # 不弹卡片也不报错——这句话就按普通对话走。
+        logger.warning("extract_auto_record: 未知记录类型 %r，按 none 处理", rtype)
+        return True, {'type': 'none', 'record': None}
+    if not isinstance(record, dict) or not record:
+        # 说了是记录却给不出任何字段：弹一个空确认卡比不弹更糟，
+        # 按识别失败处理，让前端走"无法识别"的提示。
+        logger.warning("extract_auto_record: type=%s 但 record 为空", rtype)
+        return False, None
+    return True, {'type': rtype, 'record': record}
 
 
 def generate_full_diary(baby_context: Dict[str, Any], user_input: str) -> Tuple[bool, Optional[Dict[str, str]]]:

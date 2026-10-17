@@ -12022,6 +12022,47 @@ input:checked + .toggle-slider:before {
 .chat-card-body .chat-quick-btn { margin-top: 8px; }
 .chat-card-body .chat-quick-btn:disabled { opacity: 0.6; cursor: default; transform: none; }
 
+/* 对话内直接记录：AI 识别出记录后的「是/否」确认卡（小萌浮窗） */
+.chat-record-card {
+    align-self: flex-start;
+    max-width: 92%;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    border-bottom-left-radius: 4px;
+    box-shadow: var(--shadow);
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--primary-color);
+}
+.chat-record-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(135deg, var(--primary-color), #ff9e7a);
+    padding: 8px 14px;
+}
+.chat-record-type {
+    padding: 8px 14px 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.chat-record-summary {
+    padding: 8px 14px;
+    font-size: 13px;
+}
+.chat-record-summary p { margin: 0; }
+.chat-record-actions {
+    display: flex;
+    gap: 8px;
+    padding: 0 14px 12px;
+}
+.chat-record-done {
+    padding: 0 14px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--success-color);
+}
+
 /* 聊天气泡内的时间戳 + 模型标签 */
 .chat-msg { position: relative; }
 .chat-msg-body { white-space: normal; }

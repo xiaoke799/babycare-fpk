@@ -72,6 +72,10 @@ BabyCare (育儿宝) is a native NAS parenting app for the fnOS platform (by fnO
 - **AI writer**: 11 scenarios such as one-sentence logging, diary drafting,
   weekly summaries and milestone suggestions — speak one sentence and get a
   properly structured record
+- **In-chat quick logging**: talk to the Xiaomeng bubble and it records —
+  say "just had 120ml of formula" and the AI detects the record type,
+  extracts the fields and shows a confirmation card; nothing is saved
+  until you tap "Save". Authorization toggle in Settings → AI LLM (on by default)
 
 ### 📚 Parenting Knowledge Base
 - Built-in articles on feeding, sleep, development, health and care
@@ -229,3 +233,11 @@ single release version.
   no data. API failures are now visible in the UI. Global typography
   polish and unified card layout. Documentation and version numbers
   brought back in sync
+- v0.0.4 (2026-10-17) - In-chat quick logging via the Xiaomeng bubble.
+  Speak directly in the floating chat to log: the AI detects one of 11
+  record types (feeding / sleep / diaper / growth / temperature /
+  medication / vaccine / pumping / milestone / teething / allergy test),
+  extracts the fields and pops a "Record this?" card showing the parsed
+  result with yes/no; nothing is written unless you tap "Save". New
+  authorization toggle in Settings → AI LLM (on by default); unauthorized
+  requests are rejected with HTTP 403

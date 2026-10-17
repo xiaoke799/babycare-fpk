@@ -1456,6 +1456,46 @@ def ai_extract_allergy_test():
     return _ai_write_fail('无法识别，请手动填写')
 
 
+@bp.route('/api/ai/write/extract-auto', methods=['POST'])
+def ai_extract_auto():
+    """小萌对话内直接记录：自动识别记录类型并提取字段（需用户授权）
+
+    与 11 个 extract-* 的区别：用户没选类型——他在小萌对话框里随口说，
+    类型也在这里一起认。授权由 LLM['ai_record_authorized'] 把关（默认开启），
+    关掉时这里必须真的拒绝：只靠前端不弹框等于没有授权，
+    前端状态是可以被绕过的（直接 POST 这个端点就行）。
+    """
+    data = request.get_json()
+    if not data or not data.get('input'):
+        return jsonify({'success': False, 'message': '请输入描述'}), 400
+    if not _check_llm_available():
+        return jsonify({'success': False, 'message': '请先配置 AI 大模型'}), 400
+
+    from ai_engine import LLM
+    if not LLM.get('ai_record_authorized', True):
+        return jsonify({
+            'success': False,
+            'message': '对话内直接记录未授权，请到 设置 → AI 大模型 开启「允许在小萌对话里直接记录」',
+            'not_authorized': True,
+        }), 403
+
+    from ai_writer import extract_auto_record
+    ok, result = extract_auto_record(data['input'])
+    if not ok or not result:
+        return _ai_write_fail('无法识别，请手动填写或换一种描述')
+
+    rtype = result.get('type')
+    record = result.get('record')
+    if rtype != 'none' and not record:
+        return _ai_write_fail('无法识别，请手动填写或换一种描述')
+    return jsonify({
+        'success': True,
+        'type': rtype,
+        'record': record,
+        'message': '识别到一条记录，请确认后保存' if rtype != 'none' else '这句话不像一条记录',
+    })
+
+
 @bp.route('/api/ai/write/full-diary', methods=['POST'])
 def ai_write_full_diary():
     """AI 生成完整日记（含标题和正文）"""

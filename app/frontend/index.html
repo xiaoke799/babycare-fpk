@@ -1584,6 +1584,18 @@
                         </label>
                     </div>
 
+                    <!-- 对话内直接记录授权（小萌浮窗说话就能记，默认开启） -->
+                    <div class="llm-consent-row" id="llmRecordAuthRow" style="display:none;">
+                        <div>
+                            <label class="llm-field-label" for="llmRecordAuth">允许在小萌对话里直接记录</label>
+                            <p class="llm-field-desc">开启后，对小萌说「刚喝了 120ml 奶」这类话会弹出确认框，点「记下来」才写入；每次记录前都会确认，点「不了」则不写</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="llmRecordAuth" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+
                     <!-- 操作按钮 -->
                     <div class="llm-actions">
                         <button type="button" class="btn btn-primary" id="saveLLMBtn">保存配置</button>
@@ -2001,7 +2013,7 @@
         </div>
         <div class="about-logo-text">
             <div class="about-app-name">育儿宝</div>
-            <div class="about-version" id="aboutVersion">版本 0.0.3</div>
+            <div class="about-version" id="aboutVersion">版本 0.0.4</div>
         </div>
     </div>
 

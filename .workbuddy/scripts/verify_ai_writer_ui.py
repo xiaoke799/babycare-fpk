@@ -3,9 +3,11 @@
 """AI 帮写 UI 门禁 —— 静态结构 + 假厂商端到端 + 内置负向自检。
 
 背景（2026-10-14，用户拍板「AI 帮写要做 UI」）：
-  17 个 /api/ai/write/* 端点自 v0.0.1 起就在后端，前端从未接 UI。本次补齐：
+  18 个 /api/ai/write/* 端点自 v0.0.1 起就在后端，前端从未接 UI。本次补齐：
   记录栏新增第 7 组「智能」→ page-ai-writer（一句话记录 / 日记帮写 /
   本周总结 / 里程碑建议 四张卡）+ 相册大图弹窗挂「AI 描述」按钮。
+  2026-10-17 新增对话内直接记录（小萌浮窗说话就能记）：第 18 个端点
+  extract-auto 自动认类型，配 ai_record_authorized 授权开关（默认开启）。
 
 本门禁防的是这几类**静默**缺陷（都是读代码看不出来、用户点了没反应
 或数据凭空消失的那类）：
@@ -22,9 +24,11 @@
      （teething 的 tooth_position/tooth_name），且 prepare 必须真的引用它
   S6. 绑定表写法（getElementById(pair[0]) 非字面）是 verify_event_bindings
      的口径盲区 ⇒ 这里显式判绑定表覆盖的 id 都有静态产地
-  E1. 未配置 LLM：16 个端点都必须 400「请先配置 AI 大模型」（前端靠这句话
-     显示「去配置」入口）
+  E1. 未配置 LLM：17 个端点都必须 400「请先配置 AI 大模型」（前端靠这句话
+      显示「去配置」入口）
   E2. 配置后 11 extract + 5 生成端点全部可用（假厂商 json-ok）
+  E2b. 对话内直接记录：extract-auto 认得出 feeding（json-auto）；
+      授权关掉必须 403 not_authorized（授权不能只靠前端不弹框）
   E3. 失败语义不串味：json-bad ⇒ 422「无法识别」且不带「调用失败」；
      err401 ⇒ message 带「HTTP 401」
   E4. record 键 ⊆ 表单键（同 S5，但用真跑出来的 record，不读代码猜）
@@ -69,8 +73,14 @@ JS_PATH = os.path.join(FE, "js", "app.js")
 HTML_PATH = os.path.join(FE, "index.html")
 CSS_PATH = os.path.join(FE, "css", "main.css")
 AI_PY = os.path.join(BACKEND, "blueprints", "ai.py")
+ENGINE_PY = os.path.join(BACKEND, "ai_engine.py")
 
 PASS, FAIL = [], []
+
+
+def _record_auth_default_on(eng_src):
+    """LLM defaults 里 ai_record_authorized 默认开启（新功能默认就要能用）。"""
+    return bool(re.search(r"'ai_record_authorized':\s*True", eng_src))
 
 
 def ok(msg):
@@ -320,10 +330,11 @@ def static_checks(js, html, css):
     ok("AI 帮写模块的异步调用都有 catch（%d 处）" % n_catch) if n_catch >= 8 \
         else bad("AI 帮写模块 catch 偏少（网络错会静默卡死）", n_catch)
 
-    # S10 后端 16 个 ai/write 端点都在（前端不用 ≠ 后端能删；这里是防回归）
+    # S10 后端 17 个 ai/write 端点都在（前端不用 ≠ 后端能删；这里是防回归）
+    # 2026-10-17：16 → 17（新增 extract-auto，对话内直接记录用）
     ai_py = open(AI_PY, encoding="utf-8").read()
     eps = re.findall(r"@bp\.route\('/api/ai/write/([\w-]+)'", ai_py)
-    ok("后端 ai/write 端点 16 个") if len(eps) == 16 else \
+    ok("后端 ai/write 端点 17 个") if len(eps) == 17 else \
         bad("后端 ai/write 端点数变了", len(eps))
     front_eps = set()
     for k, c in types.items():
@@ -332,6 +343,25 @@ def static_checks(js, html, css):
                       "suggest-milestones", "photo-description"])
     miss = sorted(front_eps - set(eps))
     ok("前端调用的 16 个端点后端都有") if not miss else bad("前端调了后端没有的", miss)
+
+    # S11 对话内直接记录（小萌浮窗）接线三件套：
+    #   ① sendMsg 里真的发 extract-auto（字面 URL，动态拼的 check_frontend_api_exists 不认）
+    #   ② 识别出记录后渲染的是「是/否」确认卡（用户拍板的形态）
+    #   ③ 授权开关默认开启（ai_engine 的 LLM defaults）+ 端点真的校验授权
+    # 少任何一件，这个功能就是「设置了却静默不工作」。
+    mascot_src = js[js.index("function sendMsg"):js.index("function renderBotText")]
+    ok("小萌 sendMsg 接线 extract-auto（对话内直接记录）") if \
+        "/api/ai/write/extract-auto" in mascot_src and "renderRecordConfirmCard" in mascot_src \
+        else bad("小萌对话内没有接线 extract-auto")
+    ok("确认卡是「是/否」形态（data-act=yes/no）") if \
+        'data-act="yes"' in js and 'data-act="no"' in js \
+        else bad("确认卡不是是/否形态")
+    eng = open(ENGINE_PY, encoding="utf-8").read()
+    ok("LLM defaults 含 ai_record_authorized 且默认开启") if \
+        _record_auth_default_on(eng) else bad("授权开关缺失或默认关闭")
+    ok("extract-auto 端点校验授权（not_authorized）") if \
+        "not_authorized" in ai_py and "ai_record_authorized" in ai_py \
+        else bad("端点没有授权校验")
     return types
 
 
@@ -358,11 +388,12 @@ def e2e_checks(types):
                    "/api/ai/write/extract-temperature", "/api/ai/write/extract-medication",
                    "/api/ai/write/extract-vaccine", "/api/ai/write/extract-pumping",
                    "/api/ai/write/extract-milestone", "/api/ai/write/extract-teething",
-                   "/api/ai/write/extract-allergy-test", "/api/ai/write/diary",
+                   "/api/ai/write/extract-allergy-test", "/api/ai/write/extract-auto",
+                   "/api/ai/write/diary",
                    "/api/ai/write/full-diary", "/api/ai/write/weekly-summary",
                    "/api/ai/write/suggest-milestones", "/api/ai/write/photo-description"]
 
-        # E1 未配置：16 个端点全部 400「请先配置 AI 大模型」
+        # E1 未配置：17 个端点全部 400「请先配置 AI 大模型」
         # （前端 aiwFail 靠这句话里的「配置」显示「去配置」入口）
         not_cfg = []
         for ep in ALL_EPS:
@@ -374,7 +405,7 @@ def e2e_checks(types):
             if r.status_code != 400 or "配置" not in str(j.get("message") or ""):
                 not_cfg.append((ep.split("/")[-1], r.status_code,
                                 str(j.get("message"))[:40]))
-        ok("未配置 LLM：16 个端点都回 400「请先配置」") if not not_cfg \
+        ok("未配置 LLM：17 个端点都回 400「请先配置」") if not not_cfg \
             else bad("有端点未配置时不像预期", not_cfg)
 
         # 配置假厂商
@@ -404,6 +435,39 @@ def e2e_checks(types):
                 bad("%s 提取失败" % k, j)
         ok("11 个 extract 端点（json-ok）全部成功返回 record") \
             if len(records) == len(types) else bad("有 extract 没成功", len(records))
+
+        # E2b 对话内直接记录（extract-auto，2026-10-17 新增）
+        # 正向：认得出类型 + 给出 record（json-auto 假厂商）
+        sc("json-auto")
+        j = client.post("/api/ai/write/extract-auto",
+                        json={"input": "刚喝了120ml奶粉"}).get_json() or {}
+        ok("extract-auto 识别出 feeding 并返回 record") if \
+            j.get("success") and j.get("type") == "feeding" and isinstance(j.get("record"), dict) \
+            else bad("extract-auto 识别失败", j)
+        # 反向①：授权关掉 ⇒ 403 not_authorized（只靠前端不弹框等于没有授权）
+        r = client.post("/api/ai/llm/configure", json={
+            "provider": "deepseek", "consent_cloud": True, "ai_record_authorized": False})
+        if not (r.get_json() or {}).get("success"):
+            bad("关闭授权失败", r.get_json())
+        r = client.post("/api/ai/write/extract-auto",
+                        json={"input": "刚喝了120ml奶粉"})
+        j = r.get_json() or {}
+        ok("授权关闭：extract-auto 403 not_authorized") if \
+            r.status_code == 403 and j.get("not_authorized") is True \
+            else bad("授权关闭后端点仍放行", (r.status_code, str(j)[:80]))
+        # 恢复授权（后面的检查还要用）
+        r = client.post("/api/ai/llm/configure", json={
+            "provider": "deepseek", "consent_cloud": True, "ai_record_authorized": True})
+        if not (r.get_json() or {}).get("success"):
+            bad("恢复授权失败", r.get_json())
+        # 反向②：模型抽不出结构（json-bad）⇒ 422 无法识别，不 500
+        sc("json-bad")
+        r = client.post("/api/ai/write/extract-auto",
+                        json={"input": "今天天气不错"})
+        j = r.get_json() or {}
+        ok("json-bad：extract-auto 422『无法识别』不 500") if \
+            r.status_code == 422 and "无法识别" in str(j.get("message") or "") \
+            else bad("extract-auto 失败语义不对", (r.status_code, str(j)[:80]))
 
         # E3 5 个生成端点成功
         gen = {"/api/ai/write/diary": {"input": "今天很开心", "baby_id": BID},
@@ -571,6 +635,30 @@ def selftest(js):
         t = types_of(src)
         return t is not None and len(t) != 11
     expect_red("删掉 diaper 类 ⇒ 类型数断言红", m4, ck4)
+
+    # T5 sendMsg 不接线 extract-auto（改成动态拼接）⇒ S11 接线断言必须红
+    m5 = js.replace("api('/api/ai/write/extract-auto', {",
+                    "api('/api/ai/write/extract-' + 'auto', {")
+    def ck5(src):
+        try:
+            region = src[src.index("function sendMsg"):src.index("function renderBotText")]
+        except ValueError:
+            return False
+        return not ("/api/ai/write/extract-auto" in region and "renderRecordConfirmCard" in region)
+    expect_red("sendMsg 不接线 extract-auto ⇒ 接线断言红", m5, ck5)
+
+    # T6 授权默认关闭 ⇒ 「默认开启」断言必须红（新功能默认不能用就是坏的）
+    m6 = open(ENGINE_PY, encoding="utf-8").read().replace(
+        "'ai_record_authorized': True,", "'ai_record_authorized': False,")
+    def ck6(_src):
+        return not _record_auth_default_on(m6)
+    expect_red("授权默认关闭 ⇒ 默认开启断言红", js, ck6)
+
+    # T7 确认卡不是「是/否」形态 ⇒ 形态断言必须红
+    m7 = js.replace('data-act="yes"', 'data-act="confirm"')
+    def ck7(src):
+        return not ('data-act="yes"' in src and 'data-act="no"' in src)
+    expect_red("确认卡改成单按钮 ⇒ 是/否形态断言红", m7, ck7)
 
     return rc
 
