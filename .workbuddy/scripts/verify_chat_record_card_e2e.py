@@ -139,7 +139,7 @@ window.addEventListener('error', function(e){ window.__errs.push(String(e.messag
       inp.value = '刚喝了120ml奶粉';
       send.click();
       var card1 = null;
-      for (var i = 0; i < 100; i++) { await wait(250); card1 = document.querySelector('.chat-record-card'); if (card1) break; }
+      for (var i = 0; i < 40; i++) { await wait(250); card1 = document.querySelector('.chat-record-card'); if (card1) break; }
       log.push('card1=' + (card1 ? 1 : 0));
       if (card1) {
         var no = card1.querySelector('[data-act="no"]');
@@ -155,7 +155,7 @@ window.addEventListener('error', function(e){ window.__errs.push(String(e.messag
       inp.value = '刚喝了120ml奶粉';
       send.click();
       var card = null;
-      for (var k = 0; k < 100; k++) { await wait(250); card = document.querySelector('.chat-record-card'); if (card) break; }
+      for (var k = 0; k < 40; k++) { await wait(250); card = document.querySelector('.chat-record-card'); if (card) break; }
       log.push('card2=' + (card ? 1 : 0));
       if (card) {
         log.push('cardText=' + card.textContent.replace(/\\s+/g, ' ').slice(0, 120));
@@ -225,7 +225,7 @@ def main():
         out = subprocess.run(
             [EDGE, "--headless=new", "--disable-gpu", "--no-first-run",
              "--no-default-browser-check", "--hide-scrollbars", "--mute-audio",
-             "--user-data-dir=" + profile, "--virtual-time-budget=45000",
+             "--user-data-dir=" + profile, "--virtual-time-budget=60000",
              "--window-size=500,900", "--dump-dom", url],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=200,
         ).stdout or ""
