@@ -246,3 +246,15 @@ single release version.
   sentence without confirmation and duplicate the confirmation card, now
   all new records go through detect → yes/no card → tap "Save", with no
   bypass. Queries and analysis are unaffected
+- v0.0.6 (2026-10-17) - Layout rework. The home page is now built from rows:
+  greeting → search & date → 5 quick-log buttons → "on this day" →
+  today's summary beside the milk target → body measurements beside upcoming
+  reminders → recent records. Three structural bugs fixed along the way: on
+  desktop the quick buttons were too narrow and wrapped "Feeding" onto two
+  lines; the two-column layout left roughly 150px of dead space at the
+  bottom left; and on mobile the search bar jumped above the greeting
+  because it was never given a place in the reading order. The record,
+  growth, knowledge and system grids drop the "group name in a fixed left
+  column" layout for a name-on-top + icons-below one, which removes the
+  ragged gap at the right of each row. Summary cards lose three colour bars
+  that carried no meaning, and block spacing is now a single step

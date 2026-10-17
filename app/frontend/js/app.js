@@ -3220,18 +3220,24 @@ function loadDashboard() {
             setText('homeBabyMeta', meta.join(' · ') || '--');
         }
 
-        // 今日概览
+        // 今日概览。
+        // 走 setHomeStat 而不是裸 setText：值为 0 / 0m 时挂 .is-empty 弱化，
+        // 否则三个 22px 粗体「0」并排顶着，空状态看起来像已经有数据。
         const feeding = data.today_feeding || {};
         const sleep = data.today_sleep || {};
         const diaper = data.today_diaper || {};
-        setText('homeFeedingCount', feeding.count != null ? feeding.count : 0);
-        setText('homeSleepTime', formatHomeDuration(sleep.total_minutes));
-        setText('homeDiaperCount', diaper.count != null ? diaper.count : 0);
+        const feedingCount = feeding.count != null ? feeding.count : 0;
+        const mlToday = feeding.total_amount;
+        setHomeStat('homeFeedingCount', feedingCount,
+            (Number(feedingCount) || 0) > 0 || (Number(mlToday) || 0) > 0);
+        setHomeStat('homeSleepTime', formatHomeDuration(sleep.total_minutes),
+            (Number(sleep.total_minutes) || 0) > 0);
+        setHomeStat('homeDiaperCount', diaper.count != null ? diaper.count : 0,
+            (Number(diaper.count) || 0) > 0);
         // 今日奶量：后端真实字段是 total_amount（此前写过 feeding.ml/amount/total_ml，
         // 与返回体从未对上，这行等于从未生效——字段名必须对着返回体核）
-        const mlToday = feeding.total_amount;
         if (mlToday != null && mlToday > 0) {
-            setText('homeFeedingCount', `${feeding.count != null ? feeding.count : 0} · ${mlToday}ml`);
+            setHomeStat('homeFeedingCount', `${feedingCount} · ${mlToday}ml`, true);
         }
 
         // 今日奶量目标（估算不可用 → 整块隐藏，不硬编）
@@ -3253,18 +3259,28 @@ function loadDashboard() {
 }
 
 /**
+ * 首页数值统一入口：顺带给「等于没记录」的值挂 .is-empty。
+ * 0 / 0m / '--' 用 22px 粗体顶着，读起来像「已经有数据了」；
+ * 缩成灰小号之后，一眼能分出「今天还没记」和「记了 0」。
+ */
+function setHomeStat(id, val, hasData) {
+    setText(id, val);
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('is-empty', !hasData);
+}
+
+/**
  * 首页「身体数据」卡：最新一次身高等测量值。
  * 注意这是「最近一次测量」不是「今日数据」，所以单独一块、不写「今日」。
  */
 function renderHomeBodyData(growth) {
     const g = growth || {};
     const has = g.height != null || g.weight != null;
-    setText('homeLatestHeight', g.height != null ? g.height : '--');
-    setText('homeLatestWeight', g.weight != null ? g.weight : '--');
-    setText('homeLatestBmi', g.bmi != null ? g.bmi : '--');
-    setText('homeLatestHead', g.head_circumference != null ? g.head_circumference : '--');
-
-
+    setHomeStat('homeLatestHeight', g.height != null ? g.height : '--', g.height != null);
+    setHomeStat('homeLatestWeight', g.weight != null ? g.weight : '--', g.weight != null);
+    setHomeStat('homeLatestBmi', g.bmi != null ? g.bmi : '--', g.bmi != null);
+    setHomeStat('homeLatestHead', g.head_circumference != null ? g.head_circumference : '--',
+        g.head_circumference != null);
 
     setText('homeBodyDate', has
         ? (g.record_date ? '测量于 ' + g.record_date : '已有测量记录')
@@ -3282,7 +3298,10 @@ function renderHomeMilkTarget(mt) {
         card.style.display = 'none';
         return;
     }
-    card.style.display = 'block';
+    // 显示态必须写 flex 不是 block：卡片样式是「纵向 flex + 垂直居中」，
+    // 内联 display:block 会盖掉 CSS 的 display:flex，居中就失效
+    // （内联样式优先级高于样式表，只有 !important 能压过它）。
+    card.style.display = 'flex';
     window.__homeMilkTarget = mt;  // 目标弹窗回填用
     setText('homeMilkNow', `${mt.today_amount != null ? mt.today_amount : 0}`);
     setText('homeMilkTarget', mt.target_ml);

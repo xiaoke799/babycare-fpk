@@ -231,8 +231,9 @@ chk("hubItems() 摊平 groups，HUB_OF/PAGE_LABELS 共用一份",
     and "hubItems(g).forEach(it => { PAGE_LABELS" in js)
 chk("宫格渲染会插分组标题（JS + CSS 都在）",
     "hub-group-title" in js and ".hub-group-title {" in css)
-chk("组名与图标同行（.hub-group flex，不做跨整行标题）",
-    "hub-group-items" in js and ".hub-group-items {" in css)
+chk("组名独立成行、图标排在下一行（.hub-group 纵向 flex）",
+    "hub-group-items" in js
+    and re.search(r"^\.hub-group\s*\{[^}]*flex-direction:\s*column", css, re.M) is not None)
 # 桌面端真正要防的是「图标被按整屏宽度拉伸」：
 #   - 图标容器 .hub-group-items 必须是 flex 且图标定宽（一旦写网格列就会被拉宽）
 #   - 分组容器 .hub-grid 允许分两栏并排（把整页宽度用起来），但列数不得超过 2

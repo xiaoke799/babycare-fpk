@@ -1413,38 +1413,78 @@ body {
 .hub-header { padding: 4px 2px 8px; }
 .hub-header .section-title { font-size: 19px; }
 .hub-desc { margin: 4px 0 0; font-size: 13px; color: var(--text-light); }
+
+/* 一组 = 组名一行 + 图标横排一行，不套卡片。
+   走过两个弯路，记下来免得再试：
+   ① 「组名占左侧固定列 + 图标在右」：组名白占 54px，组内只有 1~3 个图标时
+      右侧空一大片，桌面容器越宽越像没排满。
+   ② 「一组一张卡 + 卡内图标均分」：卡内 1~2 个图标时会被均分拉到卡两端，
+      两图标组的中间空出一大片，比原来更散；卡片的边框还会把这块空白
+      框起来，读起来就是「这张卡没排满」。
+   现在不画卡：组名在上、图标定宽从左排，右侧的空白就是页面留白，
+   不构成「洞」；组与组靠 20px 间距分隔，分组照样清楚，还更轻。 */
 .hub-grid {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 20px;
     padding: 8px 2px 16px;
 }
 
-/* 一组 = 组名在左 + 图标在右，同一行。
-   组名不做成跨整行的标题：那会让每组多吃一行高度（记录栏 6 组就是 6 行），
-   而且组内只有 1-3 个图标时右侧会空一大片 —— 桌面端容器 999px 宽、
-   auto-fill 能排 9 列，每组只占前 3 列，看着像没排满。
-   图标容器用 flex、图标给固定宽度，宽度随内容走，就不会被均分拉伸。 */
 .hub-group {
     display: flex;
-    align-items: flex-start;
-    gap: 14px;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
 }
+
 .hub-group-title {
-    flex: 0 0 54px;
-    padding-top: 15px;
+    padding: 0 2px;
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--text-secondary);
     line-height: 1;
+    letter-spacing: 0.2px;
 }
+
 .hub-group-items {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px 10px;
+    gap: 10px;
     min-width: 0;
 }
-.hub-group-items .nav-item { width: 84px; }
+
+/* 图标定宽，从左往右排；宽度固定，就不会被容器均分拉开 */
+.hub-group-items .nav-item {
+    width: 76px;
+    padding: 10px 4px;
+    gap: 6px;
+    background: transparent;
+}
+
+/* 图标圆底：整块按钮不再上底色，主色只留给图标本身 */
+.hub-group-items .nav-icon {
+    width: 42px;
+    height: 42px;
+    /* 覆盖后面 .nav-icon 的 margin-right:6px（那条是给旁挂图标的旧写法） */
+    margin-right: 0;
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(255, 173, 122, 0.16), rgba(255, 134, 161, 0.14));
+    color: var(--primary-strong);
+}
+
+.hub-group-items .nav-icon .ic-svg {
+    width: 22px;
+    height: 22px;
+}
+
+.hub-group-items .nav-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.hub-group-items .nav-item.active {
+    background: rgba(255, 173, 122, 0.10);
+}
 
 /* 成长成就的「只读回顾」形态：从成长栏进来时 switchPage 会给 #page-milestones
    挂 .only-view，这里把录入入口全藏掉，只留筛选和列表。
@@ -1920,20 +1960,20 @@ body {
         font-size: 13px;
     }
 
-    /* 宫格在桌面更舒展：图标大一点、组间距松一点。
-       这里别再写 grid-template-columns 到图标上 —— 图标容器已是 flex 定宽，
-       再指定网格列会把布局拉回「按整屏宽度均分」，右侧就会空一大片。
-       但分组容器可以两栏并排，把整页宽度用起来。 */
+    /* 宫格在桌面更舒展：两组并排、组内图标略大。
+       这里只给「列数」，别把 grid-template-columns 写到图标上 ——
+       图标排布由组内 flex 负责，指定网格列会把它拉回「按整屏宽度均分」，
+       组内图标少时右侧就又空一片。 */
     .hub-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 20px 36px;
+        gap: 24px 40px;
         padding: 12px 4px 20px;
     }
-    .hub-group { gap: 18px; }
-    .hub-group-title { flex-basis: 64px; padding-top: 18px; font-size: 14px; }
-    .hub-group-items { gap: 16px 12px; }
-    .hub-group-items .nav-item { width: 96px; }
+    .hub-group { gap: 12px; }
+    .hub-group-title { font-size: 14px; }
+    .hub-group-items { gap: 12px; }
+    .hub-group-items .nav-item { width: 84px; }
 
     /* 内容区留白舒适 */
     .app-content {
@@ -2327,9 +2367,10 @@ body {
 }
 
 /* 设置页：手机单列；桌面两栏卡片流。
-   两栏各自用纵向 flex 堆叠（同首页 #page-dashboard .home-col 的做法），
-   卡片高度差再大也不会在同一行里被对方撑出空档 —— 用 2 列 grid 自动流时，
-   行高由该行较高的卡决定，矮的一侧下面就会留下大片空白。 */
+   两栏各自用纵向 flex 堆叠，卡片高度差再大也不会在同一行里被对方撑出空档 ——
+   用 2 列 grid 自动流时，行高由该行较高的卡决定，矮的一侧下面就会留下大片空白。
+   （首页曾经也是这个做法，2026-10-17 改成了行容器 + DOM 顺序；
+     这里的 order 名单是完整的，别照抄首页当年的漏项写法。） */
 #page-settings.page.active {
     display: flex;
     flex-direction: column;
@@ -12925,34 +12966,59 @@ input:checked + .toggle-slider:before {
 
 /* ==================== 首页仪表盘（home） ==================== */
 
-/* 双端列容器：默认摊平（display:contents），子元素按 order 排成手机单列；
-   桌面端再变成左右两栏。避免为双端各写一套 DOM。
-   DOM 顺序是「左栏(快捷+身体) → 右栏(日期+概览+最近)」，手机端用 order
-   调成「快捷 → 日期 → 概览 → 身体 → 最近」的阅读顺序。
-   顺序靠 order，所以页面容器必须是 flex/grid，不能用 .page.active 的 display:block。 */
-.home-col {
-    display: contents;
-}
-
+/* 行式布局：DOM 顺序就是阅读顺序，手机和桌面共用同一套先后。
+   旧写法用 display:contents 摊平左右两栏、再靠 order 拼出手机阅读序，
+   但 order 名单里漏了搜索条（默认 order:0），结果手机端第一块是搜索框、
+   问候语被挤到它下面。改成行容器后，块放在哪就是哪个位置，不会再漏。
+   各块自身不再写左右 margin/padding，水平留白统一由 .app-content 给，
+   纵向间距统一由这里的 gap 给 —— 之前各块混用 margin/padding，
+   间距在 14~32px 之间乱跳，是「看着乱」的主要来源之一。 */
 #page-dashboard.page.active {
     display: flex;
     flex-direction: column;
+    gap: 14px;
 }
 
-/* 手机/平板单列阅读顺序：快捷 → 日期 → 概览 → 身体 → 最近 */
-@media (max-width: 1023px) {
-    #page-dashboard .home-header { order: 1; }
-    #page-dashboard .home-quick-actions { order: 2; }
-    #page-dashboard .home-date-bar { order: 3; }
-    #page-dashboard #homeStatsTitle { order: 4; }
-    #page-dashboard .home-stats { order: 5; }
-    #page-dashboard .home-body { order: 6; }
-    #page-dashboard .home-recent { order: 7; }
+/* 一行放两块。auto-fit 的作用不是「排更多列」，而是：
+   放得下就并排，放不下就落成单列；只有一块时（奶量/倒计时无数据）
+   空轨道自动折叠，剩下那块撑满整行，不会留半行空洞。 */
+.home-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 14px;
+    align-items: stretch;
+}
+
+/* 搜索 + 日期：桌面并排（搜索吃掉多余宽度），窄屏上下各占一行。
+   窄屏不能只靠 flex-wrap 自然折行 —— 两个都是可收缩项，
+   加起来超过一行时不会换行，而是各自被压扁：搜索框 placeholder 被截成
+   「搜日记、里程…」，日期 tab 挤到「一周前」竖着断成两行。 */
+.home-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+}
+
+@media (max-width: 640px) {
+    .home-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+    .home-toolbar .home-search-bar,
+    .home-toolbar .home-date-bar {
+        flex: none;
+        width: 100%;
+    }
+    .home-toolbar .home-date-tabs {
+        min-width: 0;
+    }
 }
 
 /* 顶部问候 + 宝宝档案卡 */
 .home-header {
-    margin: 16px 16px 0;
+    margin: 0;
     padding: 20px;
     border-radius: var(--radius);
     background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
@@ -13017,15 +13083,17 @@ input:checked + .toggle-slider:before {
     color: #fff;
 }
 
-/* 快捷记录 */
+/* 快捷记录：5 个按钮等分一行。
+   下限 64px 是「手机 375 屏能塞下 5 个」的实测值（375-32=343，343/5≈68）；
+   桌面再抬到 120px 并让图标与文字横排 —— 之前桌面用 76px 下限，
+   左栏里只排得下 3 列、每个按钮 76px 宽又要横排，
+   图标 42 + 间隙 12 + 左右内边距 32 已经超过 76px，
+   文字被压成 0 宽，「喂奶」变成「喂」在上「奶」在下。 */
 .home-quick-actions {
     display: grid;
-    /* 自适应列数：原来写死 4 列，加第 5 个「批量」按钮后孤零零掉到第二行，
-       看着像渲染残缺。auto-fit + minmax 让 4~6 个都能均分一行；
-       窄屏放不下时 minmax 里的 76px 下限会自然折行，不用另写断点。 */
-    grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
-    gap: 10px;
-    padding: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+    gap: 8px;
+    padding: 0;
 }
 
 .home-quick-btn {
@@ -13073,7 +13141,7 @@ input:checked + .toggle-slider:before {
 
 /* 区块标题 */
 .home-section-title {
-    margin: 8px 16px 10px;
+    margin: 0 0 8px;
     font-size: 16px;
     font-weight: 700;
     color: var(--text-primary);
@@ -13084,7 +13152,9 @@ input:checked + .toggle-slider:before {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 0 16px;
+    padding: 0;
+    flex: 0 1 auto;
+    min-width: 0;
     flex-wrap: wrap;
 }
 
@@ -13097,7 +13167,7 @@ input:checked + .toggle-slider:before {
 /* 「那年今天」回忆卡：往年同月同日发生过什么。
    用暖色渐变边把它和下面的「今日概览」区分开 —— 它讲的是回忆，不是今天的待办。 */
 .home-memories {
-    margin: 12px 16px 4px;
+    margin: 0;
     padding: 14px 14px 6px;
     background: linear-gradient(135deg, rgba(255, 173, 122, 0.14), rgba(255, 134, 161, 0.12));
     border: 1px solid rgba(209, 90, 122, 0.18);
@@ -13183,7 +13253,9 @@ input:checked + .toggle-slider:before {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 4px 16px 10px;
+    margin: 0;
+    flex: 1 1 200px;
+    min-width: 0;
     padding: 6px 10px;
     background: var(--card-bg, #fff);
     border: 1px solid var(--border-color);
@@ -13467,7 +13539,7 @@ input:checked + .toggle-slider:before {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 10px;
-    padding: 0 16px;
+    padding: 0;
 }
 
 .home-stat-card {
@@ -13479,19 +13551,6 @@ input:checked + .toggle-slider:before {
     box-shadow: var(--shadow);
     overflow: hidden;
 }
-
-.home-stat-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-}
-
-.home-stat-card.feeding::before { background: var(--primary-color); }
-.home-stat-card.sleep::before   { background: var(--primary-dark); }
-.home-stat-card.diaper::before  { background: var(--success-color); }
 
 .home-stat-icon {
     width: 34px;
@@ -13528,9 +13587,21 @@ input:checked + .toggle-slider:before {
     color: var(--text-secondary);
 }
 
+/* 空值弱化：0 / 0m / -- 这类「今天还没记」的值缩成灰小号。
+   22px 粗体三个 0 并排时，空状态看着像已经有数据，
+   而「没记」和「记了 0」本来就是两种状态，不该长得一样。
+   .is-empty 由 setHomeStat() 按 hasData 挂，不是靠猜文本。 */
+.home-stat-value.is-empty,
+.home-body-value.is-empty {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-light);
+}
+
 /* 身体数据：最新一次身高/体重/BMI/头围 */
 .home-body {
-    padding: 0 16px 8px;
+    padding: 0;
+    min-width: 0;
 }
 
 .home-body-card {
@@ -13589,30 +13660,39 @@ input:checked + .toggle-slider:before {
 /* 窄屏四项挤不下就折成两行 */
 @media (max-width: 360px) {
     .home-body-card { grid-template-columns: repeat(2, 1fr); }
-    .home-quick-actions { gap: 8px; padding: 12px; }
-    .home-quick-btn { min-height: 68px; padding: 10px 2px; }
-    .home-quick-icon { width: 36px; height: 36px; }
+    .home-quick-actions { gap: 6px; }
+    .home-quick-btn { min-height: 64px; padding: 8px 2px; }
     .home-greeting-title { font-size: 19px; }
     .home-stat-value { font-size: 18px; }
 }
 
-/* 小屏手机：日期条折行时日期选择器占满一行，避免挤成窄条 */
+/* 小屏手机：日期 tab 与日期选择器同一行（tab 吃剩余宽度），
+   放不下时由 .home-date-bar 的 flex-wrap 自己折，不用写死成两行 ——
+   写死 column 会让 390 宽的手机也白占两行。 */
 @media (max-width: 480px) {
-    .home-date-bar {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 8px;
-    }
     .home-date-tabs {
         min-width: 0;
-        width: 100%;
     }
-    .home-date-pick input[type="date"] {
-        width: 100%;
+    .home-date-pick {
+        flex: 0 0 auto;
     }
     .home-stat-value {
         font-size: clamp(16px, 5.2vw, 22px);
         overflow-wrap: anywhere;
+    }
+    /* 5 个按钮等分一行时每个只有 65px 左右，42px 的图标圆底占掉 2/3，
+       按钮看着像「被图标塞满的气泡」，缩到 36px 才有留白。
+       （360 窄屏断点写在这个断点前面，别再在那里重复写图标尺寸 —— 会被这里覆盖。） */
+    .home-quick-icon {
+        width: 36px;
+        height: 36px;
+    }
+    .home-quick-icon .ic-svg {
+        width: 20px;
+        height: 20px;
+    }
+    .home-quick-label {
+        font-size: 11px;
     }
     .home-body-foot {
         flex-wrap: wrap;
@@ -13621,7 +13701,7 @@ input:checked + .toggle-slider:before {
 
 /* 最近记录 */
 .home-recent {
-    padding: 0 16px 24px;
+    padding: 0 0 8px;
 }
 
 .home-recent-list {
@@ -13697,23 +13777,15 @@ input:checked + .toggle-slider:before {
     .app-content {
         padding: 20px 24px calc(52px + var(--safe-bottom) + 16px);
     }
+    #page-dashboard.page.active {
+        gap: 16px;
+    }
     #page-dashboard .home-header {
-        margin: 0 0 12px;
+        margin: 0;
         padding: 22px 24px;
     }
-    #page-dashboard .home-quick-actions,
-    #page-dashboard .home-date-bar,
-    #page-dashboard .home-section-title,
-    #page-dashboard .home-stats,
-    #page-dashboard .home-body,
-    #page-dashboard .home-recent {
-        margin-left: 0;
-        margin-right: 0;
-        padding-left: 0;
-        padding-right: 0;
-    }
     #page-dashboard .home-quick-actions {
-        gap: 12px;
+        gap: 10px;
     }
     #page-dashboard .home-stats {
         gap: 12px;
@@ -13723,48 +13795,23 @@ input:checked + .toggle-slider:before {
     .baby-selector { max-width: 220px; }
 }
 
-/* 桌面端：双栏仪表盘 —— 左栏快捷+身体，右栏日期+概览+最近
-   注意：必须写成 #page-dashboard.page.active，否则 id 选择器会盖过
-   .page.active 的 display，未激活页也会占布局。 */
+/* 桌面端：行式仪表盘。每行并排两块、等高拉齐。
+   旧版是左右两栏各自纵向堆叠，行高只由高的那边决定 ——
+   左栏（快捷 + 身体数据）约 250px、右栏（搜索 + 日期 + 概览 + 最近）约 400px，
+   左下就空出 150px 一大片。改成行容器后，每一行的两块互相等高，
+   洞只在行内、且最多几十像素。 */
 @media (min-width: 1024px) {
     #page-dashboard.page.active {
-        display: grid;
-        grid-template-columns: minmax(300px, 0.92fr) minmax(360px, 1.18fr);
-        column-gap: 28px;
-        row-gap: 0;
-        align-items: start;
+        gap: 18px;
     }
 
     #page-dashboard .home-header {
-        grid-column: 1 / -1;
-        grid-row: 1;
-        margin: 0 0 20px;
+        margin: 0;
         padding: 28px 32px;
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 24px;
-    }
-
-    /* 两栏各自纵向堆叠，行高不再互相拉扯 */
-    #page-dashboard .home-col-left {
-        grid-column: 1;
-        grid-row: 2;
-    }
-    #page-dashboard .home-col-right {
-        grid-column: 2;
-        grid-row: 2;
-    }
-    #page-dashboard .home-col {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-        min-width: 0;
-    }
-
-    /* 标题紧跟在自己的内容块上方 */
-    #page-dashboard #homeStatsTitle {
-        margin: 0 0 -6px;
     }
 
     #page-dashboard .home-greeting {
@@ -13782,57 +13829,35 @@ input:checked + .toggle-slider:before {
         font-size: 28px;
     }
 
+    /* 桌面宽度够，5 个按钮各占 1/5 并横排。下限抬到 120px 是关键：
+       图标 40 + 间隙 10 + 左右内边距 32 = 82px，再留出文字宽度。 */
     #page-dashboard .home-quick-actions {
-        margin: 0;
-        padding: 0;
-        /* 桌面端同样用 auto-fit（写死 2 列会让 5 个按钮排成 2+2+1，末位孤行） */
-        grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
         gap: 12px;
     }
 
     #page-dashboard .home-quick-btn {
-        min-height: 88px;
+        min-height: 72px;
         flex-direction: row;
         justify-content: flex-start;
-        padding: 14px 16px;
-        gap: 12px;
+        padding: 12px 16px;
+        gap: 10px;
         text-align: left;
     }
 
     #page-dashboard .home-quick-label {
         font-size: 14px;
+        white-space: nowrap;
     }
 
-    #page-dashboard .home-date-bar {
-        margin: 0;
-        padding: 0;
-    }
-
-    #page-dashboard .home-section-title {
-        margin: 0;
-        padding: 0;
-    }
-
-    #page-dashboard .home-body,
-    #page-dashboard .home-stats,
-    #page-dashboard .home-recent {
-        margin: 0;
-        padding: 0;
-    }
-
-    #page-dashboard .home-body > .home-section-title,
-    #page-dashboard .home-recent > .home-section-title {
-        margin: 0 0 10px;
-        padding: 0;
+    #page-dashboard .home-row {
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 16px;
     }
 
     #page-dashboard .home-stats {
         grid-template-columns: repeat(3, 1fr);
-        gap: 14px;
-    }
-
-    #page-dashboard .home-recent {
-        padding: 0 0 8px;
+        gap: 12px;
     }
 
     #page-dashboard .home-recent-list {
@@ -13846,15 +13871,15 @@ input:checked + .toggle-slider:before {
     }
 
     .home-body-value {
-        font-size: 22px;
+        font-size: 20px;
     }
 
     .home-stat-card {
-        padding: 18px 12px 16px;
+        padding: 16px 12px 14px;
     }
 
     .home-stat-value {
-        font-size: 26px;
+        font-size: 22px;
     }
 
     .baby-selector {
@@ -15002,10 +15027,16 @@ input:checked + .toggle-slider:before {
 
 /* ==================== 新增：今日奶量 / 随访规划 / 自定义倒计时 ==================== */
 
-/* 首页：今日奶量目标卡（进度条走主色，深浅主题自动跟随） */
+/* 首页：今日奶量目标卡（进度条走主色，深浅主题自动跟随）。
+   和「今日概览」并排成一行，内容垂直居中 —— 两块内容本身不同高，
+   stretch 拉齐后居中才不会出现上贴下空的断层。 */
 .home-milk-card {
-    margin: 12px 16px 4px;
+    margin: 0;
     padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
     background: var(--card-bg);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
@@ -15064,12 +15095,34 @@ input:checked + .toggle-slider:before {
     color: var(--text-light);
 }
 
-/* 首页：即将到来的倒计时条 */
+/* 首页：即将到来的倒计时条。和「身体数据」并排成一行，
+   所以它也得有一个和「身体数据」等价的标题行 —— 否则左边是「标题 + 卡 + 脚注」，
+   右边是「一张卡」，两块顶边差一个标题的高度（约 30px），
+   并排看起来就是错位的。标题用 ::before 生成，不动 JS 渲染逻辑；
+   width:100% 让它独占一行，chips 从第二行开始换行。
+   没有倒计时时 JS 置 display:none，整张卡连标题一起消失，所在行只剩
+   身体数据一块，auto-fit 折叠空轨道后自动撑满。 */
 .home-countdowns {
     display: flex;
     flex-wrap: wrap;
+    align-content: flex-start;
     gap: 8px;
-    margin: 10px 16px 0;
+    margin: 0;
+    padding: 14px 16px;
+    min-width: 0;
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.home-countdowns::before {
+    content: '即将到来';
+    width: 100%;
+    margin-bottom: 2px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
 }
 
 .home-cd-chip {

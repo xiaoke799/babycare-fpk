@@ -57,3 +57,7 @@ secret_key
 
 # 浏览器自动化 CLI 的运行时缓存（每次跑都会重建，不进仓库）
 .playwright-cli/
+
+# 布局诊断截图（_shot_layout.py 的产物，不入库）
+outputs/shots/
+_*.mjs

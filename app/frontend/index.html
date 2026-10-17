@@ -115,32 +115,99 @@
                     </div>
                 </div>
 
-                <!-- 双端布局：手机端 display:contents 摊平成单列；桌面端变成左右两栏 -->
-                <div class="home-col home-col-left">
-                    <!-- 快捷记录 -->
-                    <div class="home-quick-actions" id="homeQuickActions">
-                        <button class="home-quick-btn" data-action="feeding" type="button">
-                            <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bottle"/></svg></span>
-                            <span class="home-quick-label">喂奶</span>
-                        </button>
-                        <button class="home-quick-btn" data-action="sleep" type="button">
-                            <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-moon"/></svg></span>
-                            <span class="home-quick-label">睡眠</span>
-                        </button>
-                        <button class="home-quick-btn" data-action="diaper" type="button">
-                            <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-diaper"/></svg></span>
-                            <span class="home-quick-label">尿布</span>
-                        </button>
-                        <button class="home-quick-btn" data-action="growth" type="button">
-                            <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chart"/></svg></span>
-                            <span class="home-quick-label">成长</span>
-                        </button>
-                        <button class="home-quick-btn" id="batchRecordBtn" type="button">
-                            <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-list"/></svg></span>
-                            <span class="home-quick-label">批量</span>
-                        </button>
+                <!-- 全局控件：搜索 + 日期切换（默认看今天，可回看任意一天；回看时本页转只读） -->
+                <div class="home-toolbar">
+                    <!-- 全局搜索：一次检索日记/里程碑/体检/用药/过敏/疫苗等 -->
+                    <div class="home-search-bar" id="homeSearchBar">
+                        <svg class="ic-svg home-search-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-search"/></svg>
+                        <input type="search" id="homeSearchInput" class="home-search-input"
+                               placeholder="搜日记、里程碑、体检、用药…" aria-label="搜索记录">
+                        <button type="button" class="home-search-btn" id="homeSearchBtn">搜索</button>
                     </div>
+                    <div class="home-date-bar" id="homeDateBar">
+                        <div class="care-tabs home-date-tabs">
+                            <button class="tab-btn active" type="button" data-home-offset="0">今天</button>
+                            <button class="tab-btn" type="button" data-home-offset="1">昨天</button>
+                            <button class="tab-btn" type="button" data-home-offset="7">一周前</button>
+                        </div>
+                        <label class="home-date-pick">
+                            <input type="date" id="homeDateInput" aria-label="选择要回看的日期">
+                        </label>
+                    </div>
+                </div>
 
+                <!-- 快捷记录：5 个按钮等分一行（手机竖排图标在上，桌面横排） -->
+                <div class="home-quick-actions" id="homeQuickActions">
+                    <button class="home-quick-btn" data-action="feeding" type="button">
+                        <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bottle"/></svg></span>
+                        <span class="home-quick-label">喂奶</span>
+                    </button>
+                    <button class="home-quick-btn" data-action="sleep" type="button">
+                        <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-moon"/></svg></span>
+                        <span class="home-quick-label">睡眠</span>
+                    </button>
+                    <button class="home-quick-btn" data-action="diaper" type="button">
+                        <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-diaper"/></svg></span>
+                        <span class="home-quick-label">尿布</span>
+                    </button>
+                    <button class="home-quick-btn" data-action="growth" type="button">
+                        <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chart"/></svg></span>
+                        <span class="home-quick-label">成长</span>
+                    </button>
+                    <button class="home-quick-btn" id="batchRecordBtn" type="button">
+                        <span class="home-quick-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-list"/></svg></span>
+                        <span class="home-quick-label">批量</span>
+                    </button>
+                </div>
+
+                <!-- 那年今天：往年同月同日发生过什么。没有往年记录时整块不出现 -->
+                <div class="home-memories" id="homeMemories" style="display:none">
+                    <div class="memories-head">
+                        <span class="memories-title" id="memoriesTitle">那年今天</span>
+                        <span class="memories-sub" id="memoriesSub"></span>
+                    </div>
+                    <div class="memories-list" id="memoriesList"></div>
+                </div>
+
+                <!-- 一行两块：今日概览 + 今日奶量（奶量估算不可用时整块隐藏，概览自动撑满） -->
+                <div class="home-row">
+                    <div class="home-block">
+                        <h3 class="home-section-title" id="homeStatsTitle">今日概览</h3>
+                        <div class="home-stats">
+                            <div class="home-stat-card feeding">
+                                <div class="home-stat-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bottle"/></svg></div>
+                                <div class="home-stat-value" id="homeFeedingCount">0</div>
+                                <div class="home-stat-label">喂奶</div>
+                            </div>
+                            <div class="home-stat-card sleep">
+                                <div class="home-stat-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-moon"/></svg></div>
+                                <div class="home-stat-value" id="homeSleepTime">0m</div>
+                                <div class="home-stat-label">睡眠</div>
+                            </div>
+                            <div class="home-stat-card diaper">
+                                <div class="home-stat-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-diaper"/></svg></div>
+                                <div class="home-stat-value" id="homeDiaperCount">0</div>
+                                <div class="home-stat-label">换尿布</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 今日奶量目标卡：估算不可用时整块隐藏，不硬编 -->
+                    <div class="home-milk-card" id="homeMilkCard" style="display:none">
+                        <div class="home-milk-head">
+                            <span class="home-milk-title">今日奶量</span>
+                            <span class="home-milk-edit">
+                                <button type="button" class="btn-link" id="milkTargetEditBtn">目标</button>
+                                <span class="home-milk-percent" id="homeMilkPercent">0%</span>
+                            </span>
+                        </div>
+                        <div class="home-milk-bar"><div class="home-milk-bar-fill" id="homeMilkBar"></div></div>
+                        <div class="home-milk-nums"><b id="homeMilkNow">0</b> / 目标 <span id="homeMilkTarget">--</span> ml</div>
+                        <div class="home-milk-detail" id="homeMilkDetail"></div>
+                    </div>
+                </div>
+
+                <!-- 一行两块：最近一次身体数据 + 即将到来的倒计时 -->
+                <div class="home-row">
                     <!-- 身体数据：显示最新一次测量值（不是「今日」数据，单独一块） -->
                     <div class="home-body" id="homeBodySection">
                         <h3 class="home-section-title">身体数据</h3>
@@ -167,81 +234,15 @@
                             <button class="home-body-record-btn" id="homeBodyRecordBtn" type="button">记一次</button>
                         </div>
                     </div>
-                </div>
-
-                <div class="home-col home-col-right">
-                    <!-- 全局搜索：一次检索日记/里程碑/体检/用药/过敏/疫苗等 -->
-                    <div class="home-search-bar" id="homeSearchBar">
-                        <svg class="ic-svg home-search-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-search"/></svg>
-                        <input type="search" id="homeSearchInput" class="home-search-input"
-                               placeholder="搜日记、里程碑、体检、用药…" aria-label="搜索记录">
-                        <button type="button" class="home-search-btn" id="homeSearchBtn">搜索</button>
-                    </div>
-
-                    <!-- 日期切换：默认看今天，可回看任意一天（回看时本页转为只读视图） -->
-                    <div class="home-date-bar" id="homeDateBar">
-                        <div class="care-tabs home-date-tabs">
-                            <button class="tab-btn active" type="button" data-home-offset="0">今天</button>
-                            <button class="tab-btn" type="button" data-home-offset="1">昨天</button>
-                            <button class="tab-btn" type="button" data-home-offset="7">一周前</button>
-                        </div>
-                        <label class="home-date-pick">
-                            <input type="date" id="homeDateInput" aria-label="选择要回看的日期">
-                        </label>
-                    </div>
-
-                    <!-- 那年今天：往年同月同日发生过什么。没有往年记录时整块不出现 -->
-                    <div class="home-memories" id="homeMemories" style="display:none">
-                        <div class="memories-head">
-                            <span class="memories-title" id="memoriesTitle">那年今天</span>
-                            <span class="memories-sub" id="memoriesSub"></span>
-                        </div>
-                        <div class="memories-list" id="memoriesList"></div>
-                    </div>
-
-                    <!-- 今日概览 -->
-                    <h3 class="home-section-title" id="homeStatsTitle">今日概览</h3>
-                    <div class="home-stats">
-                        <div class="home-stat-card feeding">
-                            <div class="home-stat-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bottle"/></svg></div>
-                            <div class="home-stat-value" id="homeFeedingCount">0</div>
-                            <div class="home-stat-label">喂奶</div>
-                        </div>
-                        <div class="home-stat-card sleep">
-                            <div class="home-stat-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-moon"/></svg></div>
-                            <div class="home-stat-value" id="homeSleepTime">0m</div>
-                            <div class="home-stat-label">睡眠</div>
-                        </div>
-                        <div class="home-stat-card diaper">
-                            <div class="home-stat-icon"><svg class="ic-svg" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-diaper"/></svg></div>
-                            <div class="home-stat-value" id="homeDiaperCount">0</div>
-                            <div class="home-stat-label">换尿布</div>
-                        </div>
-                    </div>
-
-                    <!-- 今日奶量目标卡：估算不可用时整块隐藏，不硬编 -->
-                    <div class="home-milk-card" id="homeMilkCard" style="display:none">
-                        <div class="home-milk-head">
-                            <span class="home-milk-title">今日奶量</span>
-                            <span class="home-milk-edit">
-                                <button type="button" class="btn-link" id="milkTargetEditBtn">目标</button>
-                                <span class="home-milk-percent" id="homeMilkPercent">0%</span>
-                            </span>
-                        </div>
-                        <div class="home-milk-bar"><div class="home-milk-bar-fill" id="homeMilkBar"></div></div>
-                        <div class="home-milk-nums"><b id="homeMilkNow">0</b> / 目标 <span id="homeMilkTarget">--</span> ml</div>
-                        <div class="home-milk-detail" id="homeMilkDetail"></div>
-                    </div>
-
                     <!-- 即将到来的倒计时（自定义事件，点进看诊摘要页管理） -->
                     <div class="home-countdowns" id="homeCountdowns" style="display:none"></div>
+                </div>
 
-                    <!-- 最近记录（回看某天时变成「那天的记录」） -->
-                    <div class="home-recent">
-                        <h3 class="home-section-title" id="homeRecentTitle">最近记录</h3>
-                        <div class="home-recent-list" id="homeRecentList">
-                            <p class="empty-tip">暂无记录</p>
-                        </div>
+                <!-- 最近记录（回看某天时变成「那天的记录」） -->
+                <div class="home-recent">
+                    <h3 class="home-section-title" id="homeRecentTitle">最近记录</h3>
+                    <div class="home-recent-list" id="homeRecentList">
+                        <p class="empty-tip">暂无记录</p>
                     </div>
                 </div>
             </section>
@@ -2013,7 +2014,7 @@
         </div>
         <div class="about-logo-text">
             <div class="about-app-name">育儿宝</div>
-            <div class="about-version" id="aboutVersion">版本 0.0.5</div>
+            <div class="about-version" id="aboutVersion">版本 0.0.6</div>
         </div>
     </div>
 
